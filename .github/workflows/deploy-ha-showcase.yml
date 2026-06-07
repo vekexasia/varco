@@ -120,7 +120,17 @@ jobs:
           export HA_CLIENT_ID="http://localhost:8123/"
           export HA_USERNAME="${HA_SHOWCASE_USERNAME:-test}"
           export HA_PASSWORD="${HA_SHOWCASE_PASSWORD:-test}"
-          npm run dev:ha:gazzetta-demo
+          for attempt in $(seq 1 12); do
+            if npm run dev:ha:gazzetta-demo; then
+              break
+            fi
+            if [ "$attempt" = "12" ]; then
+              echo "Failed to prepare Gazzetta demo grant after $attempt attempts." >&2
+              exit 1
+            fi
+            echo "Home Assistant auth not ready yet; retrying Gazzetta grant preparation ($attempt/12)."
+            sleep 5
+          done
           rm -rf .pi/gazzetta-demo-dist
           mkdir -p .pi/gazzetta-demo-dist
           cp examples/gazzetta-energy-showcase/dist/index.html examples/gazzetta-energy-showcase/dist/main.js .pi/gazzetta-demo-dist/
