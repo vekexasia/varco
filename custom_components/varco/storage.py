@@ -79,6 +79,15 @@ class MemoryVarcoStore:
         await self.async_upsert_grant(grant)
         return grant
 
+    async def async_delete_grant(self, grant_id: str) -> Grant:
+        grant = await self.async_get_grant(grant_id)
+        if grant is None:
+            raise KeyError(grant_id)
+        data = await self.async_load_data()
+        data["grants"].pop(grant.consumer_pk, None)
+        await self.async_save_data(data)
+        return grant
+
     async def async_append_audit(self, event: dict[str, Any]) -> None:
         data = await self.async_load_data()
         data["audit"].append(event)

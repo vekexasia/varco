@@ -111,6 +111,22 @@ def test_history_camera_and_revocation_are_enforced_per_message():
         assert rejected["code"] == "grant_revoked"
     asyncio.run(run())
 
+
+def test_delete_grant_removes_record_and_closes_active_session():
+    async def run():
+        authority, store, _, grant = await paired_authority({
+            "name": "Demo",
+            "version": "1",
+            "history": ["sensor.temp"],
+        })
+        deleted = await authority.delete_grant(grant.grant_id)
+        assert deleted.grant_id == grant.grant_id
+        assert await store.async_list_grants() == []
+        rejected = await authority.handle_plaintext("s1", {"type": "history_query", "entity_ids": ["sensor.temp"]})
+        assert rejected["code"] == "grant_revoked"
+        assert (await store.async_audit_events())[-1]["event"] == "grant_deleted"
+    asyncio.run(run())
+
 def test_webrtc_signaling_falls_back_to_relay_when_authority_has_no_peer_stack():
     async def run():
         authority, store, _, _ = await paired_authority({"name": "Demo", "version": "1", "read_entities": ["sensor.temp"]})

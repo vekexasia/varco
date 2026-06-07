@@ -90,6 +90,15 @@ class VarcoAuthority:
         await audit.async_log(self.store, "grant_revoked", grant.grant_id)
         return grant
 
+    async def delete_grant(self, grant_id: str) -> Grant:
+        grant = await self.store.async_delete_grant(grant_id)
+        for session in self.sessions.values():
+            if session.consumer_pk == grant.consumer_pk:
+                session.closed = True
+                session.outbox.append({"type": "error", "code": "grant_revoked", "message": "Grant deleted"})
+        await audit.async_log(self.store, "grant_deleted", grant.grant_id)
+        return grant
+
     async def _dismiss_notification(self, request_id: str) -> None:
         if self.hass is None:
             return

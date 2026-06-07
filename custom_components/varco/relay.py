@@ -160,9 +160,32 @@ class VarcoRelay:
 
     async def _notify_owner(self, request: AccessRequest) -> None:
         manifest = request.manifest
+
+        def scopes(snake_name: str, camel_name: str | None = None) -> list[str]:
+            value = manifest.get(snake_name) or (manifest.get(camel_name) if camel_name else None) or []
+            return [str(item) for item in value] if isinstance(value, list) else []
+
+        def summarize(values: list[str]) -> str:
+            if not values:
+                return "none"
+            shown = values[:8]
+            suffix = f", +{len(values) - len(shown)} more" if len(values) > len(shown) else ""
+            return ", ".join(f"`{value}`" for value in shown) + suffix
+
+        name = str(manifest.get("name") or "Unknown")
+        version = str(manifest.get("version") or "not declared")
+        consumer_key = request.consumer_pk[:12] + "..." + request.consumer_pk[-8:] if len(request.consumer_pk) > 24 else request.consumer_pk
         message = (
-            f"Consumer `{manifest.get('name', 'Unknown')}` requests Varco access.\n\n"
+            f"Consumer `{name}` requests Varco access.\n\n"
+            f"Requested by: `{name}` version `{version}`\n\n"
+            f"Consumer key: `{consumer_key}`\n\n"
             f"Pairing code: **{request.pairing_code}**\n\n"
+            "Requested permissions:\n"
+            f"- Read entities: {summarize(scopes('read_entities', 'readEntities'))}\n"
+            f"- Live subscriptions: {summarize(scopes('subscriptions'))}\n"
+            f"- History: {summarize(scopes('history'))}\n"
+            f"- Camera snapshots: {summarize(scopes('camera_snapshots', 'cameraSnapshots'))}\n"
+            f"- Home Assistant actions: {summarize(scopes('actions'))}\n\n"
             f"[Open Varco panel](/varco) to approve or reject this request.\n\n"
             f"Service fallback: `varco.approve_request` with request_id `{request.request_id}`, "
             f"or `varco.reject_request`."

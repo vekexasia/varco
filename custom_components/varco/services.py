@@ -30,6 +30,10 @@ async def async_setup_services(hass) -> None:
     async def revoke(call):
         await _authority(hass).revoke_grant(call.data["grant_id"])
 
+    async def delete(call):
+        await _authority(hass).delete_grant(call.data["grant_id"])
+
     hass.services.async_register(DOMAIN, "approve_request", approve, schema=_SCHEMA_REQUEST)
     hass.services.async_register(DOMAIN, "reject_request", reject, schema=_SCHEMA_REQUEST)
     hass.services.async_register(DOMAIN, "revoke_grant", revoke, schema=_SCHEMA_GRANT)
+    hass.services.async_register(DOMAIN, "delete_grant", delete, schema=_SCHEMA_GRANT)

@@ -74,11 +74,12 @@ Copy the Authority ID exactly. It is the stable public key/fingerprint for this 
 
 In the current MVP, approval is atomic: the owner approves or rejects the whole manifest. The panel does not trim individual scopes. If a consumer asks for too much, reject it and have the consumer request a smaller manifest.
 
-## Revoke a grant
+## Revoke or delete a grant
+Open `/varco` and review the grant card. The card shows the consumer name, version, consumer key, grant ID, original request, creation date, status, and approved scopes.
 
-Open `/varco` and click **Revoke** next to the grant.
+Use **Revoke access** to keep the grant record but disable it. Revocation marks the grant as revoked inside Home Assistant. Active sessions for that consumer are marked closed and subsequent messages are rejected by the Authority.
 
-Revocation marks the grant as revoked inside Home Assistant. Active sessions for that consumer are marked closed and subsequent messages are rejected by the Authority.
+Use **Delete grant record** to remove the stored grant from the panel. Deleting an active grant also closes active sessions and future authentication fails because no grant exists.
 
 ## Service fallback
 
@@ -98,6 +99,12 @@ data:
 
 ```yaml
 service: varco.revoke_grant
+data:
+  grant_id: "GRANT_ID"
+```
+
+```yaml
+service: varco.delete_grant
 data:
   grant_id: "GRANT_ID"
 ```

@@ -16,3 +16,9 @@ revoke_grant:
       required: true
       selector:
         text:
+delete_grant:
+  fields:
+    grant_id:
+      required: true
+      selector:
+        text:

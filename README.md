@@ -104,5 +104,6 @@ Varco exposes service fallbacks for automation or manual service calls:
 - `varco.approve_request` with `request_id`
 - `varco.reject_request` with `request_id`
 - `varco.revoke_grant` with `grant_id`
+- `varco.delete_grant` with `grant_id`
 
 The admin panel is available at `/varco` after the integration is loaded.

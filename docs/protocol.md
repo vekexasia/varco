@@ -8,7 +8,7 @@ This document describes the implemented Varco MVP at a high level. It is intende
 |---|---|
 | Owner | The person who owns the Home Assistant instance and approves, rejects, or revokes access. |
 | Consumer | External app, dashboard, script, or browser client. It has its own keypair and self-declared manifest. |
-| Authority | The Home Assistant custom integration. It approves grants, enforces policy, executes Home Assistant calls, and stores audit data. |
+| Authority | The Home Assistant custom integration. It approves grants, revokes or deletes grants, enforces policy, executes Home Assistant calls, and stores audit data. |
 | Bridge | Cloudflare Worker plus Durable Object relay. It routes encrypted envelopes and does not enforce Home Assistant permissions. |
 
 ## Repository map
@@ -19,7 +19,7 @@ This document describes the implemented Varco MVP at a high level. It is intende
 | `custom_components/varco/relay.py` | Outbound Authority connection to the bridge and encrypted session handling. |
 | `custom_components/varco/policy.py` | Scope matching for entities and actions. |
 | `custom_components/varco/storage.py` | Access request, grant, and audit storage. |
-| `custom_components/varco/websocket_api.py` | Admin WebSocket API used by the `/varco` panel. |
+| `custom_components/varco/websocket_api.py` | Admin WebSocket API used by the `/varco` panel for info, approval, rejection, revocation, grant deletion, and audit. |
 | `custom_components/varco/frontend/panel.js` | Home Assistant admin panel. |
 | `bridge/src/index.ts` | Worker entrypoint, Durable Object room, relay routing, bridge auth, limits. |
 | `packages/client/src/client.ts` | Public TypeScript client API. |
