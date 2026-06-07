@@ -97,3 +97,44 @@ jobs:
           done
           echo "Home Assistant did not respond at $BASE" >&2
           exit 1
+
+      - name: Prepare Gazzetta demo grant
+        env:
+          HA_SHOWCASE_HOST: ${{ secrets.HA_SHOWCASE_HOST }}
+          HA_SHOWCASE_HTTP_PORT: ${{ secrets.HA_SHOWCASE_HTTP_PORT }}
+          HA_SHOWCASE_USERNAME: ${{ secrets.HA_SHOWCASE_USERNAME }}
+          HA_SHOWCASE_PASSWORD: ${{ secrets.HA_SHOWCASE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${HA_SHOWCASE_HOST:-}" ]; then
+            echo "HA_SHOWCASE_HOST not set; skipping Gazzetta demo grant."
+            exit 0
+          fi
+          HA_PORT="${HA_SHOWCASE_HTTP_PORT:-8123}"
+          if [ "$HA_PORT" = "80" ]; then
+            printf -v HA_URL '%s://%s' http "$HA_SHOWCASE_HOST"
+          else
+            printf -v HA_URL '%s://%s:%s' http "$HA_SHOWCASE_HOST" "$HA_PORT"
+          fi
+          export HA_URL
+          export HA_CLIENT_ID="http://localhost:8123/"
+          export HA_USERNAME="${HA_SHOWCASE_USERNAME:-test}"
+          export HA_PASSWORD="${HA_SHOWCASE_PASSWORD:-test}"
+          npm run dev:ha:gazzetta-demo
+          rm -rf .pi/gazzetta-demo-dist
+          mkdir -p .pi/gazzetta-demo-dist
+          cp examples/gazzetta-energy-showcase/dist/index.html examples/gazzetta-energy-showcase/dist/main.js .pi/gazzetta-demo-dist/
+
+      - name: Deploy Gazzetta demo to Cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            echo "CLOUDFLARE_API_TOKEN not set; skipping Gazzetta demo deploy."
+            exit 0
+          fi
+          npx wrangler deploy .pi/gazzetta-demo-dist --name varco-demo --compatibility-date 2026-06-07 --domain varco-demo.andreabaccega.com
+          curl -fsS https://varco-demo.andreabaccega.com/ >/dev/null
+          echo "Gazzetta demo responded at https://varco-demo.andreabaccega.com/"

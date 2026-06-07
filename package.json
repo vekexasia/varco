@@ -11,6 +11,7 @@
     "dev:ha:pair": "npm --workspace packages/client run build && node dev/home-assistant/tools/ha-varco.mjs pair",
     "dev:ha:delete-grant": "node dev/home-assistant/tools/ha-varco.mjs delete-grant",
     "dev:ha:smoke": "npm --workspace packages/client run build && node dev/home-assistant/tools/ha-varco.mjs smoke",
+    "dev:ha:gazzetta-demo": "npm --workspace packages/client run build && npm --workspace examples/gazzetta-energy-showcase run build && node dev/home-assistant/tools/prepare-gazzetta-demo.mjs && npm --workspace examples/gazzetta-energy-showcase run build",
     "dev:ha:tools:test": "node --test dev/home-assistant/tools/test/*.test.mjs"
   },
   "devDependencies": {

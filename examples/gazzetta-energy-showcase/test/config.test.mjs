@@ -16,8 +16,8 @@ test('showcase forces relay-only transport so browser never exposes P2P candidat
   assert.equal(FORCE_RELAY_ONLY, true);
 });
 
-test('showcase defaults to the local Home Assistant synthetic energy Authority', () => {
-  assert.equal(DEFAULT_AUTHORITY_ID, '_gZC49yjo_Iqq7vUacDNnzngZJ8QMjHalGiYT7i56cQ');
+test('showcase defaults to the remote Home Assistant synthetic energy Authority', () => {
+  assert.equal(DEFAULT_AUTHORITY_ID, '3j3rQeFlaFN1KOphZ2E4b7fFWoZSjF1A6KqgsntDhUg');
   assert.deepEqual(ENERGY_ENTITIES, {
     load: 'sensor.powerwall_load_w',
     solar: 'sensor.powerwall_solar_w',

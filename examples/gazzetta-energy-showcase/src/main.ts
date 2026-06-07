@@ -1,6 +1,6 @@
-import { createVarcoClient, type HassState, type VarcoClient } from "@varco/client";
-import { BRIDGE_URL, createReadOnlyManifest, DEFAULT_AUTHORITY_ID, ENERGY_ENTITIES, FORCE_RELAY_ONLY, READ_ENTITIES } from "./config.js";
-import { clearShowcaseGrant, loadShowcaseGrant, markShowcaseGrantApproved, savePendingShowcaseGrant } from "./grant-store.js";
+import { createVarcoClient, type HassState, type StorageLike, type VarcoClient } from "@varco/client";
+import { BRIDGE_URL, createReadOnlyManifest, DEFAULT_AUTHORITY_ID, DEMO_GRANT_BUNDLE, ENERGY_ENTITIES, FORCE_RELAY_ONLY, READ_ENTITIES } from "./config.js";
+import { clearShowcaseGrant, loadShowcaseGrant, markShowcaseGrantApproved, savePendingShowcaseGrant, SHOWCASE_GRANT_KEY, type ShowcaseGrantStorage } from "./grant-store.js";
 
 const app = document.getElementById("app")!;
 const values = new Map<string, HassState | null>();
@@ -10,7 +10,7 @@ let lastUpdate = "—";
 let transport = "Cloudflare relay · P2P disabled";
 let phase: "setup" | "pending" | "live" | "error" = "setup";
 let message = "";
-const grantStorage = window.localStorage;
+const grantStorage = createDemoStorage(window.localStorage);
 
 const css = `
 :root{--ink:#211b14;--ink-2:#4a4036;--muted:#8a7f70;--faint:#b6ac9c;--line:#d8cfbb;--line-2:#c7bca3;--paper:#f4efe1;--accent:#be5a38;--accent-deep:#9c4327;--accent-wash:#f3e4d8;--ok:#5f6b4f;--cool:#3a6ea5;--paper-dim:#e7dfcd;--serif-display:'Libre Caslon Display',Georgia,serif;--serif-body:'Newsreader',Georgia,serif;--label-font:'Spline Sans Mono',ui-monospace,monospace;}
@@ -72,6 +72,10 @@ function render(): void {
 
 function renderSetup(): string {
   const saved = loadShowcaseGrant(grantStorage, DEFAULT_AUTHORITY_ID);
+  if (DEMO_GRANT_BUNDLE) {
+    const text = phase === "error" ? message : "Demo grant embedded. Connecting relay-only stream…";
+    return `<section class="setup"><div class="box"><div class="kicker"><span>Live demo</span><span class="note">read-only</span></div><button id="connect">Connect relay-only</button><div class="status${phase === "error" ? " error" : ""}">${text}</div></div></section>`;
+  }
   const savedMessage = saved?.status === "approved"
     ? "Saved grant for this browser. Press Connect to resume the relay-only stream."
     : saved?.status === "pending"
@@ -98,6 +102,7 @@ function bind(): void {
 }
 
 function authorityId(): string {
+  if (DEMO_GRANT_BUNDLE) return DEMO_GRANT_BUNDLE.authorityId;
   return (document.getElementById("authority") as HTMLInputElement | null)?.value.trim() || DEFAULT_AUTHORITY_ID;
 }
 
@@ -109,6 +114,7 @@ function makeClient(): VarcoClient {
     webrtc: !FORCE_RELAY_ONLY,
     onTransportStatus: (status) => { transport = status.mode === "relay" ? "Cloudflare relay · P2P disabled" : "WebRTC P2P"; render(); },
     warn: console.warn,
+    storage: grantStorage,
   });
   return client;
 }
@@ -166,6 +172,13 @@ function applyStates(states: Record<string, HassState | null>): void {
   while (samples.length > 36) samples.shift();
   lastUpdate = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   if (phase === "live") render();
+}
+
+function createDemoStorage(storage: Storage): StorageLike & ShowcaseGrantStorage {
+  if (!DEMO_GRANT_BUNDLE) return storage;
+  storage.setItem("varco.consumerIdentity.v1", JSON.stringify(DEMO_GRANT_BUNDLE.identity));
+  storage.setItem(SHOWCASE_GRANT_KEY, JSON.stringify(DEMO_GRANT_BUNDLE.grant));
+  return storage;
 }
 
 async function openHistoryChart(entityId: string): Promise<void> {
@@ -274,3 +287,4 @@ function hhmm(date: Date): string {
 }
 
 render();
+if (DEMO_GRANT_BUNDLE) void connectLive();

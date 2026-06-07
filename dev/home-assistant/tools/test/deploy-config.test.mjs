@@ -22,3 +22,9 @@ test('showcase workflow can be triggered manually and verifies public URL plus V
   assert.match(workflow, /HA_SHOWCASE_PUBLIC_URL/);
   assert.match(workflow, /\$BASE\/varco/);
 });
+
+test('showcase workflow prepares and deploys the public Gazzetta demo after HA deploy', () => {
+  assert.match(workflow, /npm run dev:ha:gazzetta-demo/);
+  assert.match(workflow, /wrangler deploy \.pi\/gazzetta-demo-dist --name varco-demo/);
+  assert.match(workflow, /varco-demo\.andreabaccega\.com/);
+});
