@@ -69,6 +69,53 @@ http://127.0.0.1:8123/varco-showcase/energy
 
 Runtime Home Assistant storage under `dev/home-assistant/config/.storage/` is local state and must not be committed.
 
+### Varco local automation tools
+
+The development Home Assistant account is intentionally fixed for automation:
+
+```text
+HA_URL=http://127.0.0.1:8123
+HA_USERNAME=test
+HA_PASSWORD=test
+```
+
+The helper CLI in `dev/home-assistant/tools/` logs in through the real Home Assistant auth flow, uses the Home Assistant admin WebSocket API for approval/deletion, and uses `@varco/client` for the Varco data plane. It does not write Varco storage directly.
+
+List the local Authority, access requests, and grants:
+
+```bash
+npm run dev:ha:list
+```
+
+Run the end-to-end smoke loop:
+
+```bash
+npm run dev:ha:smoke
+```
+
+The smoke command builds `@varco/client`, creates a new consumer identity, requests access, approves it through `/varco` admin WebSocket commands, connects over the relay, reads `sensor.powerwall_load_w`, queries history, toggles `switch.ev_charger`, and deletes the smoke-test grant.
+
+Create and approve a reusable development grant without cleanup:
+
+```bash
+npm run dev:ha:pair
+```
+
+The pair command stores the development consumer identity in `.pi/varco-dev-consumer.json`, which is ignored by git.
+
+Manual approval/deletion helpers are also available:
+
+```bash
+npm run dev:ha:approve -- REQUEST_ID
+npm run dev:ha:delete-grant -- GRANT_ID
+```
+
+Run the tool unit tests:
+
+```bash
+npm run dev:ha:tools:test
+```
+
 ### Synthetic energy entities
 
 `examples/gazzetta-energy-showcase` expects these entities:

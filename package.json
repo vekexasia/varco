@@ -3,9 +3,15 @@
   "private": true,
   "workspaces": ["bridge", "packages/client", "examples/consumer-dashboard", "examples/gazzetta-energy-showcase"],
   "scripts": {
-    "test": "npm run test --workspaces --if-present && pytest -q tests",
+    "test": "npm run test --workspaces --if-present && npm run dev:ha:tools:test && pytest -q tests",
     "build": "npm run build --workspaces --if-present",
-    "check": "npm run check --workspaces --if-present"
+    "check": "npm run check --workspaces --if-present",
+    "dev:ha:list": "node dev/home-assistant/tools/ha-varco.mjs list",
+    "dev:ha:approve": "node dev/home-assistant/tools/ha-varco.mjs approve",
+    "dev:ha:pair": "npm --workspace packages/client run build && node dev/home-assistant/tools/ha-varco.mjs pair",
+    "dev:ha:delete-grant": "node dev/home-assistant/tools/ha-varco.mjs delete-grant",
+    "dev:ha:smoke": "npm --workspace packages/client run build && node dev/home-assistant/tools/ha-varco.mjs smoke",
+    "dev:ha:tools:test": "node --test dev/home-assistant/tools/test/*.test.mjs"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

@@ -27,3 +27,14 @@ http://127.0.0.1:8123/varco-showcase/energy
 ```
 
 Runtime Home Assistant storage under `config/.storage/` is local state and must not be committed.
+
+
+Useful automation commands from the repository root:
+
+```bash
+npm run dev:ha:list
+npm run dev:ha:smoke
+npm run dev:ha:pair
+npm run dev:ha:approve -- REQUEST_ID
+npm run dev:ha:delete-grant -- GRANT_ID
+```
