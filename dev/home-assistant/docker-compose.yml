@@ -4,7 +4,7 @@ services:
     container_name: varco-ha-showcase
     restart: unless-stopped
     ports:
-      - "8123:8123"
+      - "${HA_HTTP_PORT:-8123}:8123"
     environment:
       TZ: Europe/Rome
     volumes:

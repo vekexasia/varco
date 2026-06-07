@@ -36,7 +36,7 @@ test('loginToHomeAssistant uses the real Home Assistant auth flow and returns an
 
 test('HomeAssistantAdminClient authenticates and sends numbered WebSocket commands', async () => {
   const socket = new FakeWebSocket('ws://ignored');
-  const client = new HomeAssistantAdminClient({ url: 'http://ha.local:8123', token: 'token-1', WebSocketImpl: class { constructor(url) { socket.url = url; return socket; } } });
+  const client = new HomeAssistantAdminClient({ url: 'http://127.0.0.1:8123', token: 'token-1', WebSocketImpl: class { constructor(url) { socket.url = url; return socket; } } });
   const infoPromise = client.command('varco/info');
 
   socket.open();
@@ -48,7 +48,7 @@ test('HomeAssistantAdminClient authenticates and sends numbered WebSocket comman
   socket.receive({ id: 1, type: 'result', success: true, result: { authority_id: 'auth-1' } });
 
   assert.deepEqual(await infoPromise, { authority_id: 'auth-1' });
-  assert.equal(socket.url, 'ws://ha.local:8123/api/websocket');
+  assert.equal(socket.url, 'ws://127.0.0.1:8123/api/websocket');
 });
 
 class FakeWebSocket {

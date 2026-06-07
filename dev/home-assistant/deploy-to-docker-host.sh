@@ -3,7 +3,7 @@ set -euo pipefail
 
 if [[ $# -lt 1 || $# -gt 2 ]]; then
   echo "Usage: $0 SSH_TARGET [REMOTE_DIR]" >&2
-  echo "Example: $0 root@ha-showcase.example.com /opt/varco-ha-showcase" >&2
+  echo "Example: $0 ci-target /opt/varco-ha-showcase" >&2
   exit 2
 fi
 
@@ -23,29 +23,33 @@ if [[ -n "${SSH_PORT:-}" ]]; then
   export RSYNC_RSH="${RSYNC_RSH:-ssh -p $SSH_PORT}"
 fi
 
-ssh "${SSH_ARGS[@]}" "$SSH_TARGET" "mkdir -p '$REMOTE_DIR/config' '$REMOTE_DIR/custom_components'"
+ssh "${SSH_ARGS[@]}" "$SSH_TARGET" "mkdir -p '$REMOTE_DIR/config'"
 rsync -az --delete \
   --exclude '.storage/' \
   --exclude '.cloud/' \
+  --exclude '.cache/' \
   --exclude 'deps/' \
   --exclude 'www/' \
   --exclude '*.db' \
   --exclude '*.db-*' \
   --exclude 'home-assistant.log*' \
   "$SCRIPT_DIR/" "$SSH_TARGET:$REMOTE_DIR/"
+ssh "${SSH_ARGS[@]}" "$SSH_TARGET" "mkdir -p '$REMOTE_DIR/custom_components/varco'"
 rsync -az --delete "$REPO_ROOT/custom_components/varco/" "$SSH_TARGET:$REMOTE_DIR/custom_components/varco/"
 ssh "${SSH_ARGS[@]}" "$SSH_TARGET" "cat > '$REMOTE_DIR/.env' <<EOF
 VARCO_INTEGRATION_PATH=$REMOTE_DIR/custom_components/varco
+HA_HTTP_PORT=${HA_HTTP_PORT:-8123}
 EOF"
 
 ssh "${SSH_ARGS[@]}" "$SSH_TARGET" "cd '$REMOTE_DIR' && \
   if ! command -v docker >/dev/null 2>&1; then \
     SUDO=; command -v sudo >/dev/null 2>&1 && SUDO=sudo; \
     \$SUDO apt-get update; \
-    \$SUDO apt-get install -y ca-certificates curl docker.io docker-compose-plugin; \
+    \$SUDO apt-get install -y ca-certificates curl docker.io docker-compose-v2 || \$SUDO apt-get install -y ca-certificates curl docker.io docker-compose; \
     \$SUDO systemctl enable --now docker; \
   fi && \
-  docker compose up -d"
+  docker compose pull && \
+  docker compose up -d --force-recreate homeassistant"
 
 echo "Home Assistant showcase deployment started on $SSH_TARGET"
-echo "Open http://<container-or-host-ip>:8123"
+echo "Open http://<container-or-host-ip>:${HA_HTTP_PORT:-8123}"

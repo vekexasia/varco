@@ -174,12 +174,13 @@ The same development instance can be deployed to a Docker-capable VM or Proxmox 
 
 Recommended LXC shape:
 
-- Debian 12
+- Ubuntu 24.04 or Debian 12
 - 2 vCPU
 - 2 GB RAM
 - 16 GB disk
 - nesting enabled, so Docker can run inside the LXC
-- inbound TCP 8123 from your workstation, or SSH tunneling
+- public IPv6 address routed to the LXC
+- optional private IPv4 address plus host port-forward for SSH deploys
 - outbound HTTPS/WebSocket access for the Varco bridge
 
 Deploy manually:
@@ -188,7 +189,7 @@ Deploy manually:
 ./dev/home-assistant/deploy-to-docker-host.sh root@LXC_IP /opt/varco-ha-showcase
 ```
 
-The script copies the Home Assistant config plus the local Varco integration, installs Docker if missing, writes `.env` with the integration mount path, and runs `docker compose up -d` on the remote machine.
+The script copies the Home Assistant config plus the local Varco integration, installs Docker if missing, writes `.env` with the integration mount path and HTTP port, then runs `docker compose up -d --force-recreate homeassistant` so the latest custom integration code is loaded on every deploy.
 
 If the Home Assistant port is not public, tunnel it:
 
@@ -216,5 +217,6 @@ HA_SHOWCASE_PORT
 HA_SHOWCASE_REMOTE_DIR
 HA_SHOWCASE_PUBLIC_URL
 ```
+HA_SHOWCASE_HTTP_PORT
 
-The remote `.storage` directory is intentionally preserved across deploys so the Home Assistant admin user, Varco Authority ID, grants, and recorder history remain stable across code updates.
+The remote `.storage` directory is intentionally preserved across deploys so the Home Assistant admin user, Varco Authority ID, grants, and recorder history remain stable across code updates. The current Antimatter showcase LXC uses SSH port `2306`, remote directory `/opt/varco-ha-showcase`, and binds Home Assistant to port `80` for Cloudflare-compatible HTTP proxying.

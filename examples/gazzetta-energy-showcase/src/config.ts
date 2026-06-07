@@ -1,7 +1,7 @@
 import type { VarcoManifest } from "@varco/client";
 
 export const BRIDGE_URL = "wss://varco-bridge.vekexasia.workers.dev";
-export const DEFAULT_AUTHORITY_ID = "CiYmYZOIgwInwvoMdvewziE5QvY3FLdfqs-bjo3WXFA";
+export const DEFAULT_AUTHORITY_ID = "_gZC49yjo_Iqq7vUacDNnzngZJ8QMjHalGiYT7i56cQ";
 
 export const ENERGY_ENTITIES = {
   load: "sensor.powerwall_load_w",

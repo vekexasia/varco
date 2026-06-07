@@ -62,8 +62,8 @@ function render(): void {
   const rest = headline.slice(1);
 
   app.innerHTML = `<style>${css}</style><div class="page">
-    <header class="mast"><div class="mast-top"><span>Varco showcase</span><span>Relay only · IP protected</span></div><h1 class="flag">La&nbsp;Casa</h1><div class="mast-rule"><span>${day}</span><span>${gridLabel}</span><span>Energy</span></div><nav class="nav"><span>solar live</span></nav></header>
-    <section class="lead"><div class="kick">${now.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }).toUpperCase()} · READ ONLY</div><div class="byline">Varco · updated ${lastUpdate} · ${transport}</div><h2 class="headline"><span class="drop">${first}</span>${rest}</h2><p class="sub">Gazzetta-style showcase: read-only grant, no Home Assistant token in the browser, WebRTC disabled to avoid P2P candidates and IP disclosure.</p></section>
+    <header class="mast"><div class="mast-top"><span>Varco showcase</span><span>Relay only</span></div><h1 class="flag">La&nbsp;Casa</h1><div class="mast-rule"><span>${day}</span><span>${gridLabel}</span><span>Energy</span></div><nav class="nav"><span>solar live</span></nav></header>
+    <section class="lead"><div class="kick">${now.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }).toUpperCase()} · READ ONLY</div><div class="byline">Varco · updated ${lastUpdate} · ${transport}</div><h2 class="headline"><span class="drop">${first}</span>${rest}</h2><p class="sub">Gazzetta-style showcase: read-only grant, no Home Assistant token in the browser, relay transport by default.</p></section>
     ${phase !== "live" ? renderSetup() : renderLive()}
     <div class="foot">Varco · read-only grant · encrypted relay transport</div>
   </div>`;
