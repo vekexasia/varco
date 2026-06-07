@@ -1,0 +1,11 @@
+name = "varco-bridge"
+main = "src/index.ts"
+compatibility_date = "2026-06-07"
+
+[[durable_objects.bindings]]
+name = "AUTHORITY_ROOMS"
+class_name = "AuthorityRoom"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["AuthorityRoom"]

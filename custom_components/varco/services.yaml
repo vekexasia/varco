@@ -1,0 +1,18 @@
+approve_request:
+  fields:
+    request_id:
+      required: true
+      selector:
+        text:
+reject_request:
+  fields:
+    request_id:
+      required: true
+      selector:
+        text:
+revoke_grant:
+  fields:
+    grant_id:
+      required: true
+      selector:
+        text:

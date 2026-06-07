@@ -1,0 +1,11 @@
+{
+  "domain": "varco",
+  "name": "Varco",
+  "codeowners": ["@vekexasia"],
+  "config_flow": true,
+  "dependencies": ["http", "websocket_api", "persistent_notification"],
+  "documentation": "https://github.com/vekexasia/varco",
+  "iot_class": "cloud_push",
+  "requirements": ["cryptography>=42.0.0", "aiortc==1.14.0"],
+  "version": "0.1.0"
+}

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Varco Consumer Dashboard</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 2rem; background: #10151f; color: #f5f7fb; }
+      main { max-width: 720px; margin: 0 auto; }
+      input, button { font: inherit; padding: .65rem .8rem; border-radius: .6rem; border: 1px solid #334155; }
+      input { width: 100%; box-sizing: border-box; margin: .4rem 0 1rem; background: #0f172a; color: white; }
+      button { background: #38bdf8; color: #082f49; font-weight: 700; cursor: pointer; }
+      pre { background: #0f172a; border: 1px solid #334155; padding: 1rem; border-radius: .8rem; overflow: auto; }
+      .card { border: 1px solid #334155; border-radius: 1rem; padding: 1rem; margin: 1rem 0; background: #111827; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Varco demo dashboard</h1>
+      <p>Relay-first demo consumer. It never receives a Home Assistant token.</p>
+      <div class="card">
+        <label>Authority ID <input id="authority" placeholder="Authority public key" /></label>
+        <label>Bridge WebSocket URL <input id="bridge" value="wss://varco-bridge.vekexasia.workers.dev" /></label>
+        <label>Entity IDs <input id="entities" value="sensor.temp" /></label>
+        <button id="pair">Request access</button>
+        <button id="connect">Connect and load states</button>
+        <p id="transport" style="margin-top:1rem"><b>Transport:</b> not connected</p>
+      </div>
+      <pre id="log">Ready.</pre>
+    </main>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

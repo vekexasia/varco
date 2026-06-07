@@ -1,0 +1,165 @@
+import asyncio
+
+from custom_components.varco.authority import VarcoAuthority
+from custom_components.varco.crypto import generate_consumer_keypair, sign_access_request
+from custom_components.varco.storage import MemoryVarcoStore
+
+
+class FakeStates:
+    def __init__(self):
+        self.values = {
+            "sensor.temp": {"entity_id": "sensor.temp", "state": "21", "attributes": {"unit_of_measurement": "°C"}},
+            "light.cucina": {"entity_id": "light.cucina", "state": "off", "attributes": {}},
+            "camera.porta": {"entity_id": "camera.porta", "state": "idle", "attributes": {}},
+        }
+
+    def get(self, entity_id):
+        return self.values.get(entity_id)
+
+
+class FakeServices:
+    def __init__(self):
+        self.calls = []
+
+    async def async_call(self, domain, service, service_data, target=None, blocking=False):
+        self.calls.append((domain, service, service_data, target, blocking))
+
+
+class FakeHass:
+    def __init__(self):
+        self.states = FakeStates()
+        self.services = FakeServices()
+
+
+async def paired_authority(manifest):
+    store = MemoryVarcoStore()
+    hass = FakeHass()
+    authority = VarcoAuthority(store=store, hass=hass)
+    consumer = generate_consumer_keypair()
+    nonce = "nonce"
+    pending = await authority.handle_plaintext("s1", {
+        "type": "access_request",
+        "consumer_pk": consumer["public_key"],
+        "manifest": manifest,
+        "nonce": nonce,
+        "signature": sign_access_request(consumer["private_key"], nonce, manifest),
+    })
+    grant = await authority.approve_request(pending["request_id"])
+    auth = await authority.handle_plaintext("s1", {"type": "authenticate", "consumer_pk": consumer["public_key"]})
+    assert auth["type"] == "authenticated"
+    return authority, store, hass, grant
+
+
+def test_get_states_enforces_grant_and_redacts_audit_payloads():
+    async def run():
+        authority, store, _, _ = await paired_authority({"name": "Demo", "version": "1", "read_entities": ["sensor.temp"]})
+        ok = await authority.handle_plaintext("s1", {"type": "get_states", "request_id": "ok", "entity_ids": ["sensor.temp"]})
+        assert ok["type"] == "states"
+        assert ok["states"]["sensor.temp"]["state"] == "21"
+        denied = await authority.handle_plaintext("s1", {"type": "get_states", "request_id": "bad", "entity_ids": ["light.cucina"]})
+        assert denied["type"] == "error"
+        assert denied["code"] == "permission_denied"
+        audit = await store.async_audit_events()
+        assert audit[-1]["event"] == "permission_error"
+        assert "sensor.temp" not in str(audit[-1])
+        assert "light.cucina" not in str(audit[-1])
+    asyncio.run(run())
+
+
+def test_subscription_sends_initial_snapshot_then_only_authorized_deltas_until_unsubscribe():
+    async def run():
+        authority, _, _, _ = await paired_authority({"name": "Demo", "version": "1", "subscriptions": ["sensor.temp"]})
+        snap = await authority.handle_plaintext("s1", {"type": "subscribe_states", "entity_ids": ["sensor.temp"]})
+        assert snap["type"] == "state_snapshot"
+        sub_id = snap["subscription_id"]
+        events = await authority.state_changed("sensor.temp", {"entity_id": "sensor.temp", "state": "22", "attributes": {}})
+        assert events == [("s1", {"type": "state_delta", "subscription_id": sub_id, "states": {"sensor.temp": {"entity_id": "sensor.temp", "state": "22", "attributes": {}}}})]
+        await authority.handle_plaintext("s1", {"type": "unsubscribe_states", "subscription_id": sub_id})
+        assert await authority.state_changed("sensor.temp", {"entity_id": "sensor.temp", "state": "23", "attributes": {}}) == []
+    asyncio.run(run())
+
+
+def test_call_service_supports_three_action_scope_granularities_and_rejects_others():
+    async def run():
+        authority, _, hass, _ = await paired_authority({
+            "name": "Demo",
+            "version": "1",
+            "actions": ["light.turn_on@light.cucina", "switch.*", "*@cover.tenda"],
+        })
+        assert (await authority.handle_plaintext("s1", {"type": "call_service", "domain": "light", "service": "turn_on", "target": {"entity_id": "light.cucina"}}))["type"] == "service_called"
+        assert (await authority.handle_plaintext("s1", {"type": "call_service", "domain": "switch", "service": "turn_off", "target": {"entity_id": "switch.pc"}}))["type"] == "service_called"
+        assert (await authority.handle_plaintext("s1", {"type": "call_service", "domain": "cover", "service": "open_cover", "target": {"entity_id": "cover.tenda"}}))["type"] == "service_called"
+        denied = await authority.handle_plaintext("s1", {"type": "call_service", "domain": "lock", "service": "unlock", "target": {"entity_id": "lock.porta"}})
+        assert denied["code"] == "permission_denied"
+        assert len(hass.services.calls) == 3
+    asyncio.run(run())
+
+
+def test_history_camera_and_revocation_are_enforced_per_message():
+    async def run():
+        authority, _, _, grant = await paired_authority({
+            "name": "Demo",
+            "version": "1",
+            "history": ["sensor.temp"],
+            "camera_snapshots": ["camera.porta"],
+        })
+        assert (await authority.handle_plaintext("s1", {"type": "history_query", "entity_ids": ["sensor.temp"]}))["type"] == "history_result"
+        assert (await authority.handle_plaintext("s1", {"type": "camera_snapshot", "entity_id": "camera.porta"}))["type"] == "camera_snapshot"
+        await authority.revoke_grant(grant.grant_id)
+        rejected = await authority.handle_plaintext("s1", {"type": "history_query", "entity_ids": ["sensor.temp"]})
+        assert rejected["code"] == "grant_revoked"
+    asyncio.run(run())
+
+def test_webrtc_signaling_falls_back_to_relay_when_authority_has_no_peer_stack():
+    async def run():
+        authority, store, _, _ = await paired_authority({"name": "Demo", "version": "1", "read_entities": ["sensor.temp"]})
+        response = await authority.handle_plaintext("s1", {"type": "webrtc_offer", "sdp": "v=0"})
+        assert response["type"] == "webrtc_unavailable"
+        assert response["fallback"] == "relay"
+        assert (await store.async_audit_events())[-1]["event"] == "webrtc_fallback"
+    asyncio.run(run())
+
+class FakePeerStack:
+    def __init__(self):
+        self.calls = []
+        self.handler = None
+
+    async def create_answer(self, session_id, offer_sdp, handler):
+        self.calls.append((session_id, offer_sdp))
+        self.handler = handler
+        return {"sdp": "answer-sdp", "sdp_type": "answer"}
+
+
+def test_webrtc_offer_creates_peer_answer_and_datachannel_uses_same_authority_enforcement():
+    async def run():
+        peer_stack = FakePeerStack()
+        authority, _, _, _ = await paired_authority({"name": "Demo", "version": "1", "read_entities": ["sensor.temp"]})
+        authority.peer_stack = peer_stack
+        answer = await authority.handle_plaintext("s1", {"type": "webrtc_offer", "request_id": "rtc1", "sdp": "offer-sdp"})
+        assert answer == {"type": "webrtc_answer", "request_id": "rtc1", "sdp": "answer-sdp", "sdp_type": "answer", "transport": "p2p"}
+        assert peer_stack.calls == [("s1", "offer-sdp")]
+        states = await peer_stack.handler({"type": "get_states", "request_id": "dc1", "entity_ids": ["sensor.temp"]})
+        assert states["type"] == "states"
+        assert states["states"]["sensor.temp"]["state"] == "21"
+    asyncio.run(run())
+
+def test_read_scope_domain_wildcard_allows_matching_entities_and_rejects_other_domains():
+    async def run():
+        authority, _, _, _ = await paired_authority({"name": "Demo", "version": "1", "read_entities": ["sensor.*"], "subscriptions": ["sensor.*"]})
+        ok = await authority.handle_plaintext("s1", {"type": "get_states", "entity_ids": ["sensor.temp"]})
+        assert ok["type"] == "states"
+        assert ok["states"]["sensor.temp"]["state"] == "21"
+        snap = await authority.handle_plaintext("s1", {"type": "subscribe_states", "entity_ids": ["sensor.temp"]})
+        assert snap["type"] == "state_snapshot"
+        denied = await authority.handle_plaintext("s1", {"type": "get_states", "entity_ids": ["light.cucina"]})
+        assert denied["code"] == "permission_denied"
+    asyncio.run(run())
+
+def test_get_states_can_request_domain_wildcard_and_expands_to_matching_authorized_entities():
+    async def run():
+        authority, _, _, _ = await paired_authority({"name": "Demo", "version": "1", "read_entities": ["sensor.*"]})
+        ok = await authority.handle_plaintext("s1", {"type": "get_states", "entity_ids": ["sensor.*"]})
+        assert ok["type"] == "states"
+        assert "sensor.temp" in ok["states"]
+        assert "light.cucina" not in ok["states"]
+    asyncio.run(run())

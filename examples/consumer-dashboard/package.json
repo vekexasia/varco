@@ -1,0 +1,16 @@
+{
+  "name": "@varco/consumer-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/main.ts --bundle --format=esm --outfile=dist/main.js && cp index.html dist/index.html",
+    "test": "npm run build && test -f dist/main.js"
+  },
+  "dependencies": {
+    "@varco/client": "file:../../packages/client"
+  },
+  "devDependencies": {
+    "esbuild": "^0.27.0"
+  }
+}

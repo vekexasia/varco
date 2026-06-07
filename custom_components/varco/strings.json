@@ -1,0 +1,17 @@
+{
+  "title": "Varco",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Varco Authority",
+        "data": {
+          "bridge_ws_url": "Bridge WebSocket URL",
+          "client_base_url": "Client base URL"
+        }
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Only one Varco Authority can be configured."
+    }
+  }
+}

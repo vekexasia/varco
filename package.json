@@ -1,0 +1,13 @@
+{
+  "name": "varco",
+  "private": true,
+  "workspaces": ["bridge", "packages/client", "examples/consumer-dashboard"],
+  "scripts": {
+    "test": "npm run test --workspaces --if-present && pytest -q tests",
+    "build": "npm run build --workspaces --if-present",
+    "check": "npm run check --workspaces --if-present"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}
