@@ -1,3 +1,5 @@
+![Varco header](docs/assets/header.png)
+
 # Varco
 
 Varco is a relay-first access layer for Home Assistant. It lets an external consumer, such as a dashboard, script, or agent-facing app, request narrowly scoped access to Home Assistant without receiving a Home Assistant token and without exposing Home Assistant directly to the internet.
