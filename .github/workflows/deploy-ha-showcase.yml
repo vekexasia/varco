@@ -40,7 +40,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install Python test dependencies
-        run: python -m pip install pytest
+        run: python -m pip install pytest cryptography
 
       - name: Install deploy tools
         run: sudo apt-get update && sudo apt-get install -y openssh-client rsync curl
