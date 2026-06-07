@@ -10,6 +10,18 @@ Home Assistant acts as the **Authority**. It keeps the long-lived credentials, a
 
 Varco is an early MVP/prototype. The core pieces in this repository are implemented and covered by tests, but the API and grant model may still change.
 
+
+## Live demo
+
+Open the Gazzetta-style energy dashboard: [`varco-demo.andreabaccega.com`](https://varco-demo.andreabaccega.com/). It is a running browser demo and should load live energy data without pairing or login.
+
+The demo is a browser-only consumer backed by a synthetic Home Assistant showcase instance. It connects through Varco with a pre-approved read-only grant for only the energy entities used by the dashboard. The browser does not receive a Home Assistant token; Varco still routes through the relay and the Home Assistant Authority enforces the grant.
+
+Related demo endpoints:
+
+- Home Assistant showcase: [`varco-ha.andreabaccega.com`](https://varco-ha.andreabaccega.com/)
+- Varco Authority panel: [`varco-ha.andreabaccega.com/varco`](https://varco-ha.andreabaccega.com/varco)
+
 ## What is in this repository?
 
 - `custom_components/varco/`: Home Assistant custom integration. It provides the Authority, consent storage, grant enforcement, audit events, a `/varco` admin panel, and Home Assistant services.
