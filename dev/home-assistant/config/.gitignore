@@ -1,0 +1,17 @@
+# Home Assistant runtime files
+.storage/
+.cloud/
+.cache/
+blueprints/
+deps/
+www/
+*.db
+*.db-*
+home-assistant.log*
+.homeassistant*
+.HA_VERSION
+.ha_run.lock
+automations.yaml
+scenes.yaml
+scripts.yaml
+secrets.yaml

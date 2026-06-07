@@ -6,7 +6,7 @@
         "title": "Varco Authority",
         "data": {
           "bridge_ws_url": "Bridge WebSocket URL",
-          "client_base_url": "Client base URL"
+          "webrtc_enabled": "Enable WebRTC"
         }
       }
     },

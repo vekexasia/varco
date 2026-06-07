@@ -1,0 +1,74 @@
+name: Deploy Home Assistant showcase
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - "custom_components/varco/**"
+      - "dev/home-assistant/**"
+      - ".github/workflows/deploy-ha-showcase.yml"
+
+concurrency:
+  group: ha-showcase-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install deploy tools
+        run: sudo apt-get update && sudo apt-get install -y openssh-client rsync
+
+      - name: Configure SSH
+        env:
+          HA_SHOWCASE_HOST: ${{ secrets.HA_SHOWCASE_HOST }}
+          HA_SHOWCASE_PORT: ${{ secrets.HA_SHOWCASE_PORT }}
+          HA_SHOWCASE_SSH_KEY: ${{ secrets.HA_SHOWCASE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$HA_SHOWCASE_HOST"
+          test -n "$HA_SHOWCASE_SSH_KEY"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$HA_SHOWCASE_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -p "${HA_SHOWCASE_PORT:-22}" "$HA_SHOWCASE_HOST" >> ~/.ssh/known_hosts
+
+      - name: Deploy Home Assistant showcase
+        env:
+          HA_SHOWCASE_HOST: ${{ secrets.HA_SHOWCASE_HOST }}
+          HA_SHOWCASE_USER: ${{ secrets.HA_SHOWCASE_USER }}
+          HA_SHOWCASE_PORT: ${{ secrets.HA_SHOWCASE_PORT }}
+          HA_SHOWCASE_REMOTE_DIR: ${{ secrets.HA_SHOWCASE_REMOTE_DIR }}
+        run: |
+          set -euo pipefail
+          export SSH_PORT="${HA_SHOWCASE_PORT:-22}"
+          SSH_USER="${HA_SHOWCASE_USER:-root}"
+          REMOTE_DIR="${HA_SHOWCASE_REMOTE_DIR:-/opt/varco-ha-showcase}"
+          ./dev/home-assistant/deploy-to-docker-host.sh "$SSH_USER@$HA_SHOWCASE_HOST" "$REMOTE_DIR"
+
+      - name: Verify Home Assistant HTTP
+        env:
+          HA_SHOWCASE_PUBLIC_URL: ${{ secrets.HA_SHOWCASE_PUBLIC_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${HA_SHOWCASE_PUBLIC_URL:-}" ]; then
+            echo "HA_SHOWCASE_PUBLIC_URL not set; skipping public HTTP verification."
+            exit 0
+          fi
+          for i in $(seq 1 60); do
+            if curl -fsS "$HA_SHOWCASE_PUBLIC_URL" >/dev/null; then
+              echo "Home Assistant responded at $HA_SHOWCASE_PUBLIC_URL"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Home Assistant did not respond at $HA_SHOWCASE_PUBLIC_URL" >&2
+          exit 1

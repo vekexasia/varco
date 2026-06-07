@@ -1,0 +1,12 @@
+services:
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:${HOME_ASSISTANT_VERSION:-2026.6.1}
+    container_name: varco-ha-showcase
+    restart: unless-stopped
+    ports:
+      - "8123:8123"
+    environment:
+      TZ: Europe/Rome
+    volumes:
+      - ./config:/config
+      - ${VARCO_INTEGRATION_PATH:-../../custom_components/varco}:/config/custom_components/varco:ro

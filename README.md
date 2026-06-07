@@ -89,31 +89,13 @@ Full client guide: [`docs/consumer-integration.md`](docs/consumer-integration.md
 - [`docs/home-assistant.md`](docs/home-assistant.md): install, configure, approve, reject, revoke, and troubleshoot from Home Assistant.
 - [`docs/consumer-integration.md`](docs/consumer-integration.md): integrate a browser consumer with `@varco/client`.
 - [`docs/protocol.md`](docs/protocol.md): actors, relay flow, encryption boundaries, messages, and security invariants.
+- [`docs/development.md`](docs/development.md): repository development commands, local Home Assistant dev instance, and remote showcase deployment.
 - [`AGENTS.md`](AGENTS.md): LLM-friendly project guide for coding agents working in this repository.
 - [`llms.txt`](llms.txt): compact index for LLM tools and retrieval systems.
 
-## Verified deployment
+## Development
 
-- Public bridge: `https://varco-bridge.vekexasia.workers.dev`
-- Demo dashboard: `https://master.varco-dashboard-5qy.pages.dev`
-- HA static demo used during development: `http://192.168.1.47:8123/local/varco/index.html`
-
-## Development commands
-
-```bash
-npm test
-npm run build
-npm run check
-pytest -q tests
-```
-
-Package-level commands are also available in each workspace, for example:
-
-```bash
-npm --workspace bridge run test
-npm --workspace packages/client run test
-npm --workspace examples/consumer-dashboard run build
-```
+Development-only setup and commands are kept in [`docs/development.md`](docs/development.md).
 
 ## Home Assistant services
 

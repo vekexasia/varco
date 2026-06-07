@@ -30,7 +30,7 @@ class VarcoRelay:
         self.hass = hass
         self.entry_data = entry_data
         self.store = store
-        self.peer_stack = create_peer_stack_or_none()
+        self.peer_stack = create_peer_stack_or_none() if entry_data.get("webrtc_enabled", False) else None
         self.authority = VarcoAuthority(store=store, hass=hass, notify_owner=self._notify_owner, peer_stack=self.peer_stack)
         self.authority_id = entry_data["authority_id"]
         self.private_key = entry_data["private_key"]
@@ -44,7 +44,8 @@ class VarcoRelay:
 
     async def async_start(self) -> None:
         self._stop_event.clear()
-        self._task = self.hass.async_create_task(self._run(), "varco_relay")
+        create_task = getattr(self.hass, "async_create_background_task", self.hass.async_create_task)
+        self._task = create_task(self._run(), "varco_relay")
         if self._state_unsub is None:
             self._state_unsub = self.hass.bus.async_listen("state_changed", self._on_state_changed)
 

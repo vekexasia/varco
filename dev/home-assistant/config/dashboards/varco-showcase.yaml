@@ -1,0 +1,151 @@
+title: Varco Showcase
+views:
+  - title: Energy
+    path: energy
+    icon: mdi:solar-power
+    cards:
+      - type: markdown
+        content: |
+          # Varco Showcase Home
+
+          Synthetic Home Assistant data for the Varco README and consumer dashboard.
+
+          The browser consumer receives only the approved Varco grant. It never receives a Home Assistant token.
+
+      - type: grid
+        columns: 2
+        square: false
+        cards:
+          - type: gauge
+            entity: sensor.powerwall_solar_w
+            name: Solar production
+            min: 0
+            max: 6500
+            needle: true
+            severity:
+              green: 2600
+              yellow: 900
+              red: 0
+          - type: gauge
+            entity: sensor.powerwall_load_w
+            name: House load
+            min: 0
+            max: 9000
+            needle: true
+            severity:
+              green: 0
+              yellow: 2200
+              red: 5200
+          - type: gauge
+            entity: sensor.powerwall_charge
+            name: Battery charge
+            min: 0
+            max: 100
+            needle: true
+            severity:
+              red: 0
+              yellow: 25
+              green: 60
+          - type: sensor
+            entity: sensor.powerwall_site_w
+            name: Grid import/export
+            graph: line
+
+      - type: entities
+        title: Varco energy entities
+        show_header_toggle: false
+        entities:
+          - entity: sensor.powerwall_load_w
+            name: House load
+          - entity: sensor.powerwall_solar_w
+            name: Solar production
+          - entity: sensor.powerwall_site_w
+            name: Grid import/export
+          - entity: sensor.powerwall_battery_w
+            name: Battery charge/discharge power
+          - entity: sensor.powerwall_charge
+            name: Battery state of charge
+          - entity: switch.ev_charger
+            name: EV charger load toggle
+          - entity: sensor.ev_charge
+            name: EV battery
+
+      - type: history-graph
+        title: Synthetic energy history
+        hours_to_show: 24
+        refresh_interval: 30
+        entities:
+          - sensor.powerwall_load_w
+          - sensor.powerwall_solar_w
+          - sensor.powerwall_site_w
+          - sensor.powerwall_battery_w
+          - sensor.powerwall_charge
+
+  - title: Home
+    path: home
+    icon: mdi:home-variant
+    cards:
+      - type: markdown
+        content: |
+          # Growth fixtures
+
+          These are safe synthetic entities for future Varco examples: read-only widgets, live subscriptions, and narrowly scoped service-call actions.
+
+      - type: entities
+        title: Lights and controllable switches
+        show_header_toggle: false
+        entities:
+          - entity: light.kitchen_pendants
+            name: Kitchen pendants
+          - entity: light.living_room_lamps
+            name: Living room lamps
+          - entity: light.studio_desk
+            name: Studio desk
+          - entity: light.garden_string_lights
+            name: Garden string lights
+          - entity: switch.coffee_machine
+            name: Coffee machine
+          - entity: switch.ev_charger
+            name: EV charger
+
+      - type: grid
+        columns: 2
+        square: false
+        cards:
+          - type: sensor
+            entity: sensor.outdoor_temperature
+            name: Outdoor temperature
+            graph: line
+          - type: sensor
+            entity: sensor.living_room_temperature
+            name: Living room temperature
+            graph: line
+          - type: sensor
+            entity: sensor.living_room_humidity
+            name: Living room humidity
+            graph: line
+          - type: sensor
+            entity: sensor.air_quality_co2
+            name: CO2
+            graph: line
+
+      - type: entities
+        title: Occupancy and doors
+        show_header_toggle: false
+        entities:
+          - entity: binary_sensor.front_door
+            name: Front door
+          - entity: binary_sensor.kitchen_motion
+            name: Kitchen motion
+          - entity: binary_sensor.garage_door
+            name: Garage door
+
+      - type: history-graph
+        title: Comfort history
+        hours_to_show: 12
+        refresh_interval: 30
+        entities:
+          - sensor.outdoor_temperature
+          - sensor.living_room_temperature
+          - sensor.living_room_humidity
+          - sensor.air_quality_co2

@@ -1,0 +1,429 @@
+input_number:
+  varco_powerwall_load_w:
+    name: Varco Powerwall Load W Raw
+    min: 0
+    max: 9000
+    step: 1
+    mode: box
+  varco_powerwall_solar_w:
+    name: Varco Powerwall Solar W Raw
+    min: 0
+    max: 9000
+    step: 1
+    mode: box
+  varco_powerwall_site_w:
+    name: Varco Powerwall Site W Raw
+    min: -9000
+    max: 9000
+    step: 1
+    mode: box
+  varco_powerwall_battery_w:
+    name: Varco Powerwall Battery W Raw
+    min: -6000
+    max: 6000
+    step: 1
+    mode: box
+  varco_powerwall_charge:
+    name: Varco Powerwall Charge Raw
+    min: 5
+    max: 100
+    step: 0.1
+    mode: box
+    initial: 58
+  varco_outdoor_temperature:
+    name: Varco Outdoor Temperature Raw
+    min: -10
+    max: 42
+    step: 0.1
+    mode: box
+  varco_indoor_temperature:
+    name: Varco Indoor Temperature Raw
+    min: 12
+    max: 32
+    step: 0.1
+    mode: box
+  varco_indoor_humidity:
+    name: Varco Indoor Humidity Raw
+    min: 20
+    max: 80
+    step: 1
+    mode: box
+  varco_air_quality_co2:
+    name: Varco Air Quality CO2 Raw
+    min: 380
+    max: 1800
+    step: 1
+    mode: box
+  varco_ev_charge:
+    name: Varco EV Charge Raw
+    min: 5
+    max: 100
+    step: 0.1
+    mode: box
+    initial: 46
+  varco_kitchen_light_level:
+    name: Varco Kitchen Light Level
+    min: 0
+    max: 255
+    step: 1
+    mode: slider
+    initial: 155
+  varco_living_room_light_level:
+    name: Varco Living Room Light Level
+    min: 0
+    max: 255
+    step: 1
+    mode: slider
+    initial: 90
+  varco_studio_light_level:
+    name: Varco Studio Light Level
+    min: 0
+    max: 255
+    step: 1
+    mode: slider
+    initial: 0
+  varco_garden_light_level:
+    name: Varco Garden Light Level
+    min: 0
+    max: 255
+    step: 1
+    mode: slider
+    initial: 0
+
+input_boolean:
+  varco_ev_charger:
+    name: Varco EV Charger Raw
+    icon: mdi:ev-station
+  varco_coffee_machine:
+    name: Varco Coffee Machine Raw
+    icon: mdi:coffee-maker
+
+# Energy signs follow Tesla-style conventions used by the showcase:
+# battery < 0 means charging, battery > 0 means discharging,
+# site < 0 means exporting to the grid, site > 0 means importing.
+template:
+  - light:
+      - name: Kitchen Pendants
+        unique_id: varco_demo_kitchen_pendants
+        icon: mdi:ceiling-light-multiple
+        level: "{{ states('input_number.varco_kitchen_light_level') | int(0) }}"
+        state: "{{ states('input_number.varco_kitchen_light_level') | int(0) > 0 }}"
+        turn_on:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.varco_kitchen_light_level
+            data:
+              value: 180
+        turn_off:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.varco_kitchen_light_level
+            data:
+              value: 0
+        set_level:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.varco_kitchen_light_level
+            data:
+              value: "{{ brightness }}"
+      - name: Living Room Lamps
+        unique_id: varco_demo_living_room_lamps
+        icon: mdi:floor-lamp
+        level: "{{ states('input_number.varco_living_room_light_level') | int(0) }}"
+        state: "{{ states('input_number.varco_living_room_light_level') | int(0) > 0 }}"
+        turn_on:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.varco_living_room_light_level
+            data:
+              value: 140
+        turn_off:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.varco_living_room_light_level
+            data:
+              value: 0
+        set_level:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.varco_living_room_light_level
+            data:
+              value: "{{ brightness }}"
+      - name: Studio Desk
+        unique_id: varco_demo_studio_desk
+        icon: mdi:desk-lamp
+        level: "{{ states('input_number.varco_studio_light_level') | int(0) }}"
+        state: "{{ states('input_number.varco_studio_light_level') | int(0) > 0 }}"
+        turn_on:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.varco_studio_light_level
+            data:
+              value: 210
+        turn_off:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.varco_studio_light_level
+            data:
+              value: 0
+        set_level:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.varco_studio_light_level
+            data:
+              value: "{{ brightness }}"
+      - name: Garden String Lights
+        unique_id: varco_demo_garden_string_lights
+        icon: mdi:string-lights
+        level: "{{ states('input_number.varco_garden_light_level') | int(0) }}"
+        state: "{{ states('input_number.varco_garden_light_level') | int(0) > 0 }}"
+        turn_on:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.varco_garden_light_level
+            data:
+              value: 170
+        turn_off:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.varco_garden_light_level
+            data:
+              value: 0
+        set_level:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.varco_garden_light_level
+            data:
+              value: "{{ brightness }}"
+  - switch:
+      - name: EV Charger
+        unique_id: varco_demo_ev_charger
+        icon: mdi:ev-station
+        state: "{{ is_state('input_boolean.varco_ev_charger', 'on') }}"
+        turn_on:
+          - action: input_boolean.turn_on
+            target:
+              entity_id: input_boolean.varco_ev_charger
+        turn_off:
+          - action: input_boolean.turn_off
+            target:
+              entity_id: input_boolean.varco_ev_charger
+      - name: Coffee Machine
+        unique_id: varco_demo_coffee_machine
+        icon: mdi:coffee-maker
+        state: "{{ is_state('input_boolean.varco_coffee_machine', 'on') }}"
+        turn_on:
+          - action: input_boolean.turn_on
+            target:
+              entity_id: input_boolean.varco_coffee_machine
+        turn_off:
+          - action: input_boolean.turn_off
+            target:
+              entity_id: input_boolean.varco_coffee_machine
+  - sensor:
+      - name: Powerwall Load W
+        unique_id: varco_demo_powerwall_load_w
+        icon: mdi:home-lightning-bolt
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        state: "{{ states('input_number.varco_powerwall_load_w') | float(0) | round(0) }}"
+      - name: Powerwall Solar W
+        unique_id: varco_demo_powerwall_solar_w
+        icon: mdi:solar-power
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        state: "{{ states('input_number.varco_powerwall_solar_w') | float(0) | round(0) }}"
+      - name: Powerwall Site W
+        unique_id: varco_demo_powerwall_site_w
+        icon: mdi:transmission-tower
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        state: "{{ states('input_number.varco_powerwall_site_w') | float(0) | round(0) }}"
+      - name: Powerwall Battery W
+        unique_id: varco_demo_powerwall_battery_w
+        icon: mdi:home-battery
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        state: "{{ states('input_number.varco_powerwall_battery_w') | float(0) | round(0) }}"
+      - name: Powerwall Charge
+        unique_id: varco_demo_powerwall_charge
+        icon: mdi:battery-charging-70
+        unit_of_measurement: "%"
+        device_class: battery
+        state_class: measurement
+        state: "{{ states('input_number.varco_powerwall_charge') | float(0) | round(1) }}"
+      - name: Outdoor Temperature
+        unique_id: varco_demo_outdoor_temperature
+        icon: mdi:thermometer
+        unit_of_measurement: °C
+        device_class: temperature
+        state_class: measurement
+        state: "{{ states('input_number.varco_outdoor_temperature') | float(0) | round(1) }}"
+      - name: Living Room Temperature
+        unique_id: varco_demo_living_room_temperature
+        icon: mdi:home-thermometer
+        unit_of_measurement: °C
+        device_class: temperature
+        state_class: measurement
+        state: "{{ states('input_number.varco_indoor_temperature') | float(0) | round(1) }}"
+      - name: Living Room Humidity
+        unique_id: varco_demo_living_room_humidity
+        icon: mdi:water-percent
+        unit_of_measurement: "%"
+        device_class: humidity
+        state_class: measurement
+        state: "{{ states('input_number.varco_indoor_humidity') | float(0) | round(0) }}"
+      - name: Air Quality CO2
+        unique_id: varco_demo_air_quality_co2
+        icon: mdi:molecule-co2
+        unit_of_measurement: ppm
+        device_class: carbon_dioxide
+        state_class: measurement
+        state: "{{ states('input_number.varco_air_quality_co2') | float(0) | round(0) }}"
+      - name: EV Charge
+        unique_id: varco_demo_ev_charge
+        icon: mdi:car-electric
+        unit_of_measurement: "%"
+        device_class: battery
+        state_class: measurement
+        state: "{{ states('input_number.varco_ev_charge') | float(0) | round(1) }}"
+  - binary_sensor:
+      - name: Front Door
+        unique_id: varco_demo_front_door
+        device_class: door
+        state: >-
+          {% set minute = now().hour * 60 + now().minute %}
+          {{ 455 <= minute <= 462 or 1115 <= minute <= 1122 or 1240 <= minute <= 1243 }}
+      - name: Kitchen Motion
+        unique_id: varco_demo_kitchen_motion
+        device_class: motion
+        state: >-
+          {% set minute = now().hour * 60 + now().minute %}
+          {{ 390 <= minute <= 510 or 720 <= minute <= 795 or 1080 <= minute <= 1320 }}
+      - name: Garage Door
+        unique_id: varco_demo_garage_door
+        device_class: garage_door
+        state: >-
+          {% set minute = now().hour * 60 + now().minute %}
+          {{ 470 <= minute <= 478 or 1090 <= minute <= 1098 }}
+
+automation:
+  - id: varco_showcase_update_synthetic_home
+    alias: Varco showcase update synthetic home
+    mode: single
+    trigger:
+      - platform: homeassistant
+        event: start
+      - platform: time_pattern
+        seconds: "/15"
+    action:
+      - variables:
+          minute: "{{ now().hour * 60 + now().minute + (now().second / 60) }}"
+          month: "{{ now().month }}"
+          daylight_phase: >-
+            {% if 390 <= minute | float <= 1230 %}
+              {{ (minute | float - 390) / 840 }}
+            {% else %}
+              0
+            {% endif %}
+          solar_shape: >-
+            {% if 390 <= minute | float <= 1230 %}
+              {{ 1 - ((((daylight_phase | float) - 0.5) | abs) * 2) }}
+            {% else %}
+              0
+            {% endif %}
+          cloud_factor: "{{ [0.62, 0.74, 0.83, 0.92, 0.98, 1.0, 1.0] | random }}"
+          seasonal_base: >-
+            {% if month | int in [6, 7, 8] %}22
+            {% elif month | int in [3, 4, 5, 9, 10] %}14
+            {% else %}7
+            {% endif %}
+          outdoor_temp: "{{ (seasonal_base | float + (10 * solar_shape | float) + ((range(-8, 9) | random) / 10)) | round(1) }}"
+          morning_load: "{{ 950 if 390 <= minute | float <= 520 else 0 }}"
+          workday_load: "{{ 420 if 540 <= minute | float <= 1020 else 0 }}"
+          lunch_load: "{{ 650 if 720 <= minute | float <= 810 else 0 }}"
+          dinner_load: "{{ 1250 if 1080 <= minute | float <= 1260 else 0 }}"
+          evening_load: "{{ 720 if 1020 <= minute | float <= 1380 else 0 }}"
+          hvac_load: "{{ 520 if outdoor_temp | float > 28 or outdoor_temp | float < 8 else 180 }}"
+          ev_load: "{{ 7400 if is_state('switch.ev_charger', 'on') else 0 }}"
+          coffee_load: "{{ 1100 if is_state('switch.coffee_machine', 'on') else 0 }}"
+          load_w: "{{ (430 + morning_load | float + workday_load | float + lunch_load | float + dinner_load | float + evening_load | float + hvac_load | float + ev_load | float + coffee_load | float + (range(-85, 115) | random)) | round(0) }}"
+          solar_w: >-
+            {% if 390 <= minute | float <= 1230 %}
+              {{ ([0, (6300 * solar_shape | float * cloud_factor | float) + (range(-120, 160) | random)] | max) | round(0) }}
+            {% else %}
+              0
+            {% endif %}
+          previous_charge: "{{ states('input_number.varco_powerwall_charge') | float(58) }}"
+          surplus: "{{ solar_w | float - load_w | float }}"
+          battery_w: >-
+            {% if surplus | float > 550 and previous_charge | float < 96 %}
+              {{ ([-3300, (surplus | float * -0.72)] | max) | round(0) }}
+            {% elif surplus | float < -350 and previous_charge | float > 12 %}
+              {{ ([3300, ((0 - surplus | float) * 0.58)] | min) | round(0) }}
+            {% else %}
+              {{ range(-35, 36) | random }}
+            {% endif %}
+          site_w: "{{ (load_w | float - solar_w | float - battery_w | float) | round(0) }}"
+          charge_delta: "{{ (((0 - battery_w | float) / 1000) * (15 / 3600) / 13.5 * 100 * 0.94) }}"
+          next_charge: "{{ ([8, ([98, previous_charge | float + charge_delta | float] | min)] | max) | round(1) }}"
+          indoor_temp: "{{ (20.8 + ((outdoor_temp | float - 18) * 0.07) + ((range(-4, 5) | random) / 10)) | round(1) }}"
+          humidity: "{{ ([35, ([68, 47 + (6 if 390 <= minute | float <= 520 else 0) + (range(-4, 5) | random)] | min)] | max) | round(0) }}"
+          co2: "{{ (430 + (280 if 390 <= minute | float <= 520 else 0) + (180 if 1080 <= minute | float <= 1320 else 0) + (range(-20, 35) | random)) | round(0) }}"
+          previous_ev_charge: "{{ states('input_number.varco_ev_charge') | float(46) }}"
+          ev_delta: "{{ 0.041 if is_state('switch.ev_charger', 'on') else -0.004 }}"
+          next_ev_charge: "{{ ([12, ([92, previous_ev_charge | float + ev_delta | float] | min)] | max) | round(1) }}"
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.varco_powerwall_load_w
+        data:
+          value: "{{ load_w }}"
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.varco_powerwall_solar_w
+        data:
+          value: "{{ solar_w }}"
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.varco_powerwall_battery_w
+        data:
+          value: "{{ battery_w }}"
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.varco_powerwall_site_w
+        data:
+          value: "{{ site_w }}"
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.varco_powerwall_charge
+        data:
+          value: "{{ next_charge }}"
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.varco_outdoor_temperature
+        data:
+          value: "{{ outdoor_temp }}"
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.varco_indoor_temperature
+        data:
+          value: "{{ indoor_temp }}"
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.varco_indoor_humidity
+        data:
+          value: "{{ humidity }}"
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.varco_air_quality_co2
+        data:
+          value: "{{ co2 }}"
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.varco_ev_charge
+        data:
+          value: "{{ next_ev_charge }}"

@@ -1,0 +1,34 @@
+# Deliberately smaller than default_config to keep the public demo quiet and deterministic.
+frontend:
+history:
+http:
+logbook:
+onboarding:
+recorder:
+system_log:
+websocket_api:
+homeassistant:
+  name: Varco Showcase Home
+  country: IT
+  time_zone: Europe/Rome
+  unit_system: metric
+  packages: !include_dir_named packages
+
+varco:
+  bridge_ws_url: wss://varco-bridge.vekexasia.workers.dev
+  webrtc_enabled: false
+
+lovelace:
+  mode: yaml
+  dashboards:
+    varco-showcase:
+      mode: yaml
+      title: Varco Showcase
+      icon: mdi:solar-power
+      show_in_sidebar: true
+      filename: dashboards/varco-showcase.yaml
+
+logger:
+  default: info
+  logs:
+    custom_components.varco: debug

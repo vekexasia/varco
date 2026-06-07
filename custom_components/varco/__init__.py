@@ -1,19 +1,70 @@
 from __future__ import annotations
 
-from .const import DOMAIN
+from .const import DEFAULT_BRIDGE_WS_URL, DOMAIN
+
+try:
+    import voluptuous as vol
+    from homeassistant.helpers import config_validation as cv
+except ModuleNotFoundError:
+    vol = None
+    cv = None
+
+CONF_BRIDGE_WS_URL = "bridge_ws_url"
+CONF_WEBRTC_ENABLED = "webrtc_enabled"
+
+if vol is not None and cv is not None:
+    CONFIG_SCHEMA = vol.Schema(
+        {
+            DOMAIN: vol.Schema(
+                {
+                    vol.Optional(CONF_BRIDGE_WS_URL, default=DEFAULT_BRIDGE_WS_URL): cv.string,
+                    vol.Optional(CONF_WEBRTC_ENABLED, default=True): cv.boolean,
+                }
+            )
+        },
+        extra=vol.ALLOW_EXTRA,
+    )
+else:
+    CONFIG_SCHEMA = None
 
 PLATFORMS: list[str] = []
 
+
+async def async_setup(hass, config) -> bool:
+    from homeassistant import config_entries
+
+    entries = hass.config_entries.async_entries(DOMAIN)
+    if DOMAIN in config and not entries:
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN,
+            context={"source": config_entries.SOURCE_IMPORT},
+            data=dict(config[DOMAIN]),
+        )
+        entry = result.get("result")
+        if entry is not None:
+            await _async_setup_authority(hass, entry.entry_id, entry.data)
+    else:
+        for entry in entries:
+            await _async_setup_authority(hass, entry.entry_id, entry.data)
+    return True
+
+
 async def async_setup_entry(hass, entry) -> bool:
+    return await _async_setup_authority(hass, entry.entry_id, entry.data)
+
+
+async def _async_setup_authority(hass, entry_id: str, entry_data: dict) -> bool:
     from .relay import VarcoRelay
     from .services import async_setup_services
     from .websocket_api import async_setup as async_setup_websocket
     from .storage import HomeAssistantVarcoStore
 
     hass.data.setdefault(DOMAIN, {})
+    if entry_id in hass.data[DOMAIN]:
+        return True
     store = HomeAssistantVarcoStore(hass)
-    relay = VarcoRelay(hass, entry.data, store)
-    hass.data[DOMAIN][entry.entry_id] = {"store": store, "relay": relay}
+    relay = VarcoRelay(hass, entry_data, store)
+    hass.data[DOMAIN][entry_id] = {"store": store, "relay": relay}
     await async_setup_services(hass)
     if not hass.data[DOMAIN].get("websocket_registered"):
         async_setup_websocket(hass)
