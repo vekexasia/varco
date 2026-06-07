@@ -102,8 +102,8 @@ jobs:
         env:
           HA_SHOWCASE_HOST: ${{ secrets.HA_SHOWCASE_HOST }}
           HA_SHOWCASE_HTTP_PORT: ${{ secrets.HA_SHOWCASE_HTTP_PORT }}
-          HA_SHOWCASE_USERNAME: ${{ secrets.HA_SHOWCASE_USERNAME }}
-          HA_SHOWCASE_PASSWORD: ${{ secrets.HA_SHOWCASE_PASSWORD }}
+          HA_SHOWCASE_USERNAME: test
+          HA_SHOWCASE_PASSWORD: test
         run: |
           set -euo pipefail
           if [ -z "${HA_SHOWCASE_HOST:-}" ]; then
