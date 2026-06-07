@@ -34,6 +34,22 @@ test('loginToHomeAssistant uses the real Home Assistant auth flow and returns an
   ]);
 });
 
+test('loginToHomeAssistant can use a stable client id for remote IP access', async () => {
+  const bodies = [];
+  const fetchImpl = async (url, options) => {
+    bodies.push(String(options.body));
+    if (String(url).endsWith('/auth/login_flow')) return Response.json({ flow_id: 'flow-1' });
+    if (String(url).endsWith('/auth/login_flow/flow-1')) return Response.json({ result: 'auth-code' });
+    if (String(url).endsWith('/auth/token')) return Response.json({ access_token: 'token-1' });
+    throw new Error(`unexpected URL ${url}`);
+  };
+
+  assert.equal(await loginToHomeAssistant({ url: 'http://203.0.113.10', clientId: 'http://localhost:8123/', fetchImpl }), 'token-1');
+  assert.equal(JSON.parse(bodies[0]).client_id, 'http://localhost:8123/');
+  assert.equal(JSON.parse(bodies[0]).redirect_uri, 'http://localhost:8123/?auth_callback=1');
+  assert.equal(new URLSearchParams(bodies[2]).get('client_id'), 'http://localhost:8123/');
+});
+
 test('HomeAssistantAdminClient authenticates and sends numbered WebSocket commands', async () => {
   const socket = new FakeWebSocket('ws://ignored');
   const client = new HomeAssistantAdminClient({ url: 'http://127.0.0.1:8123', token: 'token-1', WebSocketImpl: class { constructor(url) { socket.url = url; return socket; } } });

@@ -216,7 +216,9 @@ HA_SHOWCASE_USER
 HA_SHOWCASE_PORT
 HA_SHOWCASE_REMOTE_DIR
 HA_SHOWCASE_PUBLIC_URL
-```
 HA_SHOWCASE_HTTP_PORT
+```
 
 The remote `.storage` directory is intentionally preserved across deploys so the Home Assistant admin user, Varco Authority ID, grants, and recorder history remain stable across code updates. The current Antimatter showcase LXC uses SSH port `2306`, remote directory `/opt/varco-ha-showcase`, and binds Home Assistant to port `80` for Cloudflare-compatible HTTP proxying.
+
+The public hostname `varco-ha.andreabaccega.com` is served by the Cloudflare Worker in [`dev/home-assistant/cloudflare-proxy-worker.js`](../dev/home-assistant/cloudflare-proxy-worker.js) as a custom domain. The worker forwards to the showcase LXC over its routed IPv6 address through `sslip.io`, while Cloudflare publishes proxied A/AAAA records for the public hostname.

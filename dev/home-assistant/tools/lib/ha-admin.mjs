@@ -7,15 +7,16 @@ export function haConfig(env = process.env) {
     url: env.HA_URL || DEFAULT_HA_URL,
     username: env.HA_USERNAME || DEFAULT_HA_USERNAME,
     password: env.HA_PASSWORD || DEFAULT_HA_PASSWORD,
+    clientId: env.HA_CLIENT_ID,
   };
 }
 
 export async function loginToHomeAssistant(options = {}) {
-  const { url, username, password } = { ...haConfig(), ...options };
+  const { url, username, password, clientId: configuredClientId } = { ...haConfig(), ...options };
   const fetchImpl = options.fetchImpl || fetch;
   const base = url.replace(/\/$/, '');
-  const clientId = `${base}/`;
-  const redirectUri = `${base}/?auth_callback=1`;
+  const clientId = configuredClientId || `${base}/`;
+  const redirectUri = `${clientId.replace(/\/$/, '')}/?auth_callback=1`;
 
   const flowResponse = await postJson(fetchImpl, `${base}/auth/login_flow`, {
     client_id: clientId,
