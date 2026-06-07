@@ -97,6 +97,9 @@ input_boolean:
   varco_coffee_machine:
     name: Varco Coffee Machine Raw
     icon: mdi:coffee-maker
+  varco_living_room_cooling:
+    name: Varco Living Room Cooling Raw
+    icon: mdi:air-conditioner
 
 # Energy signs follow Tesla-style conventions used by the showcase:
 # battery < 0 means charging, battery > 0 means discharging,
@@ -220,6 +223,18 @@ template:
           - action: input_boolean.turn_off
             target:
               entity_id: input_boolean.varco_coffee_machine
+      - name: Living Room Cooling
+        unique_id: varco_demo_living_room_cooling
+        icon: mdi:air-conditioner
+        state: "{{ is_state('input_boolean.varco_living_room_cooling', 'on') }}"
+        turn_on:
+          - action: input_boolean.turn_on
+            target:
+              entity_id: input_boolean.varco_living_room_cooling
+        turn_off:
+          - action: input_boolean.turn_off
+            target:
+              entity_id: input_boolean.varco_living_room_cooling
   - sensor:
       - name: Powerwall Load W
         unique_id: varco_demo_powerwall_load_w
@@ -311,6 +326,20 @@ template:
           {% set minute = now().hour * 60 + now().minute %}
           {{ 470 <= minute <= 478 or 1090 <= minute <= 1098 }}
 
+
+climate:
+  - platform: generic_thermostat
+    name: Living Room Climate
+    heater: switch.living_room_cooling
+    target_sensor: sensor.living_room_temperature
+    ac_mode: true
+    min_temp: 18
+    max_temp: 28
+    target_temp: 23
+    cold_tolerance: 0.2
+    hot_tolerance: 0.4
+    initial_hvac_mode: "cool"
+    precision: 0.1
 automation:
   - id: varco_showcase_update_synthetic_home
     alias: Varco showcase update synthetic home

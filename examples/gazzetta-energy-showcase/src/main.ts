@@ -1,20 +1,34 @@
 import { createVarcoClient, type HassState, type StorageLike, type VarcoClient } from "@varco/client";
-import { BRIDGE_URL, createReadOnlyManifest, DEFAULT_AUTHORITY_ID, DEMO_GRANT_BUNDLE, ENERGY_ENTITIES, FORCE_RELAY_ONLY, READ_ENTITIES } from "./config.js";
+import {
+  BRIDGE_URL,
+  COMFORT_ENTITIES,
+  createReadOnlyManifest,
+  DEFAULT_AUTHORITY_ID,
+  DEMO_GRANT_BUNDLE,
+  ENERGY_ENTITIES,
+  FORCE_RELAY_ONLY,
+  HISTORY_ENTITIES,
+  LIGHT_ENTITIES,
+  READ_ENTITIES,
+  SECURITY_ENTITIES,
+  UTILITY_ENTITIES,
+} from "./config.js";
 import { clearShowcaseGrant, loadShowcaseGrant, markShowcaseGrantApproved, savePendingShowcaseGrant, SHOWCASE_GRANT_KEY, type ShowcaseGrantStorage } from "./grant-store.js";
 
 const app = document.getElementById("app")!;
 const values = new Map<string, HassState | null>();
 const samples: number[] = [];
 let client: VarcoClient | null = null;
-let lastUpdate = "—";
-let transport = "Cloudflare relay · P2P disabled";
+let lastUpdate = "-";
+let transport = "Cloudflare relay - P2P disabled";
 let phase: "setup" | "pending" | "live" | "error" = "setup";
 let message = "";
 const grantStorage = createDemoStorage(window.localStorage);
+const historyEntitySet = new Set<string>(HISTORY_ENTITIES);
 
 const css = `
-:root{--ink:#211b14;--ink-2:#4a4036;--muted:#8a7f70;--faint:#b6ac9c;--line:#d8cfbb;--line-2:#c7bca3;--paper:#f4efe1;--accent:#be5a38;--accent-deep:#9c4327;--accent-wash:#f3e4d8;--ok:#5f6b4f;--cool:#3a6ea5;--paper-dim:#e7dfcd;--serif-display:'Libre Caslon Display',Georgia,serif;--serif-body:'Newsreader',Georgia,serif;--label-font:'Spline Sans Mono',ui-monospace,monospace;}
-*{box-sizing:border-box} body{margin:0;background:#d8cfbb;color:var(--ink);font-family:var(--serif-body);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}.page{max-width:980px;margin:0 auto;min-height:100vh;background:var(--paper);box-shadow:0 18px 70px rgba(33,27,20,.2)}.mast{padding:26px 30px 0}.mast-top{display:flex;justify-content:space-between;font-family:var(--label-font);font-size:10.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);padding-bottom:9px;border-bottom:1px solid var(--ink)}.flag{font-family:var(--serif-display);font-weight:600;font-size:clamp(44px,10vw,74px);line-height:.96;text-align:center;letter-spacing:-.02em;margin:12px 0 14px}.mast-rule{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center;padding:7px 0;border-top:1px solid var(--ink);border-bottom:1px solid var(--ink);font-family:var(--label-font);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2);text-align:center}.mast-rule>span:first-child{text-align:left}.mast-rule>span:last-child{text-align:right}.nav{display:flex;justify-content:center;border-bottom:1px solid var(--line)}.nav span{font-family:var(--label-font);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink);font-weight:600;padding:11px 15px;box-shadow:inset 0 -2px 0 var(--accent)}.lead{padding:22px 30px;border-bottom:3px double var(--ink)}.kick{font-family:var(--label-font);font-size:11px;letter-spacing:.26em;text-transform:uppercase;color:var(--accent);font-weight:600}.byline{font-family:var(--label-font);font-size:11px;color:var(--muted);margin-top:4px;letter-spacing:.04em}.headline{font-family:var(--serif-display);font-weight:500;font-size:clamp(28px,5.5vw,42px);line-height:1.12;letter-spacing:-.005em;margin:13px 0 0}.drop{float:left;font-family:var(--serif-display);font-weight:600;color:var(--accent);font-size:3.1em;line-height:.66;padding-right:.07em;margin-top:.03em}.sub{font-style:italic;font-size:clamp(15px,3vw,18px);line-height:1.5;color:var(--ink-2);margin:12px 0 0}.full{padding:0 30px}.grid{display:grid;grid-template-columns:1fr 1fr}.col{padding:0 30px}.col-rule{border-left:1px solid var(--line)}.panel{padding:20px 0;border-bottom:1px solid var(--line)}.kicker{display:flex;align-items:baseline;justify-content:space-between;padding-bottom:8px;border-bottom:2px solid var(--ink);margin-bottom:14px}.kicker>span:first-child{font-family:var(--label-font);font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink);font-weight:600}.note{font-family:var(--label-font);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}.flow{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--line)}.node{padding:16px 10px;text-align:center;border-left:1px solid var(--line)}.node:first-child{border-left:0}.node[data-tone=accent] .nval{color:var(--accent-deep)}.node[data-tone=ok] .nval{color:var(--ok)}.node[data-tone=cool] .nval{color:var(--cool)}.nicon{font-size:23px;margin-bottom:6px}.nval{font-family:var(--serif-display);font-size:30px;line-height:1}.nval i{font-family:var(--serif-body);font-style:normal;font-size:13px;color:var(--muted);margin-left:3px}.nlbl{font-family:var(--label-font);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-top:5px}.line{display:flex;align-items:baseline;gap:8px;padding:10px 0;border-top:1px dotted var(--line)}.line:first-child{border-top:0}.line-name{font-size:15px}.dots{flex:1;border-bottom:1px dotted var(--line);align-self:flex-end;height:0;margin-bottom:6px}.line-val{font-family:var(--serif-display);font-size:23px;white-space:nowrap}.line-val i{font-family:var(--serif-body);font-style:normal;font-size:12px;color:var(--muted);margin-left:2px}.chart{width:100%;height:148px;border:1px solid var(--line);background:linear-gradient(180deg,rgba(190,90,56,.06),rgba(0,0,0,0));display:block}.setup{padding:18px 30px 30px}.box{border:1px solid var(--line-2);background:var(--paper);padding:14px;margin-top:14px}.field{display:grid;gap:5px;margin:10px 0;font-family:var(--label-font);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}input{font:14px var(--label-font);border:1px solid var(--line-2);background:var(--paper-dim);color:var(--ink);padding:10px 11px}button{font-family:var(--label-font);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);background:var(--paper);border:1px solid var(--line-2);border-radius:5px;padding:9px 12px;cursor:pointer;margin-right:8px}button:hover{background:var(--accent-wash);border-color:var(--accent);color:var(--accent-deep)}.status{font-family:var(--label-font);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ok);margin-top:10px}.error{color:var(--accent-deep)}.clickable{cursor:pointer;transition:background .12s}.clickable:hover{background:var(--accent-wash)}.modal{position:fixed;inset:0;z-index:60;background:rgba(33,27,20,.55);backdrop-filter:blur(4px);display:grid;place-items:center;padding:20px;overflow:auto}.modal-card{background:var(--paper);border:1px solid var(--line-2);border-radius:8px;max-width:680px;width:100%;max-height:88vh;display:flex;flex-direction:column;padding:22px 24px 18px;box-shadow:0 30px 80px rgba(40,30,18,.45);position:relative}.modal-body{flex:1 1 auto;overflow:auto;min-height:0}.modal-x{position:absolute;top:8px;right:12px;border:0;background:none;font-size:26px;line-height:1;color:var(--muted);cursor:pointer}.modal-kick{font-family:var(--label-font);font-size:10.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--accent);font-weight:600}.modal-title{font-family:var(--serif-display);font-weight:500;font-size:26px;line-height:1.1;margin:4px 0 14px;color:var(--ink)}.chart-stats{display:flex;gap:24px;flex-wrap:wrap;margin-bottom:12px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:11px 0}.chart-stats span{display:flex;flex-direction:column}.chart-stats b{font-family:var(--serif-display);font-size:23px;line-height:1;color:var(--ink);font-weight:600}.chart-stats small{font-family:var(--label-font);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-top:3px}.history-svg{width:100%;height:auto;display:block;touch-action:none;cursor:crosshair}.foot{text-align:center;font-family:var(--label-font);font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--faint);padding:22px 0 30px;border-top:1px solid var(--line);margin:0 30px}@media(max-width:680px){.grid,.flow{grid-template-columns:1fr 1fr}.col-rule{border-left:0}.mast-rule{grid-template-columns:1fr}.mast-rule>span{text-align:center!important}.col{padding:0 30px}.page{box-shadow:none}}`;
+:root{--ink:#211b14;--ink-2:#4a4036;--muted:#817767;--faint:#b7ac99;--line:#d8cfbb;--line-2:#c7bca3;--paper:#f4efe1;--paper-dim:#e7dfcd;--accent:#be5a38;--accent-deep:#934026;--accent-wash:#f3e4d8;--ok:#5f6b4f;--cool:#3a6ea5;--serif-display:'Libre Caslon Display',Georgia,serif;--serif-body:'Newsreader',Georgia,serif;--label-font:'Spline Sans Mono',ui-monospace,monospace}
+*{box-sizing:border-box}body{margin:0;background:#d8cfbb;color:var(--ink);font-family:var(--serif-body);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}.page{max-width:1040px;margin:0 auto;min-height:100vh;background:var(--paper);box-shadow:0 18px 70px rgba(33,27,20,.2)}.mast{padding:26px 30px 0}.mast-top{display:flex;justify-content:space-between;font-family:var(--label-font);font-size:10.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);padding-bottom:9px;border-bottom:1px solid var(--ink)}.flag{font-family:var(--serif-display);font-weight:600;font-size:clamp(44px,10vw,74px);line-height:.96;text-align:center;letter-spacing:-.02em;margin:12px 0 14px}.mast-rule{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center;padding:7px 0;border-top:1px solid var(--ink);border-bottom:1px solid var(--ink);font-family:var(--label-font);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2);text-align:center}.mast-rule>span:first-child{text-align:left}.mast-rule>span:last-child{text-align:right}.nav{display:flex;justify-content:center;border-bottom:1px solid var(--line)}.nav span{font-family:var(--label-font);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink);font-weight:600;padding:11px 15px;box-shadow:inset 0 -2px 0 var(--accent)}.lead{padding:22px 30px;border-bottom:3px double var(--ink)}.kick{font-family:var(--label-font);font-size:11px;letter-spacing:.26em;text-transform:uppercase;color:var(--accent);font-weight:600}.byline{font-family:var(--label-font);font-size:11px;color:var(--muted);margin-top:4px;letter-spacing:.04em}.headline{font-family:var(--serif-display);font-weight:500;font-size:clamp(28px,5.5vw,42px);line-height:1.12;margin:13px 0 0}.drop{float:left;font-family:var(--serif-display);font-weight:600;color:var(--accent);font-size:3.1em;line-height:.66;padding-right:.07em;margin-top:.03em}.sub{font-style:italic;font-size:clamp(15px,3vw,18px);line-height:1.5;color:var(--ink-2);margin:12px 0 0}.full{padding:0 30px}.grid{display:grid;grid-template-columns:1fr 1fr}.col{padding:0 30px}.col-rule{border-left:1px solid var(--line)}.panel{padding:20px 0;border-bottom:1px solid var(--line)}.kicker{display:flex;align-items:baseline;justify-content:space-between;padding-bottom:8px;border-bottom:2px solid var(--ink);margin-bottom:14px}.kicker>span:first-child{font-family:var(--label-font);font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink);font-weight:600}.note{font-family:var(--label-font);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}.flow,.stat-grid,.room-grid{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--line)}.stat-grid{grid-template-columns:repeat(3,1fr)}.room-grid{grid-template-columns:repeat(2,1fr)}.node,.stat,.room{padding:16px 10px;text-align:center;border-left:1px solid var(--line);border-top:1px solid var(--line)}.node:nth-child(1),.stat:nth-child(1),.room:nth-child(1){border-left:0}.flow .node{border-top:0}.stat:nth-child(-n+3),.room:nth-child(-n+2){border-top:0}.node[data-tone=accent] .nval,.stat[data-tone=accent] .nval{color:var(--accent-deep)}.node[data-tone=ok] .nval,.stat[data-tone=ok] .nval{color:var(--ok)}.node[data-tone=cool] .nval,.stat[data-tone=cool] .nval{color:var(--cool)}.nicon{font-family:var(--label-font);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin-bottom:7px}.nval{font-family:var(--serif-display);font-size:30px;line-height:1}.nval i{font-family:var(--serif-body);font-style:normal;font-size:13px;color:var(--muted);margin-left:3px}.nlbl{font-family:var(--label-font);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-top:5px}.line{display:flex;align-items:baseline;gap:8px;padding:10px 0;border-top:1px dotted var(--line)}.line:first-child{border-top:0}.line-name{font-size:15px}.dots{flex:1;border-bottom:1px dotted var(--line);align-self:flex-end;height:0;margin-bottom:6px}.line-val{font-family:var(--serif-display);font-size:23px;white-space:nowrap}.line-val i{font-family:var(--serif-body);font-style:normal;font-size:12px;color:var(--muted);margin-left:2px}.chart{width:100%;height:148px;border:1px solid var(--line);background:linear-gradient(180deg,rgba(190,90,56,.06),rgba(0,0,0,0));display:block}.setup{padding:18px 30px 30px}.box{border:1px solid var(--line-2);background:var(--paper);padding:14px;margin-top:14px}.field{display:grid;gap:5px;margin:10px 0;font-family:var(--label-font);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}input{font:14px var(--label-font);border:1px solid var(--line-2);background:var(--paper-dim);color:var(--ink);padding:10px 11px}button{font-family:var(--label-font);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);background:var(--paper);border:1px solid var(--line-2);border-radius:5px;padding:9px 12px;cursor:pointer;margin-right:8px}button:hover{background:var(--accent-wash);border-color:var(--accent);color:var(--accent-deep)}.status{font-family:var(--label-font);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ok);margin-top:10px}.error{color:var(--accent-deep)}.clickable{cursor:pointer;transition:background .12s}.clickable:hover{background:var(--accent-wash)}.modal{position:fixed;inset:0;z-index:60;background:rgba(33,27,20,.55);backdrop-filter:blur(4px);display:grid;place-items:center;padding:20px;overflow:auto}.modal-card{background:var(--paper);border:1px solid var(--line-2);border-radius:8px;max-width:680px;width:100%;max-height:88vh;display:flex;flex-direction:column;padding:22px 24px 18px;box-shadow:0 30px 80px rgba(40,30,18,.45);position:relative}.modal-body{flex:1 1 auto;overflow:auto;min-height:0}.modal-x{position:absolute;top:8px;right:12px;border:0;background:none;font-size:26px;line-height:1;color:var(--muted);cursor:pointer}.modal-kick{font-family:var(--label-font);font-size:10.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--accent);font-weight:600}.modal-title{font-family:var(--serif-display);font-weight:500;font-size:26px;line-height:1.1;margin:4px 0 14px;color:var(--ink)}.chart-stats{display:flex;gap:24px;flex-wrap:wrap;margin-bottom:12px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:11px 0}.chart-stats span{display:flex;flex-direction:column}.chart-stats b{font-family:var(--serif-display);font-size:23px;line-height:1;color:var(--ink);font-weight:600}.chart-stats small{font-family:var(--label-font);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-top:3px}.history-svg{width:100%;height:auto;display:block;touch-action:none;cursor:crosshair}.foot{text-align:center;font-family:var(--label-font);font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--faint);padding:22px 0 30px;border-top:1px solid var(--line);margin:0 30px}@media(max-width:760px){.grid,.flow,.stat-grid,.room-grid{grid-template-columns:1fr 1fr}.col-rule{border-left:0}.mast-rule{grid-template-columns:1fr}.mast-rule>span{text-align:center!important}.col{padding:0 30px}.page{box-shadow:none}}`;
 
 function num(entity: string): number | null {
   const state = values.get(entity)?.state;
@@ -23,20 +37,33 @@ function num(entity: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function state(entity: string): string {
+  return String(values.get(entity)?.state ?? "-");
+}
+
+function attr(entity: string, name: string): unknown {
+  return values.get(entity)?.attributes?.[name];
+}
+
 function kw(entity: string): string {
   const n = num(entity);
-  if (n == null) return "—";
+  if (n == null) return "-";
   return Math.abs(n / 1000).toFixed(1);
 }
 
 function pct(entity: string): string {
   const n = num(entity);
-  return n == null ? "—" : Math.round(n).toString();
+  return n == null ? "-" : Math.round(n).toString();
 }
 
-function kwh(entity: string): string {
+function temp(entity: string): string {
   const n = num(entity);
-  return n == null ? "—" : n.toFixed(1);
+  return n == null ? "-" : n.toFixed(1);
+}
+
+function ppm(entity: string): string {
+  const n = num(entity);
+  return n == null ? "-" : n.toFixed(0);
 }
 
 function renderChart(): string {
@@ -46,7 +73,22 @@ function renderChart(): string {
 }
 
 function entityLine(name: string, value: string, unit: string, entity?: string): string {
-  return `<div class="line${entity ? " clickable" : ""}"${entity ? ` data-entity="${entity}"` : ""}><span class="line-name">${name}</span><span class="dots"></span><span class="line-val">${value}<i>${unit}</i></span></div>`;
+  const clickable = entity && historyEntitySet.has(entity);
+  return `<div class="line${clickable ? " clickable" : ""}"${clickable ? ` data-entity="${entity}"` : ""}><span class="line-name">${esc(name)}</span><span class="dots"></span><span class="line-val">${esc(value)}<i>${esc(unit)}</i></span></div>`;
+}
+
+function node(label: string, value: string, unit: string, entity: string, tone = ""): string {
+  const clickable = historyEntitySet.has(entity);
+  return `<div class="node${clickable ? " clickable" : ""}"${tone ? ` data-tone="${tone}"` : ""}${clickable ? ` data-entity="${entity}"` : ""}><div class="nicon">${esc(label)}</div><div class="nval">${esc(value)}<i>${esc(unit)}</i></div><div class="nlbl">${esc(entityLabel(entity))}</div></div>`;
+}
+
+function stat(label: string, value: string, unit: string, entity: string, tone = ""): string {
+  const clickable = historyEntitySet.has(entity);
+  return `<div class="stat${clickable ? " clickable" : ""}"${tone ? ` data-tone="${tone}"` : ""}${clickable ? ` data-entity="${entity}"` : ""}><div class="nicon">${esc(label)}</div><div class="nval">${esc(value)}<i>${esc(unit)}</i></div><div class="nlbl">${esc(entityLabel(entity))}</div></div>`;
+}
+
+function room(label: string, value: string, detail: string, entity: string): string {
+  return `<div class="room"><div class="nicon">${esc(label)}</div><div class="nval">${esc(value)}</div><div class="nlbl">${esc(detail || entityLabel(entity))}</div></div>`;
 }
 
 function render(): void {
@@ -55,17 +97,15 @@ function render(): void {
   const load = kw(ENERGY_ENTITIES.load);
   const solar = kw(ENERGY_ENTITIES.solar);
   const gridW = num(ENERGY_ENTITIES.grid);
-  const gridLabel = gridW == null ? "Grid —" : gridW < 0 ? `Export ${(Math.abs(gridW) / 1000).toFixed(1)} kW` : `Import ${(gridW / 1000).toFixed(1)} kW`;
-  const batteryW = num(ENERGY_ENTITIES.battery);
-    const headline = solar !== "—" && load !== "—" ? `Solar is producing ${solar} kW while the house is drawing ${load} kW` : "Home energy is waiting for live data";
+  const gridLabel = gridW == null ? "Grid -" : gridW < 0 ? `Export ${(Math.abs(gridW) / 1000).toFixed(1)} kW` : `Import ${(gridW / 1000).toFixed(1)} kW`;
+  const headline = solar !== "-" && load !== "-" ? `Solar is producing ${solar} kW while the house is drawing ${load} kW` : "The synthetic home is waiting for live data";
   const first = headline.charAt(0);
   const rest = headline.slice(1);
-
   app.innerHTML = `<style>${css}</style><div class="page">
-    <header class="mast"><div class="mast-top"><span>Varco showcase</span><span>Relay only</span></div><h1 class="flag">La&nbsp;Casa</h1><div class="mast-rule"><span>${day}</span><span>${gridLabel}</span><span>Energy</span></div><nav class="nav"><span>solar live</span></nav></header>
-    <section class="lead"><div class="kick">${now.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }).toUpperCase()} · READ ONLY</div><div class="byline">Varco · updated ${lastUpdate} · ${transport}</div><h2 class="headline"><span class="drop">${first}</span>${rest}</h2><p class="sub">Gazzetta-style showcase: read-only grant, no Home Assistant token in the browser, relay transport by default.</p></section>
+    <header class="mast"><div class="mast-top"><span>Varco showcase</span><span>Relay only</span></div><h1 class="flag">La&nbsp;Casa</h1><div class="mast-rule"><span>${esc(day)}</span><span>${esc(gridLabel)}</span><span>Home edition</span></div><nav class="nav"><span>energy</span><span>comfort</span><span>lights</span><span>security</span></nav></header>
+    <section class="lead"><div class="kick">${esc(now.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }).toUpperCase())} - READ ONLY</div><div class="byline">Varco - updated ${esc(lastUpdate)} - ${esc(transport)}</div><h2 class="headline"><span class="drop">${esc(first)}</span>${esc(rest)}</h2><p class="sub">Gazzetta-style showcase: read-only grant, no Home Assistant token in the browser, relay transport by default.</p></section>
     ${phase !== "live" ? renderSetup() : renderLive()}
-    <div class="foot">Varco · read-only grant · encrypted relay transport</div>
+    <div class="foot">Varco - read-only grant - encrypted relay transport</div>
   </div>`;
   bind();
 }
@@ -73,8 +113,8 @@ function render(): void {
 function renderSetup(): string {
   const saved = loadShowcaseGrant(grantStorage, DEFAULT_AUTHORITY_ID);
   if (DEMO_GRANT_BUNDLE) {
-    const text = phase === "error" ? message : "Demo grant embedded. Connecting relay-only stream…";
-    return `<section class="setup"><div class="box"><div class="kicker"><span>Live demo</span><span class="note">read-only</span></div><button id="connect">Connect relay-only</button><div class="status${phase === "error" ? " error" : ""}">${text}</div></div></section>`;
+    const text = phase === "error" ? message : "Demo grant embedded. Connecting relay-only stream...";
+    return `<section class="setup"><div class="box"><div class="kicker"><span>Live demo</span><span class="note">read-only</span></div><button id="connect">Connect relay-only</button><div class="status${phase === "error" ? " error" : ""}">${esc(text)}</div></div></section>`;
   }
   const savedMessage = saved?.status === "approved"
     ? "Saved grant for this browser. Press Connect to resume the relay-only stream."
@@ -82,17 +122,63 @@ function renderSetup(): string {
       ? `Saved pending request. Pairing code ${saved.pairingCode}. Approve it in the Varco panel, then press Connect.`
       : "Read-only access to: " + READ_ENTITIES.join(", ");
   const clearButton = saved ? `<button id="clearGrant">Forget saved grant</button>` : "";
-  return `<section class="setup"><div class="box"><div class="kicker"><span>Pairing</span><span class="note">read-only</span></div><label class="field">Authority ID <input id="authority" value="${DEFAULT_AUTHORITY_ID}"></label><button id="request">Request read-only grant</button><button id="connect">Connect relay-only</button>${clearButton}<div class="status${phase === "error" ? " error" : ""}">${message || savedMessage}</div></div></section>`;
+  return `<section class="setup"><div class="box"><div class="kicker"><span>Pairing</span><span class="note">read-only</span></div><label class="field">Authority ID <input id="authority" value="${esc(DEFAULT_AUTHORITY_ID)}"></label><button id="request">Request read-only grant</button><button id="connect">Connect relay-only</button>${clearButton}<div class="status${phase === "error" ? " error" : ""}">${esc(message || savedMessage)}</div></div></section>`;
 }
 
 function renderLive(): string {
-  return `<div class="full"><section class="panel"><div class="kicker"><span>Energy flow</span><span class="note">${lastUpdate}</span></div><div class="flow"><div class="node clickable" data-entity="${ENERGY_ENTITIES.solar}" data-tone="accent"><div class="nicon">☀</div><div class="nval">${solarVal()}<i>kW</i></div><div class="nlbl">Solar production</div></div><div class="node clickable" data-entity="${ENERGY_ENTITIES.load}"><div class="nicon">⌂</div><div class="nval">${kw(ENERGY_ENTITIES.load)}<i>kW</i></div><div class="nlbl">House load</div></div><div class="node clickable" data-entity="${ENERGY_ENTITIES.grid}" data-tone="cool"><div class="nicon">↔</div><div class="nval">${gridAbs()}<i>kW</i></div><div class="nlbl">${gridWording()}</div></div><div class="node clickable" data-entity="${ENERGY_ENTITIES.batteryCharge}" data-tone="ok"><div class="nicon">▣</div><div class="nval">${pct(ENERGY_ENTITIES.batteryCharge)}<i>%</i></div><div class="nlbl">Powerwall</div></div></div></section></div><div class="grid"><div class="col"><section class="panel"><div class="kicker"><span>Meters</span><span class="note">right now</span></div>${entityLine("Current house load", kw(ENERGY_ENTITIES.load), "kW", ENERGY_ENTITIES.load)}${entityLine("Current solar production", kw(ENERGY_ENTITIES.solar), "kW", ENERGY_ENTITIES.solar)}${entityLine("Battery", batteryWording(), "", ENERGY_ENTITIES.battery)}</section></div><div class="col col-rule"><section class="panel"><div class="kicker"><span>Live line</span><span class="note">latest deltas</span></div>${renderChart()}</section></div></div>`;
+  return `<div class="full">
+    <section class="panel"><div class="kicker"><span>Energy flow</span><span class="note">${esc(lastUpdate)}</span></div><div class="flow">
+      ${node("solar", kw(ENERGY_ENTITIES.solar), "kW", ENERGY_ENTITIES.solar, "accent")}
+      ${node("house", kw(ENERGY_ENTITIES.load), "kW", ENERGY_ENTITIES.load)}
+      ${node(gridWording(), gridAbs(), "kW", ENERGY_ENTITIES.grid, "cool")}
+      ${node("powerwall", pct(ENERGY_ENTITIES.batteryCharge), "%", ENERGY_ENTITIES.batteryCharge, "ok")}
+    </div></section>
+  </div>
+  <div class="grid"><div class="col"><section class="panel"><div class="kicker"><span>Comfort desk</span><span class="note">climate</span></div><div class="stat-grid">
+    ${stat("outside", temp(COMFORT_ENTITIES.outdoorTemperature), "C", COMFORT_ENTITIES.outdoorTemperature, "cool")}
+    ${stat("inside", temp(COMFORT_ENTITIES.livingRoomTemperature), "C", COMFORT_ENTITIES.livingRoomTemperature)}
+    ${stat("humidity", pct(COMFORT_ENTITIES.livingRoomHumidity), "%", COMFORT_ENTITIES.livingRoomHumidity, "ok")}
+    ${stat("co2", ppm(COMFORT_ENTITIES.co2), "ppm", COMFORT_ENTITIES.co2, co2Tone())}
+    ${room("climate", climateSummary(), climateDetail(), COMFORT_ENTITIES.climate)}
+    ${room("cooling", titleState(COMFORT_ENTITIES.cooling), "generic thermostat actuator", COMFORT_ENTITIES.cooling)}
+  </div></section></div><div class="col col-rule"><section class="panel"><div class="kicker"><span>Lights bureau</span><span class="note">rooms</span></div><div class="room-grid">
+    ${lightRoom("Kitchen", LIGHT_ENTITIES.kitchen)}
+    ${lightRoom("Living room", LIGHT_ENTITIES.livingRoom)}
+    ${lightRoom("Studio", LIGHT_ENTITIES.studio)}
+    ${lightRoom("Garden", LIGHT_ENTITIES.garden)}
+  </div></section></div></div>
+  <div class="grid"><div class="col"><section class="panel"><div class="kicker"><span>Security beat</span><span class="note">doors and motion</span></div>
+    ${entityLine("Front door", binaryWord(SECURITY_ENTITIES.frontDoor, "Open", "Closed"), "", undefined)}
+    ${entityLine("Kitchen motion", binaryWord(SECURITY_ENTITIES.kitchenMotion, "Motion", "Quiet"), "", undefined)}
+    ${entityLine("Garage door", binaryWord(SECURITY_ENTITIES.garageDoor, "Open", "Closed"), "", undefined)}
+  </section></div><div class="col col-rule"><section class="panel"><div class="kicker"><span>Appliances</span><span class="note">utility</span></div>
+    ${entityLine("EV charger", titleState(UTILITY_ENTITIES.evCharger), "", undefined)}
+    ${entityLine("EV battery", pct(UTILITY_ENTITIES.evCharge), "%", UTILITY_ENTITIES.evCharge)}
+    ${entityLine("Coffee machine", titleState(UTILITY_ENTITIES.coffeeMachine), "", undefined)}
+    ${renderChart()}
+  </section></div></div>`;
 }
 
-function solarVal(): string { return kw(ENERGY_ENTITIES.solar); }
-function gridAbs(): string { const n = num(ENERGY_ENTITIES.grid); return n == null ? "—" : Math.abs(n / 1000).toFixed(1); }
-function gridWording(): string { const n = num(ENERGY_ENTITIES.grid); return n == null ? "Grid" : n < 0 ? "Grid export" : "Grid import"; }
-function batteryWording(): string { const n = num(ENERGY_ENTITIES.battery); return n == null ? "—" : n > 50 ? `Discharging ${(n / 1000).toFixed(1)} kW` : n < -50 ? `Charging ${(Math.abs(n) / 1000).toFixed(1)} kW` : "Idle"; }
+function lightRoom(name: string, entity: string): string {
+  const brightness = Number(attr(entity, "brightness") ?? 0);
+  const percent = state(entity) === "on" ? `${Math.round((brightness / 255) * 100)}%` : "off";
+  return room(name, percent, state(entity) === "on" ? "lit" : "dark", entity);
+}
+
+function gridAbs(): string { const n = num(ENERGY_ENTITIES.grid); return n == null ? "-" : Math.abs(n / 1000).toFixed(1); }
+function gridWording(): string { const n = num(ENERGY_ENTITIES.grid); return n == null ? "grid" : n < 0 ? "export" : "import"; }
+function climateSummary(): string {
+  const current = attr(COMFORT_ENTITIES.climate, "current_temperature");
+  return current == null ? titleState(COMFORT_ENTITIES.climate) : `${Number(current).toFixed(1)}C`;
+}
+function climateDetail(): string {
+  const target = attr(COMFORT_ENTITIES.climate, "temperature");
+  const action = attr(COMFORT_ENTITIES.climate, "hvac_action") || state(COMFORT_ENTITIES.climate);
+  return `target ${target ?? "-"}C - ${String(action)}`;
+}
+function co2Tone(): string { const n = num(COMFORT_ENTITIES.co2); return n != null && n > 900 ? "accent" : "ok"; }
+function titleState(entity: string): string { const s = state(entity); return s === "-" ? "-" : s.charAt(0).toUpperCase() + s.slice(1); }
+function binaryWord(entity: string, onWord: string, offWord: string): string { return state(entity) === "on" ? onWord : offWord; }
 
 function bind(): void {
   document.getElementById("request")?.addEventListener("click", requestGrant);
@@ -112,7 +198,7 @@ function makeClient(): VarcoClient {
     bridgeUrl: BRIDGE_URL,
     manifest: createReadOnlyManifest(),
     webrtc: !FORCE_RELAY_ONLY,
-    onTransportStatus: (status) => { transport = status.mode === "relay" ? "Cloudflare relay · P2P disabled" : "WebRTC P2P"; render(); },
+    onTransportStatus: (status) => { transport = status.mode === "relay" ? "Cloudflare relay - P2P disabled" : "WebRTC P2P"; render(); },
     warn: console.warn,
     storage: grantStorage,
   });
@@ -145,7 +231,6 @@ function clearSavedGrant(): void {
   render();
 }
 
-
 async function connectLive(): Promise<void> {
   try {
     const c = client || makeClient();
@@ -166,7 +251,7 @@ async function connectLive(): Promise<void> {
 }
 
 function applyStates(states: Record<string, HassState | null>): void {
-  for (const [entity, state] of Object.entries(states)) values.set(entity, state);
+  for (const [entity, stateValue] of Object.entries(states)) values.set(entity, stateValue);
   const loadW = num(ENERGY_ENTITIES.load);
   if (loadW != null) samples.push(loadW);
   while (samples.length > 36) samples.shift();
@@ -187,7 +272,7 @@ async function openHistoryChart(entityId: string): Promise<void> {
   const label = entityLabel(entityId);
   const modal = document.createElement("div");
   modal.className = "modal";
-  modal.innerHTML = `<div class="modal-card"><button class="modal-x" aria-label="Close">&times;</button><div class="modal-kick">Last 24 hours</div><h3 class="modal-title">${esc(label)}</h3><div class="modal-body"><div class="status">Loading history…</div></div></div>`;
+  modal.innerHTML = `<div class="modal-card"><button class="modal-x" aria-label="Close">&times;</button><div class="modal-kick">Last 24 hours</div><h3 class="modal-title">${esc(label)}</h3><div class="modal-body"><div class="status">Loading history...</div></div></div>`;
   document.body.appendChild(modal);
   const close = () => modal.remove();
   modal.addEventListener("click", (event) => { if (event.target === modal) close(); });
@@ -259,7 +344,7 @@ function attachChartScrub(svg: SVGSVGElement, points: { t: number; v: number }[]
     const px = x(nearest.t), py = y(nearest.v);
     line.setAttribute("x1", px.toFixed(1)); line.setAttribute("x2", px.toFixed(1));
     dot.setAttribute("cx", px.toFixed(1)); dot.setAttribute("cy", py.toFixed(1));
-    text.textContent = `${hhmm(new Date(nearest.t))} · ${fmt(nearest.v)}${unit ? " " + unit : ""}`;
+    text.textContent = `${hhmm(new Date(nearest.t))} - ${fmt(nearest.v)}${unit ? " " + unit : ""}`;
     const end = px > W / 2;
     text.setAttribute("text-anchor", end ? "end" : "start");
     text.setAttribute("x", (end ? px - 8 : px + 8).toFixed(1));

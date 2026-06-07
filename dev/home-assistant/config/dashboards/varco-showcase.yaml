@@ -108,6 +108,9 @@ views:
           - entity: switch.ev_charger
             name: EV charger
 
+      - type: thermostat
+        entity: climate.living_room_climate
+        name: Living room climate
       - type: grid
         columns: 2
         square: false
