@@ -1,7 +1,7 @@
 import asyncio
 
 from custom_components.varco.authority import VarcoAuthority
-from custom_components.varco.crypto import generate_consumer_keypair, sign_access_request
+from custom_components.varco.crypto import generate_consumer_keypair, sign_access_request, sign_authenticate
 from custom_components.varco.storage import MemoryVarcoStore
 
 
@@ -45,7 +45,8 @@ async def paired_authority(manifest):
         "signature": sign_access_request(consumer["private_key"], nonce, manifest),
     })
     grant = await authority.approve_request(pending["request_id"])
-    auth = await authority.handle_plaintext("s1", {"type": "authenticate", "consumer_pk": consumer["public_key"]})
+    auth_nonce = "auth-nonce"
+    auth = await authority.handle_plaintext("s1", {"type": "authenticate", "consumer_pk": consumer["public_key"], "nonce": auth_nonce, "signature": sign_authenticate(consumer["private_key"], auth_nonce)})
     assert auth["type"] == "authenticated"
     return authority, store, hass, grant
 
@@ -162,4 +163,32 @@ def test_get_states_can_request_domain_wildcard_and_expands_to_matching_authoriz
         assert ok["type"] == "states"
         assert "sensor.temp" in ok["states"]
         assert "light.cucina" not in ok["states"]
+    asyncio.run(run())
+
+
+def test_authenticate_requires_consumer_private_key_signature():
+    async def run():
+        authority = VarcoAuthority(MemoryVarcoStore(), None)
+        consumer = generate_consumer_keypair()
+        manifest = {"name": "Demo", "version": "1", "read_entities": ["sensor.temp"]}
+        pending = await authority.handle_plaintext("request-session", {
+            "type": "access_request",
+            "consumer_pk": consumer["public_key"],
+            "manifest": manifest,
+            "nonce": "request-nonce",
+            "signature": sign_access_request(consumer["private_key"], "request-nonce", manifest),
+        })
+        await authority.approve_request(pending["request_id"])
+        denied = await authority.handle_plaintext("s1", {"type": "authenticate", "consumer_pk": consumer["public_key"], "nonce": "auth-nonce", "signature": "bad"})
+        assert denied["code"] == "bad_signature"
+        assert "s1" not in authority.sessions
+    asyncio.run(run())
+
+def test_history_query_is_read_only_and_requires_history_scope():
+    async def run():
+        authority, _, _, _ = await paired_authority({"name": "Demo", "version": "1", "history": ["sensor.temp"]})
+        ok = await authority.handle_plaintext("s1", {"type": "history_query", "entity_ids": ["sensor.temp"]})
+        assert ok["type"] == "history_result"
+        denied = await authority.handle_plaintext("s1", {"type": "call_service", "domain": "light", "service": "turn_on", "target": {"entity_id": "light.cucina"}})
+        assert denied["code"] == "permission_denied"
     asyncio.run(run())

@@ -1,0 +1,16 @@
+{
+  "name": "@varco/gazzetta-energy-showcase",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && esbuild src/main.ts --bundle --format=esm --outfile=dist/main.js && cp index.html dist/index.html",
+    "test": "npm run build && node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@varco/client": "file:../../packages/client"
+  },
+  "devDependencies": {
+    "esbuild": "^0.27.0"
+  }
+}

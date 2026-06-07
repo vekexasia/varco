@@ -30,6 +30,11 @@ export function signAccessRequest(identity: ConsumerIdentity, nonce: string, man
   return b64urlEncode(ed25519.sign(accessRequestBytes(nonce, manifest), b64urlDecode(identity.privateKey)));
 }
 
+
+export function signAuthenticate(identity: ConsumerIdentity, nonce: string): string {
+  return b64urlEncode(ed25519.sign(utf8("varco-authenticate-v1\0" + nonce), b64urlDecode(identity.privateKey)));
+}
+
 export function randomId(bytes = 16): string {
   const data = new Uint8Array(bytes);
   crypto.getRandomValues(data);

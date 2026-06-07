@@ -73,6 +73,18 @@ def verify_access_request(public_key: str, nonce: str, manifest: dict[str, Any],
     return verify_signature(public_key, signature, access_request_payload(nonce, manifest))
 
 
+def authenticate_payload(nonce: str) -> bytes:
+    return b"varco-authenticate-v1\0" + nonce.encode()
+
+
+def sign_authenticate(private_key: str, nonce: str) -> str:
+    return sign_bytes(private_key, authenticate_payload(nonce))
+
+
+def verify_authenticate(public_key: str, nonce: str, signature: str) -> bool:
+    return verify_signature(public_key, signature, authenticate_payload(nonce))
+
+
 def new_id(length: int = 16) -> str:
     return b64url_encode(secrets.token_bytes(length))
 

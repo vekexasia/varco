@@ -1,153 +1,321 @@
-# Varco — PRD
+# Varco - PRD
 
-> Nome di lavoro: **Varco** (il varco controllato verso casa). Sostituibile;
-> alternative scartate: ha-consent-link, ha-grant-bridge.
+> Nome di lavoro: **Varco**: il varco controllato verso casa.
 
 ## Una riga
 
-Connettività sicura a Home Assistant per consumer esterni (dashboard, app,
-script), **senza esporre HA su internet**, con grant nati da un **consent flow
-approvato dentro HA** (notifica con la lista permessi) invece che da un bearer
-link, scope read-only di default, e data path che parte via relay opaco e può
-promuoversi a WebRTC P2P.
+Varco è un prodotto/protocollo generico per dare accesso sicuro a consumer
+esterni verso Home Assistant, senza esporre HA su internet e senza consegnare
+token HA ai consumer. L'accesso nasce da una richiesta dichiarata dal consumer,
+viene approvato dentro HA dall'owner, produce un grant legato alla chiave del
+consumer, e viaggia su un tunnel E2E cifrato via relay con WebRTC opportunistico.
 
-Varco è l'evoluzione agnostica di `ha-share-actions`: quel progetto è
-action-centric (condividi un bottone con link+PIN); Varco generalizza a "un
-consumer qualunque chiede accesso, l'owner approva permessi specifici". La
-prima dashboard consumer è la **Gazzetta** (custom card / standalone).
+## Direzione prodotto
 
-## Perché, e cosa cambia rispetto a ha-share-actions
+Varco non è "la Gazzetta remota" e non è una dipendenza di `ha-share-actions`.
 
-`ha-share-actions` (in `~/git/personale/ha-share-actions`) ha già risolto il
-trasporto e va riciclato quasi per intero:
+- **Gazzetta** è il primo consumer reale da cui prendere requisiti e pattern UX.
+- **ha-share-actions** è il progetto da cui copiare/adattare idee e pezzi di
+  implementazione, ma Varco deve essere autonomo.
+- Quando Varco sarà completo, `ha-share-actions` sarà obsoleto/deprecabile.
 
-- **Si tiene**: bridge Cloudflare Durable Object opaco (hibernation API, costo
-  ~0 a riposo), identità Ed25519 dell'Authority, handshake X25519 +
-  `crypto_aead_xchacha20poly1305_ietf` (PyNaCl lato HA), Authority Presence,
-  relay outbound (HA non riceve connessioni in ingresso), QR transfer.
-- **Cambia**: il modello di autorizzazione. Lì il grant si crea in HA e produce
-  un bearer link (segreto che gira). Qui il grant nasce da una **richiesta del
-  consumer** che l'owner **approva** in HA, ed è **legato alla chiave del
-  consumer**, non a un segreto trasportabile.
-- **Si aggiunge**: manifest+consent flow, scope engine read/act separati, data
-  message types (subscribe/history/snapshot), WebRTC come ottimizzazione.
-- **Resta compatibile**: il vecchio "bearer link per condividere un bottone"
-  può rimanere come profilo d'uso (cancello alla famiglia), non è il primario.
+Confine MVP del repo:
+
+- `custom_components/varco` - Authority Home Assistant
+- `bridge/` - Cloudflare Worker/Durable Object ufficiale
+- `packages/client` - libreria TypeScript ufficiale
+- `examples/consumer-dashboard` - demo consumer minimale, non Gazzetta vera
 
 ## Attori
 
-- **Owner**: possiede HA, approva/revoca i consumer e i loro scope.
-- **Consumer**: app esterna (la Gazzetta è la prima). Ha un keypair proprio e un
-  manifest. NON è un utente HA.
-- **Authority**: l'installazione HA locale (custom integration), unica a
-  autorizzare ed eseguire. Tiene la WS outbound verso il bridge.
-- **Bridge**: relay Cloudflare opaco; instrada buste cifrate, non vede contenuti.
+- **Owner**: possiede HA, approva/rifiuta consumer e revoca grant.
+- **Consumer**: app esterna, dashboard, script o client. Ha un keypair proprio e
+  un manifest. Non è un utente HA.
+- **Authority**: l'installazione HA locale, implementata come custom integration.
+  Autorizza, esegue, valida scope, tiene la connessione outbound verso il bridge.
+- **Bridge**: relay opaco. Instrada buste cifrate, non vede contenuti applicativi.
+
+## Non-dipendenze esplicite
+
+Varco può leggere, copiare e adattare codice da `ha-share-actions`, ma non deve
+importarlo come dipendenza runtime. Stessa cosa per Gazzetta: il client Varco deve
+supportare dashboard HA-like, ma non conoscere né importare Gazzetta.
 
 ## Concetti
 
-- **Consumer identity**: keypair (Ed25519 firma / X25519 ECDH) generato dal
-  consumer alla prima esecuzione, persistito localmente (localStorage in
-  browser). La public key È l'identità del consumer.
-- **Manifest**: dichiarazione del consumer — `name`, `icon`, `version`, e
-  `scopes` richiesti. Mostrato all'owner in fase di consenso.
-- **Scope** (granulari, read-only di default):
-  - `read:entities` → lista esplicita di entity_id leggibili
-  - `subscribe` → push dei delta di stato delle entità in scope
-  - `history` → query storico per le entità in scope
-  - `camera_snapshot` → frame JPEG periodici (no streaming live in MVP)
-  - `act:<domain.service>@<entity_id>` → **opt-in esplicito per singola azione**;
-    set vuoto di default. Questo realizza il "ricevere dati ma non attuare nulla".
-  - opzionali: `expires_at`, `pin_for_act` (PIN come 2FA solo per le azioni)
-- **Grant**: scope approvati dall'owner, legati alla consumer public key.
-  Vive in HA storage; revocabile dal pannello.
-- **Pairing code**: 6 cifre derivate da `hash(consumer_pk ‖ authority_pk ‖
-  nonce)`, mostrate IDENTICHE su consumer e nella notifica HA → difesa contro
-  approvazione della richiesta sbagliata (numeric comparison stile Bluetooth).
+### Identità
 
-## Flusso di consenso (il cuore del progetto)
+- **Authority identity**: `authorityId` coincide con la public key stabile
+  dell'Authority, o con un encoding/fingerprint canonico della public key.
+- L'Authority firma con la private key; i consumer verificano con la public key.
+- Se la chiave Authority cambia o viene persa, per i consumer è una nuova
+  Authority. Nessuna rotazione trasparente nel MVP.
+- **Consumer identity**: keypair generato dal consumer alla prima esecuzione e
+  persistito localmente nel browser/device, per esempio IndexedDB/localStorage.
+  Cambio browser o cancellazione storage significa nuovo consumer.
 
-1. Consumer alla prima apertura genera keypair + costruisce il manifest (per la
-   Gazzetta gli scope `read:entities` si **derivano dalla config YAML della
-   card**: la dashboard sa già quali entità le servono).
-2. Pairing iniziale con l'Authority: l'owner inserisce nel consumer un
-   `authorityId` (o scansiona un QR da HA). Una tantum per Authority.
-3. Consumer manda **AccessRequest** via bridge: `{ manifest, consumer_pk,
-   nonce }` dentro la sessione cifrata.
-4. HA mostra **pairing code** + **notifica** (persistent notification + push
-   companion): "*La Casa Dashboard* chiede: lettura 87 entità, storico,
-   snapshot 9 camere, **nessuna azione**. Codice: 482193".
-5. Owner verifica che il codice combaci e approva — **può potare gli scope**
-   (togliere camere, ridurre entità, negare azioni) prima di emettere.
-6. HA emette il **Grant** legato a `consumer_pk`. Da qui ogni sessione si
-   autentica con challenge/firma della consumer key: niente segreto nel link.
-7. Revoca: pannello HA con i consumer attivi, ultimo accesso, scope; un tap
-   revoca.
+### Manifest
 
-## Data plane (message types nuovi, tutti dentro la sessione cifrata)
+Il manifest è self-declared nel MVP. Varco non certifica che un consumer chiamato
+"Gazzetta" sia davvero Gazzetta.
 
-Enforcement SEMPRE lato Authority (whitelist scope, rate limit, audit). Il
-bridge resta opaco. Tutto deve funzionare **solo via relay**; WebRTC è
-ottimizzazione.
+Il manifest dichiara:
 
-- `get_states` → snapshot delle entità in `read:entities`
-- `subscribe_states` / `state_delta` → push dei cambi (richiede `subscribe`)
-- `history_query` → `history/history_during_period` proxato (richiede `history`)
-- `call_service` → validato contro `act:*`; se `pin_for_act`, richiede il PIN
-  nella stessa sessione cifrata (verifica offline impossibile, come oggi)
-- `camera_snapshot` → JPEG ridimensionato via `auth/sign_path` lato Authority,
-  reinoltrato nel tunnel (no URL firmate verso il client: HA non è raggiungibile)
+- `name`, `icon`, `version`
+- entità leggibili richieste
+- subscription richieste/possibili
+- history richieste
+- snapshot camera richieste
+- azioni richieste in scrittura
 
-## WebRTC (fase successiva, opzionale)
+Il consumer dichiara cosa vuole fare. L'Authority non inventa permessi e non
+propone scope aggiuntivi.
 
-- Signaling SDP/ICE passa nel tunnel cifrato già esistente.
-- Stabilito il DataChannel, delta/history/snapshot migrano su **P2P diretto**;
-  il bridge esce di scena (resta per signaling e come fallback).
-- ICE: STUN pubblico per hole punching (~85% dei casi); TURN solo per NAT
-  ostili/CGNAT — da hostare (coturn) o Cloudflare Realtime. Misurare col POC
-  quanto serve davvero dalle reti reali (casa/4G/ufficio).
-- In LAN ICE negozia il percorso locale → latenza da rete locale con lo stesso link.
-- Lato HA: `aiortc` (verificare footprint dentro HAOS). Lato browser: nativo.
-- go2rtc (già nell'ecosistema HA) fa WebRTC per le camere: lo streaming live è
-  un progetto a parte, eventualmente integrabile dopo.
+### Grant
 
-## Threat model (sintesi)
+Il grant è il set completo dei permessi approvati dall'owner, legato alla public
+key del consumer e persistito in HA storage.
 
-- Bridge compromesso → vede solo `authorityId`, `consumerId`, timing, dimensioni.
-  Mai entità/stati/azioni/PIN/scope (E2E XChaCha20, come share-actions).
-- Link/identità consumer rubata → senza la private key non si autentica; e la
-  prima volta l'owner ha comunque approvato. Revoca per-consumer in HA.
-- Approvazione della richiesta sbagliata → mitigata dal pairing code (numeric
-  comparison): si approva solo se i 6 numeri combaciano.
-- Default zero-trust: nessuna azione possibile finché non c'è un `act:` esplicito.
+Il consenso è atomico nel MVP:
+
+- approva tutto
+- rifiuta tutto
+
+L'owner non pota scope nel MVP. Se il manifest chiede troppo, il consumer deve
+creare una nuova AccessRequest più piccola.
+
+### Scope lettura
+
+MVP: lista esplicita di `entity_id`.
+
+Estensione futura: selector/pattern per domain, area, label, wildcard. Il modello
+dati non deve impedirlo, ma l'MVP non lo implementa.
+
+### Scope azioni
+
+Il consumer dichiara nel manifest gli accessi in scrittura desiderati. MVP supporta
+tre granularità:
+
+- servizio + entity, esempio `light.turn_on@light.cucina`
+- dominio servizio, esempio `light.*`
+- entity con qualunque servizio, esempio `*@light.cucina`
+
+Nessun PIN per azioni nel MVP.
+
+## Flusso di consenso
+
+1. Consumer genera o recupera il proprio keypair locale.
+2. Owner inserisce nel consumer l'`authorityId`, che è la public key/fingerprint
+   dell'Authority.
+3. Consumer apre una sessione cifrata verso l'Authority tramite bridge.
+4. Consumer invia `AccessRequest` con manifest, `consumer_pk` e nonce.
+5. HA mostra notifica/pannello di consenso con nome self-declared, permessi
+   richiesti e pairing code.
+6. Owner confronta il pairing code e approva o rifiuta l'intero manifest.
+7. Se approvato, HA crea il grant legato a `consumer_pk`.
+8. Ogni sessione successiva si autentica con challenge/firma della consumer key.
+9. Revoca da pannello HA: il grant viene marcato revoked, le sessioni attive
+   vengono chiuse, e ogni messaggio successivo viene rifiutato.
+
+## Enforcement
+
+Enforcement sempre lato Authority, su ogni messaggio data-plane, contro il grant
+corrente. Il consumer e il bridge non sono mai trusted per i permessi.
+
+Regole MVP:
+
+- nessun utente HA creato per i consumer
+- nessun long-lived token HA consegnato ai consumer
+- revoca immediata o quasi immediata
+- messaggi post-revoca rifiutati
+- errori di permesso auditati
+- stati/payload sensibili non loggati
+
+## Data plane
+
+Tutti i messaggi applicativi viaggiano dentro la sessione E2E cifrata. Il relay è
+la baseline obbligatoria; WebRTC è un transport opportunistico con fallback relay.
+
+Message types MVP:
+
+- `get_states` - snapshot delle entità richieste, validate contro grant
+- `subscribe_states` - apre subscription runtime per un set di entity_id
+- `unsubscribe_states` - chiude una subscription runtime
+- `state_snapshot` - snapshot iniziale obbligatoria di una subscription
+- `state_delta` - delta successivi per quella subscription
+- `history_query` - proxy verso history HA per entità autorizzate
+- `camera_snapshot` - JPEG recuperato lato Authority e reinoltrato nel tunnel
+- `call_service` - validato contro gli scope azione approvati
+- `error` - errore strutturato con `request_id`/`subscription_id` quando applicabile
+
+History e camera snapshot sono inclusi nel MVP senza limiti speciali oltre al
+grant approvato. Rischio noto: carico HA, costo relay e privacy vanno osservati
+durante test reali.
+
+## Subscription runtime
+
+Il grant rappresenta il massimo autorizzato. La subscription runtime rappresenta
+solo il sottoinsieme di entity che il consumer vuole osservare in quel momento.
+
+API concettuale:
+
+- `subscribe(entityIds)` ritorna `subscriptionId`
+- l'Authority valida tutti gli `entityIds` contro il grant
+- risposta obbligatoria: snapshot iniziale delle entity richieste
+- poi solo delta per quella subscription
+- `unsubscribe(subscriptionId)` chiude la subscription
+
+Il consumer gestisce il lifecycle. Può aprire 20 subscription per 20 entity, una
+subscription per card, o una subscription per pagina. La libreria TypeScript può
+loggare warning se la stessa istanza client apre una subscription duplicata con lo
+stesso set identico di entity senza aver chiuso la precedente.
+
+## WebRTC
+
+WebRTC è incluso nell'MVP come ottimizzazione opportunistica del transport.
+
+Regole:
+
+- il consumer deve funzionare completamente via relay
+- WebRTC usa lo stesso protocollo e la stessa semantica del relay
+- stesso `subscribe`, stessa snapshot iniziale, stessi delta, stessi errori
+- signaling SDP/ICE passa nel tunnel cifrato esistente
+- se WebRTC cade o non si stabilisce, fallback relay
+- STUN pubblico per hole punching; TURN da valutare dopo misure reali
+
+WebRTC non cambia auth, grant, scope o enforcement.
+
+## Bridge
+
+Il bridge Cloudflare ufficiale è parte di Varco e vive nel repo.
+
+MVP iniziale:
+
+- bridge pubblico condiviso come percorso consigliato
+- bridge aperto a qualunque Authority
+- Authority configurabile con bridge URL
+- bridge personale/power-user non implementato, ma il protocollo non deve
+  impedirlo
+
+Fase successiva:
+
+- allowlist/invite/admin control per il bridge pubblico
+- documentazione per bridge personale o self-hosted
+
+Il bridge resta opaco: vede routing metadata, timing e dimensioni, non contenuti,
+scope, stati, azioni o PIN.
+
+## Libreria TypeScript
+
+Varco include nel MVP una libreria TypeScript ufficiale.
+
+Distribuzione:
+
+- package npm ufficiale, per esempio `@varco/client`
+- build ESM standalone importabile via URL/CDN per prototipi
+
+Target:
+
+- browser supportato nel MVP
+- core disegnato per poter diventare isomorfo
+- Node/script non promessi nel MVP
+
+API:
+
+- core Varco-native: pairing, sessione, grant, `getStates`, `subscribeEntities`,
+  `unsubscribe`, `queryHistory`, `cameraSnapshot`, `callService`
+- adapter opzionale HA-like per dashboard consumer, per esempio
+  `createHassLikeClient()`
+
+La libreria gestisce autenticazione, sessione cifrata, reconnect, fallback relay,
+WebRTC opportunistico, subscription tracking e warning per subscription duplicate.
+
+## Audit MVP
+
+Audit minimale ma strutturato in HA storage/log:
+
+- AccessRequest ricevuta
+- approvazione/rifiuto
+- connessione consumer
+- revoca
+- `call_service`
+- errori di permesso
+- errori sessione rilevanti
+
+Non loggare stati entity, snapshot camera, history payload o contenuti sensibili.
 
 ## Riuso concreto da ha-share-actions
 
-| Pezzo | Riuso |
+| Pezzo | Uso in Varco |
 |---|---|
-| `bridge/` (DO, hibernation, presence, shorten, transfer) | ~intatto; aggiungere routing per AccessRequest se serve |
-| `custom_components/share_actions/crypto.py` (SecureSession, Ed25519) | intatto |
-| `relay.py` (WS outbound, reconnect, challenge/sign) | base, estendere con i nuovi message types |
-| `storage.py`, `models.py` | rimodellare: da ShareGrant(action) a Grant(consumer+scopes) |
-| `config_flow.py`, `notify.py`, frontend panel | il panel diventa **consent/management**, non creation |
-| `action_catalog.py`, `constraints.py` | riusabili per la validazione `act:` |
-| QR transfer | utile per onboardare il consumer su un secondo device |
+| `bridge/` DO, hibernation, presence, transfer | copiare/adattare nel bridge Varco |
+| crypto/sessione Ed25519/X25519/XChaCha20 | copiare/adattare dentro Varco |
+| relay outbound HA | base per Authority Varco |
+| storage/models | rimodellare da ShareGrant(action) a Grant(consumer+scopes) |
+| frontend panel/notify | diventa consent/management panel |
+| action catalog/constraints | riusare concettualmente per validare `call_service` |
+| QR transfer | fuori MVP, possibile estensione |
+
+Nessun import runtime da `ha-share-actions`.
 
 ## Roadmap
 
-- **Fase 0** — POC: AccessRequest+consent end-to-end (notifica HA finta ok),
-  scope engine read-only, Gazzetta che deriva gli scope dalla config. POC
-  `aiortc` isolato + misura hole punching dalle reti reali.
-- **Fase 1** — Protocollo dati nel relay (get_states/subscribe/history/
-  call_service/camera_snapshot) + enforcement scope + audit. Funziona via relay.
-- **Fase 2** — `HassProvider` astratto nella gazzetta-card: `Ctx` accetta o
-  l'`hass` di Lovelace o il client Varco. Entry point standalone su CF Pages.
-  **A fine fase 2: Gazzetta remota funzionante** (relay, link+consenso+PIN).
-- **Fase 3** — WebRTC data path + camere via snapshot JPEG.
-- **Fase 4** — Grant per-persona (famiglia: Panoramica+Sicurezza; owner: tutto),
-  gestione sessioni lunghe (tablet h24), QR transfer, rifiniture.
+### Fase 0 - scheletro end-to-end
 
-Incognite aperte: footprint aiortc in HAOS; costi DO con sessioni dashboard h24
-via relay; quanto generalizzare il protocollo senza rompere l'MVP share-actions.
+- monorepo Varco autonomo
+- Authority HA installabile
+- bridge Cloudflare ufficiale
+- client TS browser minimale
+- sessione cifrata consumer-Authority via relay
+- AccessRequest self-declared
+- consent HA approve/reject atomico
+- grant legato a consumer public key
+
+### Fase 1 - data plane relay completo
+
+- `get_states`
+- `subscribe_states`/`unsubscribe_states` con snapshot iniziale e delta
+- `history_query`
+- `camera_snapshot`
+- `call_service` con granularità servizio+entity, dominio servizio, entity
+- enforcement per messaggio
+- revoca immediata
+- audit minimale strutturato
+
+### Fase 2 - client TS e demo consumer
+
+- package npm e build ESM standalone
+- API Varco-native completa
+- adapter HA-like
+- demo consumer-dashboard minimale
+- subscription lifecycle esplicito
+- warning subscription duplicate
+- bridge pubblico con allowlist/invite/admin control
+
+### Fase 3 - WebRTC MVP
+
+- signaling nel tunnel cifrato
+- DataChannel con stessa semantica del relay
+- fallback relay obbligatorio
+- misure reali su casa/4G/ufficio/CGNAT
+- decisione su TURN/coturn/Cloudflare Realtime
+
+### Fase 4 - maturazione
+
+- selector/pattern per read scopes
+- eventuale publisher identity/signature
+- bridge personale/self-hosted documentato
+- QR/bootstrap alternativo
+- gestione sessioni lunghe tablet h24
+- migrazione caso d'uso "share a button" come consumer Varco
+
+## Incognite aperte
+
+- costi Durable Object con dashboard h24 via relay
+- footprint WebRTC/aiortc dentro HAOS
+- affidabilità WebRTC in reti reali
+- costo e privacy di history/snapshot senza limiti speciali nel MVP
+- UX consenso per manifest con molte entità e molte azioni
 
 ---
 
@@ -186,12 +354,11 @@ verificare che HAOS lo installi senza problemi (potrebbe servire wheel).
 
 ## Deploy del client statico / bridge
 
-- Client statico (es. Gazzetta standalone): deploy su Cloudflare Pages
-  (`wrangler pages deploy dist`) come in share-actions, **oppure** per test
-  veloci servirlo da HA: `scp dist/* root@192.168.1.47:/config/www/varco/` →
+- Client statico demo: deploy su Cloudflare Pages (`wrangler pages deploy dist`),
+  oppure per test veloci servirlo da HA:
+  `scp dist/* root@192.168.1.47:/config/www/varco/` ->
   `http://192.168.1.47:8123/local/varco/...`.
-- Bridge: Cloudflare Worker, `wrangler deploy` dalla cartella `bridge/`
-  (riusare l'account/config di share-actions).
+- Bridge: Cloudflare Worker, `wrangler deploy` dalla cartella `bridge/`.
 
 ## Accesso HA via API/MCP
 

@@ -1,0 +1,45 @@
+# Varco
+
+Varco is a relay-first access layer for Home Assistant. It lets external consumers request scoped access without receiving a Home Assistant token and without exposing Home Assistant directly to the internet.
+
+## Primary docs
+
+- README.md: overview, quick starts, repository layout, commands.
+- docs/home-assistant.md: manual installation, configuration, owner workflow, grants, services, troubleshooting.
+- docs/consumer-integration.md: browser TypeScript client usage, manifest fields, scopes, examples.
+- docs/protocol.md: actors, bridge endpoints, pairing flow, encryption boundaries, messages, security invariants.
+- AGENTS.md: coding-agent instructions for this repository.
+
+## Source map
+
+- custom_components/varco/: Home Assistant custom integration.
+- custom_components/varco/authority.py: Authority data plane and permission enforcement.
+- custom_components/varco/policy.py: entity and action scope checks.
+- custom_components/varco/relay.py: Authority outbound WebSocket relay connection.
+- custom_components/varco/websocket_api.py: Home Assistant admin WebSocket commands.
+- custom_components/varco/frontend/panel.js: Home Assistant panel at /varco.
+- bridge/src/index.ts: Cloudflare Worker and Durable Object relay.
+- packages/client/src/client.ts: @varco/client public API.
+- packages/client/src/transport.ts: encrypted relay transport.
+- packages/client/src/identity.ts: consumer keypair and signatures.
+- examples/consumer-dashboard/: minimal consumer dashboard.
+- examples/gazzetta-energy-showcase/: read-only energy showcase.
+- tests/: Python Authority tests.
+
+## Security invariants
+
+- Consumers never receive Home Assistant long-lived access tokens.
+- Home Assistant remains the Authority and enforces every grant.
+- The bridge is opaque and should not see application plaintext.
+- Revocation is checked by the Authority.
+- Audit logs must not include entity state payloads, camera data, or history payloads.
+
+## Common commands
+
+```bash
+npm install
+npm test
+npm run build
+npm run check
+pytest -q tests
+```

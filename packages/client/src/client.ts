@@ -1,4 +1,4 @@
-import { loadOrCreateIdentity, randomId, signAccessRequest } from "./identity.js";
+import { loadOrCreateIdentity, randomId, signAccessRequest, signAuthenticate } from "./identity.js";
 import { MemoryStorage } from "./memory-storage.js";
 import { RelayTransport } from "./transport.js";
 import type { HassState, VarcoClient, VarcoClientOptions, VarcoTransport, VarcoTransportStatus } from "./types.js";
@@ -37,7 +37,13 @@ export function createVarcoClient(options: VarcoClientOptions): VarcoClient {
     },
 
     async connect() {
-      await relayTransport.request({ type: "authenticate", consumer_pk: identity.publicKey });
+      const nonce = randomId(12);
+      await relayTransport.request({
+        type: "authenticate",
+        consumer_pk: identity.publicKey,
+        nonce,
+        signature: signAuthenticate(identity, nonce),
+      });
       setStatus({ mode: "relay", detail: "relay authenticated" });
       if (options.webrtc !== false) {
         const p2p = await tryWebRtcUpgrade(relayTransport, setStatus);

@@ -1,7 +1,7 @@
 {
   "name": "varco",
   "private": true,
-  "workspaces": ["bridge", "packages/client", "examples/consumer-dashboard"],
+  "workspaces": ["bridge", "packages/client", "examples/consumer-dashboard", "examples/gazzetta-energy-showcase"],
   "scripts": {
     "test": "npm run test --workspaces --if-present && pytest -q tests",
     "build": "npm run build --workspaces --if-present",

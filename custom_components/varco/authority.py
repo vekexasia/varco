@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
 from . import audit
-from .crypto import new_id, pairing_code, verify_access_request
+from .crypto import new_id, pairing_code, verify_access_request, verify_authenticate
 from .models import AccessRequest, Grant
 from .policy import action_allowed, camera_entities, entity_allowed, history_entities, read_entities, subscription_entities
 from .storage import MemoryVarcoStore
@@ -143,6 +144,11 @@ class VarcoAuthority:
 
     async def _authenticate(self, session_id: str, message: dict[str, Any]) -> dict[str, Any]:
         consumer_pk = str(message.get("consumer_pk") or "")
+        nonce = str(message.get("nonce") or "")
+        signature = str(message.get("signature") or "")
+        if not verify_authenticate(consumer_pk, nonce, signature):
+            await audit.async_log(self.store, "session_error", details={"reason": "bad_authenticate_signature"})
+            return self._error(message.get("request_id"), "bad_signature", "Invalid authentication signature")
         grant = await self.store.async_get_grant_by_consumer(consumer_pk)
         if grant is None or grant.revoked:
             return self._error(message.get("request_id"), "not_authorized", "No active grant")
@@ -283,7 +289,56 @@ class VarcoAuthority:
     async def _history_payload(self, entity_ids: list[str], message: dict[str, Any]) -> Any:
         if self.hass is not None and hasattr(self.hass, "varco_history"):
             return await self.hass.varco_history(entity_ids, message)
-        return {entity_id: [] for entity_id in entity_ids}
+        if self.hass is None:
+            return {entity_id: [] for entity_id in entity_ids}
+        end = self._parse_history_time(message.get("end_time")) or datetime.now(timezone.utc)
+        start = self._parse_history_time(message.get("start_time")) or end - timedelta(hours=24)
+        try:
+            from homeassistant.components.recorder.history import get_significant_states
+        except Exception:
+            return {entity_id: [] for entity_id in entity_ids}
+
+        def load_history():
+            return get_significant_states(
+                self.hass,
+                start,
+                end,
+                entity_ids=entity_ids,
+                significant_changes_only=False,
+                minimal_response=False,
+                no_attributes=True,
+            )
+
+        raw = await self.hass.async_add_executor_job(load_history)
+        return {entity_id: [self._history_point(item) for item in raw.get(entity_id, [])] for entity_id in entity_ids}
+
+    def _parse_history_time(self, value: Any) -> datetime | None:
+        if not isinstance(value, str) or not value:
+            return None
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+
+    def _history_point(self, item: Any) -> dict[str, Any]:
+        if isinstance(item, dict):
+            state = item.get("state", item.get("s"))
+            updated = item.get("last_updated", item.get("last_changed"))
+            if item.get("lu") is not None:
+                updated = datetime.fromtimestamp(float(item["lu"]), timezone.utc).isoformat()
+            return {"t": str(updated), "state": state, "v": self._numeric_or_none(state)}
+        state = getattr(item, "state", None)
+        updated = getattr(item, "last_updated", None) or getattr(item, "last_changed", None)
+        return {"t": updated.isoformat() if hasattr(updated, "isoformat") else str(updated), "state": state, "v": self._numeric_or_none(state)}
+
+    def _numeric_or_none(self, value: Any) -> float | None:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
 
     async def _camera_payload(self, entity_id: str) -> str:
         if self.hass is not None and hasattr(self.hass, "varco_camera_snapshot"):
