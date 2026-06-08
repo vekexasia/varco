@@ -10,9 +10,7 @@ Varco does not give the consumer a Home Assistant token. Home Assistant remains 
 - Outbound HTTPS/WebSocket access from Home Assistant to the bridge.
 - The `custom_components/varco` directory from this repository.
 
-The integration declares this Python requirement in `custom_components/varco/manifest.json`:
-
-- `cryptography>=42.0.0`
+The integration uses Home Assistant's bundled Python cryptography support and does not install extra Python packages during setup.
 
 WebRTC support is opportunistic. Varco tries to import `aiortc` only when WebRTC is enabled; if it is not available, Varco logs a warning and keeps relay transport working.
 

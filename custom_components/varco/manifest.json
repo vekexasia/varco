@@ -7,6 +7,6 @@
   "documentation": "https://github.com/vekexasia/varco",
   "iot_class": "cloud_push",
   "issue_tracker": "https://github.com/vekexasia/varco/issues",
-  "requirements": ["cryptography>=42.0.0"],
+  "requirements": [],
   "version": "0.1.0"
 }
