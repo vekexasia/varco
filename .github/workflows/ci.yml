@@ -89,10 +89,13 @@ jobs:
         run: |
           set -euo pipefail
           for attempt in $(seq 1 60); do
-            if npm run dev:ha:local-smoke && npm run dev:ha:local-browser && npm run dev:ha:dashboard-export-browser; then
+            if timeout 120s npm run dev:ha:local-smoke \
+              && timeout 180s npm run dev:ha:local-browser \
+              && timeout 180s npm run dev:ha:dashboard-export-browser; then
               exit 0
             fi
             echo "Home Assistant not ready for browser e2e yet ($attempt/60)."
+            docker logs --tail 120 varco-ci-ha || true
             sleep 5
           done
           docker logs varco-ci-ha
