@@ -6,6 +6,7 @@ const compose = readFileSync('dev/home-assistant/docker-compose.yml', 'utf8');
 const deploy = readFileSync('dev/home-assistant/deploy-to-docker-host.sh', 'utf8');
 const workflow = readFileSync('.github/workflows/deploy-ha-showcase.yml', 'utf8');
 const ciWorkflow = readFileSync('.github/workflows/ci.yml', 'utf8');
+const manifest = JSON.parse(readFileSync('custom_components/varco/manifest.json', 'utf8'));
 
 test('Home Assistant compose lets remote deploy bind Cloudflare-compatible port 80', () => {
   assert.match(compose, /\$\{HA_HTTP_PORT:-8123\}:8123/);
@@ -19,6 +20,10 @@ test('deploy script preserves remote runtime state, force-recreates Home Assista
   assert.match(deploy, /docker compose up -d --force-recreate --remove-orphans homeassistant/);
   assert.match(deploy, /docker system prune -af/);
   assert.doesNotMatch(deploy, /--volumes/);
+});
+
+test('Varco declares aiortc so deployed Home Assistant can accept WebRTC offers', () => {
+  assert.ok(manifest.requirements.includes('aiortc>=1.9.0'));
 });
 
 test('showcase workflow can be triggered manually and verifies public URL plus Varco panel', () => {
