@@ -85,21 +85,33 @@ jobs:
             -v "$PWD/.pi/ci-ha-config:/config" \
             ghcr.io/home-assistant/home-assistant:2026.6.1
 
-      - name: Run Home Assistant browser e2e
+      - name: Wait for Home Assistant e2e readiness
+        timeout-minutes: 8
         run: |
           set -euo pipefail
-          for attempt in $(seq 1 60); do
-            if timeout 120s npm run dev:ha:local-smoke \
-              && timeout 180s npm run dev:ha:local-browser \
-              && timeout 180s npm run dev:ha:dashboard-export-browser; then
+          for attempt in $(seq 1 48); do
+            if curl -fsS http://127.0.0.1:8123/ >/dev/null \
+              && timeout -k 5s 20s npm run dev:ha:list; then
               exit 0
             fi
-            echo "Home Assistant not ready for browser e2e yet ($attempt/60)."
+            echo "Home Assistant not ready yet ($attempt/48)."
             docker logs --tail 120 varco-ci-ha || true
             sleep 5
           done
           docker logs varco-ci-ha
           exit 1
+
+      - name: Run hass-first local smoke e2e
+        timeout-minutes: 4
+        run: timeout -k 10s 180s npm run dev:ha:local-smoke
+
+      - name: Run hass-first browser e2e
+        timeout-minutes: 5
+        run: timeout -k 10s 240s npm run dev:ha:local-browser
+
+      - name: Run dashboard export browser e2e
+        timeout-minutes: 5
+        run: timeout -k 10s 240s npm run dev:ha:dashboard-export-browser
 
       - name: Upload Home Assistant browser e2e artifacts
         if: always()
