@@ -123,9 +123,9 @@ class VarcoRelay:
         try:
             plaintext = session.secure.decrypt(payload)
             response = await self.authority.handle_plaintext(session_id, plaintext)
-        except Exception as err:
+        except Exception:
             _LOGGER.exception("Varco client message failed")
-            response = {"type": "error", "code": "session_error", "message": str(err)}
+            response = {"type": "error", "code": "session_error", "message": "Internal error"}
         await self._send_to_client(session_id, session.secure.encrypt(response))
         for event in await self.authority.pop_outbox(session_id):
             await self._send_to_client(session_id, session.secure.encrypt(event))

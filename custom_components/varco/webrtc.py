@@ -44,9 +44,9 @@ class AioRtcPeerStack:
                         payload = json.loads(message if isinstance(message, str) else message.decode())
                         response = await handler(payload)
                         channel.send(json.dumps(response, separators=(",", ":")))
-                    except Exception as err:
+                    except Exception:
                         _LOGGER.exception("Varco WebRTC datachannel message failed")
-                        channel.send(json.dumps({"type": "error", "code": "webrtc_error", "message": str(err)}, separators=(",", ":")))
+                        channel.send(json.dumps({"type": "error", "code": "webrtc_error", "message": "Internal error"}, separators=(",", ":")))
 
                 asyncio.create_task(handle())
 
