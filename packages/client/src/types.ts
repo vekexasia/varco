@@ -55,7 +55,76 @@ export type VarcoClientOptions = {
 
 export type AccessResult = { request_id: string; pairing_code: string; status: string; mode?: "home-assistant" };
 
-export type VarcoClient = {
+export type VarcoDomainHelpers = {
+  entity: {
+    get(entityId: string): Promise<HassState | null>;
+    subscribe(entityId: string, cb: (event: any) => void): Promise<string>;
+    history(entityId: string, range?: Record<string, unknown>): Promise<any>;
+    call(entityId: string, service: string, data?: Record<string, unknown>): Promise<void>;
+  };
+  light: {
+    turnOn(entityId: string, options?: Record<string, unknown>): Promise<void>;
+    turnOff(entityId: string): Promise<void>;
+    toggle(entityId: string): Promise<void>;
+    setBrightness(entityId: string, brightnessPct: number): Promise<void>;
+    setColor(entityId: string, color: Record<string, unknown>): Promise<void>;
+  };
+  switch: { turnOn(entityId: string): Promise<void>; turnOff(entityId: string): Promise<void>; toggle(entityId: string): Promise<void>; };
+  climate: {
+    setTemperature(entityId: string, temperature: number, options?: Record<string, unknown>): Promise<void>;
+    setTemperatureRange(entityId: string, targetTempLow: number, targetTempHigh: number, options?: Record<string, unknown>): Promise<void>;
+    setHvacMode(entityId: string, hvacMode: string): Promise<void>;
+    setPresetMode(entityId: string, presetMode: string): Promise<void>;
+    setFanMode(entityId: string, fanMode: string): Promise<void>;
+    setSwingMode(entityId: string, swingMode: string): Promise<void>;
+    setHumidity(entityId: string, humidity: number): Promise<void>;
+    turnOn(entityId: string): Promise<void>;
+    turnOff(entityId: string): Promise<void>;
+  };
+  cover: {
+    open(entityId: string): Promise<void>;
+    close(entityId: string): Promise<void>;
+    stop(entityId: string): Promise<void>;
+    setPosition(entityId: string, position: number): Promise<void>;
+    openTilt(entityId: string): Promise<void>;
+    closeTilt(entityId: string): Promise<void>;
+    stopTilt(entityId: string): Promise<void>;
+    setTiltPosition(entityId: string, tiltPosition: number): Promise<void>;
+  };
+  fan: {
+    turnOn(entityId: string): Promise<void>;
+    turnOff(entityId: string): Promise<void>;
+    toggle(entityId: string): Promise<void>;
+    setPercentage(entityId: string, percentage: number): Promise<void>;
+    setPresetMode(entityId: string, presetMode: string): Promise<void>;
+    setDirection(entityId: string, direction: string): Promise<void>;
+    oscillate(entityId: string, oscillating: boolean): Promise<void>;
+  };
+  lock: { lock(entityId: string): Promise<void>; unlock(entityId: string): Promise<void>; open(entityId: string): Promise<void>; };
+  mediaPlayer: {
+    turnOn(entityId: string): Promise<void>;
+    turnOff(entityId: string): Promise<void>;
+    volumeUp(entityId: string): Promise<void>;
+    volumeDown(entityId: string): Promise<void>;
+    setVolume(entityId: string, volumeLevel: number): Promise<void>;
+    mute(entityId: string, muted: boolean): Promise<void>;
+    play(entityId: string): Promise<void>;
+    pause(entityId: string): Promise<void>;
+    stop(entityId: string): Promise<void>;
+    playPause(entityId: string): Promise<void>;
+    nextTrack(entityId: string): Promise<void>;
+    previousTrack(entityId: string): Promise<void>;
+    seek(entityId: string, seconds: number): Promise<void>;
+    selectSource(entityId: string, source: string): Promise<void>;
+    playMedia(entityId: string, mediaContentId: string, mediaContentType: string, options?: Record<string, unknown>): Promise<void>;
+  };
+  button: { press(entityId: string): Promise<void>; };
+  scene: { turnOn(entityId: string): Promise<void>; };
+  number: { setValue(entityId: string, value: number): Promise<void>; };
+  select: { selectOption(entityId: string, option: string): Promise<void>; };
+};
+
+export type VarcoClient = VarcoDomainHelpers & {
   readonly consumerPublicKey: string;
   readonly transportStatus: VarcoTransportStatus;
   requestAccess(): Promise<AccessResult>;

@@ -72,3 +72,34 @@ The relay client stores the consumer identity in `localStorage` by default. Clea
 | `queryHistory(entityIds, range)` | Query Home Assistant recorder history. |
 | `cameraSnapshot(entityId)` | Request a camera snapshot. |
 | `callService(domain, service, data)` | Call an approved Home Assistant service. |
+
+## Domain helpers
+
+`@varco/client` stays headless. It does not render UI, but clients expose convenience helpers that call approved Home Assistant services with the right domain, service name, and payload shape.
+
+```ts
+await client.light.setBrightness("light.kitchen", 50);
+await client.climate.setTemperature("climate.living_room", 21, { hvac_mode: "heat" });
+await client.climate.setTemperatureRange("climate.bedroom", 18, 22, { hvac_mode: "heat_cool" });
+await client.cover.open("cover.awning");
+await client.mediaPlayer.setVolume("media_player.tv", 0.3);
+```
+
+The generic `callService()` method remains available for unsupported services and cross-domain services. `entity.call(entityId, service, data)` is only for services in the entity's own domain because it derives the domain from the entity ID.
+
+`climate.setTemperature()` is for a single setpoint and sends `temperature`. Use `climate.setTemperatureRange()` for heat/cool ranges with `target_temp_low` and `target_temp_high`.
+
+First-batch helper groups:
+
+- `entity`: `get`, `subscribe`, `history`, `call`.
+- `light`: `turnOn`, `turnOff`, `toggle`, `setBrightness`, `setColor`.
+- `switch`: `turnOn`, `turnOff`, `toggle`.
+- `climate`: `setTemperature`, `setTemperatureRange`, `setHvacMode`, `setPresetMode`, `setFanMode`, `setSwingMode`, `setHumidity`, `turnOn`, `turnOff`.
+- `cover`: `open`, `close`, `stop`, `setPosition`, `openTilt`, `closeTilt`, `stopTilt`, `setTiltPosition`.
+- `fan`: `turnOn`, `turnOff`, `toggle`, `setPercentage`, `setPresetMode`, `setDirection`, `oscillate`.
+- `lock`: `lock`, `unlock`, `open`.
+- `mediaPlayer`: `turnOn`, `turnOff`, `volumeUp`, `volumeDown`, `setVolume`, `mute`, `play`, `pause`, `stop`, `playPause`, `nextTrack`, `previousTrack`, `seek`, `selectSource`, `playMedia`.
+- `button`: `press`.
+- `scene`: `turnOn`.
+- `number`: `setValue`.
+- `select`: `selectOption`.

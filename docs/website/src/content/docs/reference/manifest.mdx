@@ -53,3 +53,58 @@ light.*
 ```
 
 Request the smallest manifest that supports the app. The Authority still enforces the stored grant on every request, even if the consumer code changes later.
+
+## Manifest helpers
+
+`@varco/client` exports headless manifest builders for common entity/action presets. They expand ergonomic entity declarations into the Varco manifest fields and deduplicate repeated scopes.
+
+```ts
+import {
+  climateControl,
+  createManifest,
+  lightControl,
+  readEntity,
+} from "@varco/client";
+
+const manifest = createManifest({
+  name: "Room dashboard",
+  version: "0.1.0",
+  entities: [
+    readEntity("sensor.room_temperature", { subscribe: true }),
+    lightControl("light.kitchen", { brightness: true }),
+    climateControl("climate.living_room", {
+      temperature: true,
+      hvacMode: true,
+      presetMode: true,
+    }),
+  ],
+});
+```
+
+This produces read scopes for each entity, a subscription scope for `sensor.room_temperature`, default subscription scopes for control builders, plus action scopes such as:
+
+```text
+light.turn_on@light.kitchen
+light.turn_off@light.kitchen
+climate.set_temperature@climate.living_room
+climate.set_hvac_mode@climate.living_room
+climate.set_preset_mode@climate.living_room
+```
+
+`readEntity()` and `cameraEntity()` do not request subscriptions by default. Pass `{ subscribe: true }` when the app needs live updates. Control builders such as `lightControl()` and `climateControl()` subscribe by default, and accept `{ subscribe: false }` to opt out.
+
+Available first-batch builders:
+
+- `readEntity(entityId)`
+- `cameraEntity(entityId)`
+- `lightControl(entityId, options)`
+- `switchControl(entityId, options)`
+- `climateControl(entityId, options)`
+- `coverControl(entityId, options)`
+- `fanControl(entityId, options)`
+- `lockControl(entityId, options)`
+- `mediaPlayerControl(entityId, options)`
+- `buttonControl(entityId, options)`
+- `sceneControl(entityId, options)`
+- `numberControl(entityId, options)`
+- `selectControl(entityId, options)`

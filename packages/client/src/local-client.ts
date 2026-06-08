@@ -1,10 +1,11 @@
-import type { HassFrontend, HassState, VarcoConsumerClient } from "./types.js";
+import { attachDomainHelpers } from "./domain-helpers.js";
+import type { HassFrontend, HassState, VarcoConsumerClient, VarcoDomainHelpers } from "./types.js";
 
 export function createLocalHomeAssistantClient(hass: HassFrontend): VarcoConsumerClient {
   let currentHass = hass;
   let nextSubscriptionId = 1;
   const subscriptions = new Map<string, { entityIds: string[]; cb: (event: any) => void; states: Record<string, HassState | null> }>();
-  const client: VarcoConsumerClient = {
+  const client: Omit<VarcoConsumerClient, keyof VarcoDomainHelpers> = {
     consumerPublicKey: "local",
     transportStatus: { mode: "home-assistant", detail: "using Home Assistant frontend session" },
 
@@ -77,7 +78,7 @@ export function createLocalHomeAssistantClient(hass: HassFrontend): VarcoConsume
       }
     },
   };
-  return client;
+  return attachDomainHelpers(client);
 }
 
 function snapshotStates(hass: HassFrontend, entityIds: string[]): Record<string, HassState | null> {

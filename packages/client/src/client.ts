@@ -1,4 +1,5 @@
 import { loadOrCreateIdentity, randomId, signAccessRequest, signAuthenticate } from "./identity.js";
+import { attachDomainHelpers } from "./domain-helpers.js";
 import { MemoryStorage } from "./memory-storage.js";
 import { RelayTransport } from "./transport.js";
 import type { HassState, VarcoClient, VarcoClientOptions, VarcoTransport, VarcoTransportStatus } from "./types.js";
@@ -20,7 +21,7 @@ export function createVarcoClient(options: VarcoClientOptions): VarcoClient {
   };
   attachEvents(relayTransport);
 
-  return {
+  return attachDomainHelpers({
     get consumerPublicKey() { return identity.publicKey; },
     get transportStatus() { return transportStatus; },
 
@@ -95,7 +96,7 @@ export function createVarcoClient(options: VarcoClientOptions): VarcoClient {
       await activeTransport.close?.();
       if (activeTransport !== relayTransport) await relayTransport.close?.();
     },
-  };
+  });
 }
 
 class DataChannelTransport implements VarcoTransport {

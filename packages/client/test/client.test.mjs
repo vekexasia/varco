@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createVarcoClient, createVarcoConsumerClient, MemoryStorage } from '../dist/index.js';
+import { buttonControl, cameraEntity, createManifest, createVarcoClient, createVarcoConsumerClient, fanControl, lightControl, climateControl, coverControl, lockControl, mediaPlayerControl, MemoryStorage, numberControl, readEntity, sceneControl, selectControl, switchControl } from '../dist/index.js';
 
 class FakeTransport {
   constructor() { this.messages = []; this.handler = null; this.next = new Map(); }
@@ -96,6 +96,26 @@ test('local Home Assistant service calls use the frontend service API', async ()
     'turn_on',
     { brightness_pct: 50 },
     { entity_id: 'light.kitchen' },
+  ]]);
+});
+
+test('domain helpers work in local Home Assistant mode', async () => {
+  const calls = [];
+  const client = createVarcoConsumerClient({
+    hass: {
+      states: { 'sensor.temp': { entity_id: 'sensor.temp', state: '21', attributes: {} } },
+      callService: async (...args) => calls.push(args),
+    },
+  });
+
+  assert.equal((await client.entity.get('sensor.temp')).state, '21');
+  await client.climate.setHvacMode('climate.living_room', 'cool');
+
+  assert.deepEqual(calls, [[
+    'climate',
+    'set_hvac_mode',
+    { hvac_mode: 'cool' },
+    { entity_id: 'climate.living_room' },
   ]]);
 });
 
@@ -227,4 +247,131 @@ test('client upgrades to WebRTC data channel and reports p2p transport status', 
   assert.equal(statuses.at(-1).mode, 'p2p');
   assert.equal((await client.getStates(['sensor.temp']))['sensor.temp'].state, 'p2p');
   globalThis.RTCPeerConnection = previous;
+});
+
+test('domain helpers call Home Assistant services with expected payloads', async () => {
+  const transport = new FakeTransport();
+  const client = createVarcoClient({ authorityId: 'authority', bridgeUrl: 'ws://bridge', manifest: { name: 'Demo', version: '1' }, transport, storage: new MemoryStorage(), webrtc: false });
+  await client.connect();
+
+  await client.light.setBrightness('light.kitchen', 42);
+  await client.switch.toggle('switch.pc');
+  await client.climate.setTemperature('climate.living_room', 21, { hvac_mode: 'heat' });
+  await client.climate.setTemperatureRange('climate.bedroom', 18, 22, { hvac_mode: 'heat_cool' });
+  await client.cover.setPosition('cover.awning', 60);
+  await client.fan.oscillate('fan.bedroom', true);
+  await client.lock.lock('lock.front_door');
+  await client.mediaPlayer.setVolume('media_player.tv', 0.3);
+  await client.button.press('button.restart');
+  await client.scene.turnOn('scene.movie');
+  await client.number.setValue('number.limit', 7);
+  await client.select.selectOption('select.mode', 'eco');
+
+  const calls = transport.messages.filter((message) => message.type === 'call_service');
+  assert.deepEqual(calls.map(({ domain, service, target, service_data }) => ({ domain, service, target, service_data })), [
+    { domain: 'light', service: 'turn_on', target: { entity_id: 'light.kitchen' }, service_data: { brightness_pct: 42 } },
+    { domain: 'switch', service: 'toggle', target: { entity_id: 'switch.pc' }, service_data: {} },
+    { domain: 'climate', service: 'set_temperature', target: { entity_id: 'climate.living_room' }, service_data: { temperature: 21, hvac_mode: 'heat' } },
+    { domain: 'climate', service: 'set_temperature', target: { entity_id: 'climate.bedroom' }, service_data: { target_temp_low: 18, target_temp_high: 22, hvac_mode: 'heat_cool' } },
+    { domain: 'cover', service: 'set_cover_position', target: { entity_id: 'cover.awning' }, service_data: { position: 60 } },
+    { domain: 'fan', service: 'oscillate', target: { entity_id: 'fan.bedroom' }, service_data: { oscillating: true } },
+    { domain: 'lock', service: 'lock', target: { entity_id: 'lock.front_door' }, service_data: {} },
+    { domain: 'media_player', service: 'volume_set', target: { entity_id: 'media_player.tv' }, service_data: { volume_level: 0.3 } },
+    { domain: 'button', service: 'press', target: { entity_id: 'button.restart' }, service_data: {} },
+    { domain: 'scene', service: 'turn_on', target: { entity_id: 'scene.movie' }, service_data: {} },
+    { domain: 'number', service: 'set_value', target: { entity_id: 'number.limit' }, service_data: { value: 7 } },
+    { domain: 'select', service: 'select_option', target: { entity_id: 'select.mode' }, service_data: { option: 'eco' } },
+  ]);
+});
+
+test('entity helpers route single-entity reads, subscriptions, history, and same-domain services', async () => {
+  const transport = new FakeTransport();
+  const client = createVarcoClient({ authorityId: 'authority', bridgeUrl: 'ws://bridge', manifest: { name: 'Demo', version: '1' }, transport, storage: new MemoryStorage(), webrtc: false });
+  await client.connect();
+
+  assert.equal((await client.entity.get('sensor.temp')).state, '21');
+  const events = [];
+  assert.equal(await client.entity.subscribe('sensor.temp', (event) => events.push(event)), 'sub1');
+  assert.equal(events[0].type, 'state_snapshot');
+  assert.deepEqual(await client.entity.history('sensor.temp'), { 'sensor.temp': [] });
+  await client.entity.call('light.cucina', 'turn_on', { brightness_pct: 50 });
+
+  const calls = transport.messages.filter((message) => message.type !== 'authenticate').map((message) => message.type === 'call_service' ? { type: message.type, domain: message.domain, service: message.service, target: message.target, service_data: message.service_data } : message);
+  assert.deepEqual(calls, [
+    { type: 'get_states', entity_ids: ['sensor.temp'] },
+    { type: 'subscribe_states', entity_ids: ['sensor.temp'] },
+    { type: 'history_query', entity_ids: ['sensor.temp'] },
+    { type: 'call_service', domain: 'light', service: 'turn_on', target: { entity_id: 'light.cucina' }, service_data: { brightness_pct: 50 } },
+  ]);
+});
+
+test('manifest helpers expand entity presets into deduplicated Varco scopes', () => {
+  const manifest = createManifest({
+    name: 'Room dashboard',
+    version: '1',
+    entities: [
+      readEntity('sensor.temp'),
+      readEntity('sensor.live', { subscribe: true, history: true }),
+      cameraEntity('camera.porta', { history: true }),
+      switchControl('switch.pc', { toggle: true, history: true }),
+      fanControl('fan.bedroom', { percentage: true, presetMode: true, direction: true, oscillate: true, toggle: true }),
+      buttonControl('button.restart'),
+      sceneControl('scene.movie'),
+      numberControl('number.limit'),
+      lightControl('light.kitchen', { brightness: true }),
+      climateControl('climate.living_room', { temperature: true, hvacMode: true, presetMode: true }),
+      coverControl('cover.awning', { position: true }),
+      lockControl('lock.front_door', { unlock: false, open: true }),
+      mediaPlayerControl('media_player.tv', { volume: true, playback: true }),
+      selectControl('select.mode'),
+      lightControl('light.kitchen', { onOff: true }),
+    ],
+  });
+
+  assert.deepEqual(manifest, {
+    name: 'Room dashboard',
+    version: '1',
+    read_entities: ['sensor.temp', 'sensor.live', 'camera.porta', 'switch.pc', 'fan.bedroom', 'button.restart', 'scene.movie', 'number.limit', 'light.kitchen', 'climate.living_room', 'cover.awning', 'lock.front_door', 'media_player.tv', 'select.mode'],
+    subscriptions: ['sensor.live', 'switch.pc', 'fan.bedroom', 'button.restart', 'scene.movie', 'number.limit', 'light.kitchen', 'climate.living_room', 'cover.awning', 'lock.front_door', 'media_player.tv', 'select.mode'],
+    history: ['sensor.live', 'camera.porta', 'switch.pc'],
+    camera_snapshots: ['camera.porta'],
+    actions: [
+      'switch.turn_on@switch.pc',
+      'switch.turn_off@switch.pc',
+      'switch.toggle@switch.pc',
+      'fan.turn_on@fan.bedroom',
+      'fan.turn_off@fan.bedroom',
+      'fan.toggle@fan.bedroom',
+      'fan.set_percentage@fan.bedroom',
+      'fan.set_preset_mode@fan.bedroom',
+      'fan.set_direction@fan.bedroom',
+      'fan.oscillate@fan.bedroom',
+      'button.press@button.restart',
+      'scene.turn_on@scene.movie',
+      'number.set_value@number.limit',
+      'light.turn_on@light.kitchen',
+      'light.turn_off@light.kitchen',
+      'climate.set_temperature@climate.living_room',
+      'climate.set_hvac_mode@climate.living_room',
+      'climate.set_preset_mode@climate.living_room',
+      'cover.open_cover@cover.awning',
+      'cover.close_cover@cover.awning',
+      'cover.stop_cover@cover.awning',
+      'cover.set_cover_position@cover.awning',
+      'lock.lock@lock.front_door',
+      'lock.open@lock.front_door',
+      'media_player.volume_up@media_player.tv',
+      'media_player.volume_down@media_player.tv',
+      'media_player.volume_set@media_player.tv',
+      'media_player.volume_mute@media_player.tv',
+      'media_player.media_play@media_player.tv',
+      'media_player.media_pause@media_player.tv',
+      'media_player.media_stop@media_player.tv',
+      'media_player.media_play_pause@media_player.tv',
+      'media_player.media_next_track@media_player.tv',
+      'media_player.media_previous_track@media_player.tv',
+      'media_player.media_seek@media_player.tv',
+      'select.select_option@select.mode',
+    ],
+  });
 });

@@ -9,3 +9,5 @@ http://\$\{HA_SHOWCASE_HOST\}
 # Public project identity (GitHub repo, owner handle, integration name).
 https://github\.com/vekexasia/varco/issues
 Varco
+# Home Assistant action scope examples use service@entity syntax, not emails.
+(?:light|switch|climate|cover|fan|button|scene|number|lock|media_player|select)\.[a-z_]+@(?:light|switch|climate|cover|fan|button|scene|number|lock|media_player|select)\.[a-z0-9_]+
