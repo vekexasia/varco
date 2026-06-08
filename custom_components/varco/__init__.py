@@ -31,18 +31,12 @@ PLATFORMS: list[str] = []
 
 
 async def async_setup(hass, config) -> bool:
-    from homeassistant import config_entries
-
     entries = hass.config_entries.async_entries(DOMAIN)
     if DOMAIN in config and not entries:
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN,
-            context={"source": config_entries.SOURCE_IMPORT},
-            data=dict(config[DOMAIN]),
-        )
-        entry = result.get("result")
-        if entry is not None:
-            await _async_setup_authority(hass, entry.entry_id, entry.data)
+        from .crypto import generate_authority_keypair
+
+        entry_data = {**dict(config[DOMAIN]), **generate_authority_keypair()}
+        await _async_setup_authority(hass, "yaml", entry_data)
     else:
         for entry in entries:
             await _async_setup_authority(hass, entry.entry_id, entry.data)
