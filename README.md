@@ -1,35 +1,53 @@
 ![Varco header](docs/assets/header.png)
 
-# Varco
+Varco lets external apps use Home Assistant without receiving a Home Assistant token and without requiring Home Assistant to be publicly reachable.
 
-Varco is a relay-first access layer for Home Assistant. It lets an external consumer, such as a dashboard, script, or agent-facing app, request narrowly scoped access to Home Assistant without receiving a Home Assistant token and without exposing Home Assistant directly to the internet.
+A consumer asks for a narrow grant. The Home Assistant owner approves or rejects it in the Varco panel. From then on, every read, subscription, history query, camera snapshot, or service call is checked against that stored grant by Home Assistant itself.
 
-Home Assistant acts as the **Authority**. It keeps the long-lived credentials, approves or rejects consumers, stores grants, enforces every permission, and connects outbound to an opaque WebSocket bridge.
+## Why Varco?
 
-## Status
+Home Assistant integrations usually assume that trusted code runs inside Home Assistant, or that external tools receive a Home Assistant access token. That is awkward for dashboards, scripts, AI agents, or one-off consumers that should only see a few entities or perform a few actions.
 
-Varco is an early MVP/prototype. The core pieces in this repository are implemented and covered by tests, but the API and grant model may still change.
+Varco separates access from credentials:
+
+- Consumers never receive a Home Assistant long-lived access token.
+- Home Assistant does not need an inbound public URL for Varco traffic.
+- The bridge can carry encrypted envelopes, but does not make permission decisions and is not necessarily on every data path.
+- Home Assistant remains the Authority for consent, grants, policy checks, service calls, and audit.
+
+## What is it useful for?
+
+Varco is useful when an app inside or outside Home Assistant needs limited access to Home Assistant data or actions, but should not receive a broad Home Assistant token.
+
+Common examples:
+
+- **External dashboards** that show only the entities they need, such as energy, climate, or room status.
+- **Shared family or guest dashboards** that expose only a safe subset of Home Assistant, for example selected lights, climate controls, guest-room sensors, or energy views, without giving friends or family broad access to the full instance.
+- **Internal Home Assistant dashboards** built as custom cards or panel experiences. These can use the existing authenticated `hass` object with Varco's client shape, making it easier to build polished, creative dashboards that communicate with Home Assistant through the same scoped interface.
+- **Read-only AI agents** that can inspect selected sensors, binary sensors, and history without being allowed to change devices or call services.
+- **Agent-built companion apps** generated from a Lovelace dashboard brief, then paired back to Home Assistant with an explicit manifest.
+- **One-off scripts or browser tools** that need temporary, revocable access to a narrow set of entities.
+- **Custom consumer apps** that should ask the Home Assistant owner for consent before reading states, subscribing to updates, querying history, requesting camera snapshots, or calling approved services.
+
+The important distinction is that access is granted by capability, not by handing over a reusable Home Assistant credential.
+
+## Try the live demo
+
+Open the Gazzetta-style energy dashboard: [`varco-demo.andreabaccega.com`](https://varco-demo.andreabaccega.com/).
+
+The demo is a browser-only consumer backed by a synthetic Home Assistant showcase instance. It connects through Varco with a pre-approved read-only grant for only the energy entities used by the dashboard.
 
 
-## Live demo
+## How it works
 
-Open the Gazzetta-style energy dashboard: [`varco-demo.andreabaccega.com`](https://varco-demo.andreabaccega.com/). It is a running browser demo and should load live energy data without pairing or login.
+![How Varco works](docs/assets/security-transport-model.png)
 
-The demo is a browser-only consumer backed by a synthetic Home Assistant showcase instance. It connects through Varco with a pre-approved read-only grant for only the energy entities used by the dashboard. The browser does not receive a Home Assistant token; Varco still routes through the relay and the Home Assistant Authority enforces the grant.
-
-Related demo endpoints:
-
-- Home Assistant showcase: [`varco-ha.andreabaccega.com`](https://varco-ha.andreabaccega.com/)
-- Varco Authority panel: [`varco-ha.andreabaccega.com/varco`](https://varco-ha.andreabaccega.com/varco)
-
-## What is in this repository?
-
-- `custom_components/varco/`: Home Assistant custom integration. It provides the Authority, consent storage, grant enforcement, audit events, a `/varco` admin panel, and Home Assistant services.
-- `bridge/`: Cloudflare Worker plus Durable Object relay. It routes encrypted envelopes between consumers and the Authority.
-- `packages/client/`: browser TypeScript client (`@varco/client`).
-- `examples/consumer-dashboard/`: minimal external dashboard consumer.
-- `examples/gazzetta-energy-showcase/`: read-only energy dashboard showcase.
-- `tests/`: Python tests for Authority behavior and policy enforcement.
+1. A consumer declares the entities, subscriptions, history queries, camera snapshots, and actions it wants.
+2. The Home Assistant owner reviews the request in the Varco panel.
+3. If approved, Home Assistant stores a grant bound to the consumer public key.
+4. The consumer connects using the best available transport: direct/WebRTC when possible, or the relay path for pairing, signaling, and fallback.
+5. The Authority enforces the stored grant on every data-plane message, regardless of transport.
+6. The owner can revoke or delete the grant from Home Assistant.
 
 ## Core guarantees
 
@@ -37,8 +55,70 @@ Related demo endpoints:
 - Home Assistant does not need an inbound public URL for Varco traffic.
 - Grants are bound to a consumer public key and stored inside Home Assistant.
 - The Authority enforces scopes on every data-plane message.
-- The bridge is opaque: it sees routing metadata, timing, and payload size, but not Home Assistant states, service calls, history, camera data, or grant contents.
+- The bridge is opaque: when traffic uses the relay path, it sees routing metadata, timing, and payload size, but not Home Assistant states, service calls, history, camera data, or grant contents.
 - Revocation is enforced by the Authority and active sessions are marked closed.
+
+## Who is this for?
+
+### Home Assistant owners
+
+Use Varco when you want to let an external app access part of your Home Assistant instance without giving that app a Home Assistant token.
+
+Start here: [`docs/home-assistant.md`](docs/home-assistant.md)
+
+You will learn how to:
+
+- install the custom integration;
+- find your Authority ID;
+- pair a consumer;
+- approve, reject, revoke, or delete grants;
+- troubleshoot relay and panel issues.
+
+### AI agent access
+
+Use Varco when you want an AI agent to inspect selected Home Assistant context without giving it broad read/write access.
+
+For example, an owner could approve a read-only grant for:
+
+- room temperature and humidity sensors;
+- energy usage sensors;
+- battery levels;
+- selected binary sensors;
+- history for a narrow set of entities.
+
+The agent can read only what the manifest requests and the owner approves. Service calls remain unavailable unless the grant explicitly includes matching action scopes.
+
+### Consumer developers
+
+Use `@varco/client` when you are building a browser dashboard, custom Home Assistant card, panel experience, script, or agent-facing tool that needs scoped Home Assistant access.
+
+Start here: [`docs/consumer-integration.md`](docs/consumer-integration.md)
+
+You will learn how to:
+
+- declare a consumer manifest;
+- request access from a Home Assistant owner;
+- connect after approval;
+- read states;
+- subscribe to live updates;
+- query history;
+- request camera snapshots;
+- call Home Assistant services within the approved grant.
+
+### Maintainers and protocol readers
+
+Start here: [`docs/protocol.md`](docs/protocol.md)
+
+You will find details about:
+
+- actors and trust boundaries;
+- bridge endpoints;
+- pairing and grant flow;
+- encryption boundaries;
+- application messages;
+- scope semantics;
+- WebRTC fallback behavior;
+- security invariants.
 
 ## Quick start for Home Assistant owners
 
@@ -56,8 +136,6 @@ Related demo endpoints:
 7. When the consumer requests access, compare the pairing code shown by the consumer with the one in Home Assistant, then approve or reject the request in the Varco panel.
 
 The `/varco` panel can also export an existing Lovelace dashboard or view into a local agent brief zip (`brief.md` plus `manifest.json`) so a coding agent can scaffold a consumer from the owner's current dashboard choices.
-
-Full owner instructions: [`docs/home-assistant.md`](docs/home-assistant.md).
 
 ## Quick start for consumer developers
 
@@ -98,7 +176,18 @@ const states = await client.getStates(["sensor.temperature"]);
 
 The same high-level client can also run inside a Home Assistant custom card with `createVarcoConsumerClient({ hass })`, using the already-authenticated frontend session instead of Varco pairing.
 
-Full client guide: [`docs/consumer-integration.md`](docs/consumer-integration.md).
+## Repository map
+
+- `custom_components/varco/`: Home Assistant custom integration. It provides the Authority, consent storage, grant enforcement, audit events, a `/varco` admin panel, and Home Assistant services.
+- `bridge/`: Cloudflare Worker plus Durable Object relay. It routes encrypted envelopes between consumers and the Authority.
+- `packages/client/`: browser TypeScript client (`@varco/client`).
+- `examples/consumer-dashboard/`: minimal external dashboard consumer.
+- `examples/gazzetta-energy-showcase/`: read-only energy dashboard showcase.
+- `tests/`: Python tests for Authority behavior and policy enforcement.
+
+## Status
+
+Varco is an early MVP/prototype. The core pieces in this repository are implemented and covered by tests, but the API and grant model may still change.
 
 ## Documentation
 
