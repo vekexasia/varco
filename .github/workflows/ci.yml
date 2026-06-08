@@ -41,21 +41,58 @@ jobs:
       - name: Run type checks
         run: npm run check
 
-      - name: Create Home Assistant test user
-        run: |
-          set -euo pipefail
-          cd dev/home-assistant
-          docker compose pull homeassistant
-          docker compose run --rm homeassistant python -m homeassistant --script auth -c /config add test test
-
       - name: Build local Home Assistant dashboard assets
         run: npm run dev:ha:local-assets
+
+      - name: Prepare Home Assistant e2e config
+        run: |
+          set -euo pipefail
+          docker pull ghcr.io/home-assistant/home-assistant:2026.6.1
+          rm -rf .pi/ci-ha-config
+          mkdir -p .pi/ci-ha-config/.storage
+          python - <<'PY'
+          from pathlib import Path
+
+          source = Path('dev/home-assistant/config/configuration.yaml').read_text().splitlines()
+          output = []
+          skip = False
+          for line in source:
+              if line.startswith('varco:'):
+                  skip = True
+                  continue
+              if skip and (line.startswith(' ') or not line.strip()):
+                  continue
+              skip = False
+              output.append(line)
+          Path('.pi/ci-ha-config/configuration.yaml').write_text('\n'.join(output) + '\n')
+          PY
+          cp -a dev/home-assistant/config/dashboards .pi/ci-ha-config/
+          cp -a dev/home-assistant/config/packages .pi/ci-ha-config/
+          cp -a dev/home-assistant/config/www .pi/ci-ha-config/
+          cat > .pi/ci-ha-config/.storage/onboarding <<'JSON'
+          {
+            "version": 4,
+            "minor_version": 1,
+            "key": "onboarding",
+            "data": {
+              "done": ["user", "core_config", "analytics", "integration"]
+            }
+          }
+          JSON
+          docker run --rm \
+            -u "$(id -u):$(id -g)" \
+            -v "$PWD/.pi/ci-ha-config:/config" \
+            ghcr.io/home-assistant/home-assistant:2026.6.1 \
+            python -m homeassistant --script auth -c /config add test test
 
       - name: Start local Home Assistant
         run: |
           set -euo pipefail
-          cd dev/home-assistant
-          docker compose up -d homeassistant
+          docker run -d \
+            --name varco-ci-ha \
+            -p 8123:8123 \
+            -v "$PWD/.pi/ci-ha-config:/config" \
+            ghcr.io/home-assistant/home-assistant:2026.6.1
 
       - name: Run hass-first local client e2e
         run: |
@@ -67,12 +104,9 @@ jobs:
             echo "Home Assistant not ready for hass-first e2e yet ($attempt/60)."
             sleep 5
           done
-          cd dev/home-assistant
-          docker compose logs homeassistant
+          docker logs varco-ci-ha
           exit 1
 
       - name: Stop local Home Assistant
         if: always()
-        run: |
-          cd dev/home-assistant
-          docker compose down
+        run: docker rm -f varco-ci-ha || true
