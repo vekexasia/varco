@@ -6,7 +6,7 @@ A consumer asks for a narrow grant. The Home Assistant owner approves or rejects
 
 ## Documentation
 
-The canonical documentation source is the Astro Starlight website in [`docs/website`](docs/website).
+Documentation: [vekexasia.github.io/varco](https://vekexasia.github.io/varco/). Source lives in [`docs/website`](docs/website).
 
 ```bash
 npm run docs:dev
