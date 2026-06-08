@@ -48,7 +48,8 @@ ssh "${SSH_ARGS[@]}" "$SSH_TARGET" "cd '$REMOTE_DIR' && \
     \$SUDO systemctl enable --now docker; \
   fi && \
   docker compose pull && \
-  docker compose up -d --force-recreate homeassistant"
+  docker compose up -d --force-recreate --remove-orphans homeassistant && \
+  docker system prune -af"
 
 echo "Home Assistant showcase deployment started on $SSH_TARGET"
 echo "Open http://<container-or-host-ip>:${HA_HTTP_PORT:-8123}"

@@ -214,7 +214,7 @@ Deploy manually:
 ./dev/home-assistant/deploy-to-docker-host.sh root@LXC_IP /opt/varco-ha-showcase
 ```
 
-The script copies the Home Assistant config plus the local Varco integration, installs Docker if missing, writes `.env` with the integration mount path and HTTP port, then runs `docker compose up -d --force-recreate homeassistant` so the latest custom integration code is loaded on every deploy.
+The script copies the Home Assistant config plus the local Varco integration, installs Docker if missing, writes `.env` with the integration mount path and HTTP port, then runs `docker compose pull`, `docker compose up -d --force-recreate --remove-orphans homeassistant`, and `docker system prune -af` so the latest custom integration code is loaded on every deploy and old unused Docker containers, networks, images, and build cache are cleared without pruning volumes.
 
 If the Home Assistant port is not public, tunnel it:
 
@@ -244,7 +244,7 @@ HA_SHOWCASE_PUBLIC_URL
 HA_SHOWCASE_HTTP_PORT
 ```
 
-The remote `.storage` directory is intentionally preserved across deploys so the Home Assistant admin user, Varco Authority ID, grants, and recorder history remain stable across code updates. The current Antimatter showcase LXC uses SSH port `2306`, remote directory `/opt/varco-ha-showcase`, and binds Home Assistant to port `80` for Cloudflare-compatible HTTP proxying.
+The remote `.storage` directory is intentionally preserved across deploys so the Home Assistant admin user, Varco Authority ID, grants, and recorder history remain stable across code updates. The deployment cleanup prunes unused Docker resources but does not pass `--volumes`, so Docker volumes are not removed. The current Antimatter showcase LXC uses SSH port `2306`, remote directory `/opt/varco-ha-showcase`, and binds Home Assistant to port `80` for Cloudflare-compatible HTTP proxying.
 
 The public hostname `varco-ha.andreabaccega.com` is served by the Cloudflare Worker in [`dev/home-assistant/cloudflare-proxy-worker.js`](../dev/home-assistant/cloudflare-proxy-worker.js) as a custom domain. The worker forwards to the showcase LXC over its routed IPv6 address through `sslip.io`, while Cloudflare publishes proxied A/AAAA records for the public hostname.
 

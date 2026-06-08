@@ -11,12 +11,14 @@ test('Home Assistant compose lets remote deploy bind Cloudflare-compatible port 
   assert.match(compose, /\$\{HA_HTTP_PORT:-8123\}:8123/);
 });
 
-test('deploy script preserves remote runtime state and force-recreates Home Assistant after syncing code', () => {
+test('deploy script preserves remote runtime state, force-recreates Home Assistant, and prunes unused Docker resources', () => {
   assert.match(deploy, /--exclude '\.storage\/'/);
   assert.match(deploy, /--exclude '\.cache\/'/);
   assert.doesNotMatch(deploy, /--exclude 'www\/'/);
   assert.match(deploy, /HA_HTTP_PORT=\$\{HA_HTTP_PORT:-8123\}/);
-  assert.match(deploy, /docker compose up -d --force-recreate homeassistant/);
+  assert.match(deploy, /docker compose up -d --force-recreate --remove-orphans homeassistant/);
+  assert.match(deploy, /docker system prune -af/);
+  assert.doesNotMatch(deploy, /--volumes/);
 });
 
 test('showcase workflow can be triggered manually and verifies public URL plus Varco panel', () => {
