@@ -218,17 +218,34 @@ class VarcoAuthority:
         service = str(message.get("service") or "")
         service_data = dict(message.get("service_data") or {})
         target = dict(message.get("target") or {})
-        entity_id = target.get("entity_id") or service_data.get("entity_id")
-        if isinstance(entity_id, list):
-            entity_id = entity_id[0] if entity_id else None
-        entity_id = str(entity_id) if entity_id else None
-        if not action_allowed(grant.manifest, domain, service, entity_id):
-            await audit.async_log(self.store, "permission_error", grant.grant_id, {"operation": "call_service", "domain": domain, "service": service, "entity_id": entity_id})
+        # Area, device, and label targeting cannot be resolved to entity scopes here, so reject it.
+        if any(target.get(key) or service_data.get(key) for key in ("area_id", "device_id", "label_id")):
+            await audit.async_log(self.store, "permission_error", grant.grant_id, {"operation": "call_service", "domain": domain, "service": service, "reason": "non_entity_target"})
+            return self._error(message.get("request_id"), "permission_denied", "Service call not allowed")
+        entity_ids = self._collect_target_entity_ids(target, service_data)
+        if entity_ids:
+            denied = [entity for entity in entity_ids if not action_allowed(grant.manifest, domain, service, entity)]
+        elif action_allowed(grant.manifest, domain, service, None):
+            denied = []
+        else:
+            denied = [None]
+        if denied:
+            await audit.async_log(self.store, "permission_error", grant.grant_id, {"operation": "call_service", "domain": domain, "service": service, "denied_count": len(denied)})
             return self._error(message.get("request_id"), "permission_denied", "Service call not allowed")
         if self.hass is not None and hasattr(self.hass, "services"):
             await self.hass.services.async_call(domain, service, service_data, target=target, blocking=True)
-        await audit.async_log(self.store, "call_service", grant.grant_id, {"domain": domain, "service": service, "entity_id": entity_id})
+        await audit.async_log(self.store, "call_service", grant.grant_id, {"domain": domain, "service": service, "entity_count": len(entity_ids)})
         return {"type": "service_called", "request_id": message.get("request_id"), "ok": True}
+
+    @staticmethod
+    def _collect_target_entity_ids(target: dict[str, Any], service_data: dict[str, Any]) -> list[str]:
+        entities: list[str] = []
+        for source in (target.get("entity_id"), service_data.get("entity_id")):
+            if isinstance(source, list):
+                entities.extend(str(item) for item in source if item)
+            elif source:
+                entities.append(str(source))
+        return list(dict.fromkeys(entities))
 
     async def _webrtc_offer(self, session_id: str, grant: Grant, message: dict[str, Any]) -> dict[str, Any]:
         if self.peer_stack is None:

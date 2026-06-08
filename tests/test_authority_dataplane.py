@@ -208,3 +208,23 @@ def test_history_query_is_read_only_and_requires_history_scope():
         denied = await authority.handle_plaintext("s1", {"type": "call_service", "domain": "light", "service": "turn_on", "target": {"entity_id": "light.cucina"}})
         assert denied["code"] == "permission_denied"
     asyncio.run(run())
+
+
+def test_call_service_cannot_smuggle_extra_or_non_entity_targets_past_action_scope():
+    async def run():
+        authority, _, hass, _ = await paired_authority({
+            "name": "Demo",
+            "version": "1",
+            "actions": ["light.turn_on@light.cucina"],
+        })
+        smuggled = await authority.handle_plaintext("s1", {"type": "call_service", "domain": "light", "service": "turn_on", "target": {"entity_id": ["light.cucina", "lock.porta"]}})
+        assert smuggled["code"] == "permission_denied"
+        area = await authority.handle_plaintext("s1", {"type": "call_service", "domain": "light", "service": "turn_on", "target": {"entity_id": "light.cucina", "area_id": "casa"}})
+        assert area["code"] == "permission_denied"
+        via_data = await authority.handle_plaintext("s1", {"type": "call_service", "domain": "light", "service": "turn_on", "service_data": {"entity_id": "lock.porta"}})
+        assert via_data["code"] == "permission_denied"
+        assert hass.services.calls == []
+        ok = await authority.handle_plaintext("s1", {"type": "call_service", "domain": "light", "service": "turn_on", "target": {"entity_id": "light.cucina"}})
+        assert ok["type"] == "service_called"
+        assert len(hass.services.calls) == 1
+    asyncio.run(run())
