@@ -14,13 +14,130 @@ class VarcoPanel extends HTMLElement {
       this._hass.connection.sendMessagePromise({ type: 'varco/access_requests' }),
       this._hass.connection.sendMessagePromise({ type: 'varco/grants' }),
     ]);
+    await this.loadDashboards();
     this.render({ info, requests, grants });
+  }
+
+  async loadDashboards() {
+    try {
+      const dashboards = await this._hass.connection.sendMessagePromise({ type: 'lovelace/dashboards/list' });
+      this._dashboards = [
+        { title: 'Overview', url_path: null, mode: 'default' },
+        ...dashboards.map((dashboard) => ({
+          title: dashboard.title || dashboard.url_path || 'Dashboard',
+          url_path: dashboard.url_path,
+          mode: dashboard.mode || 'storage',
+        })),
+      ];
+      this._dashboardError = '';
+    } catch (err) {
+      this._dashboards = [{ title: 'Overview', url_path: null, mode: 'default' }];
+      this._dashboardError = `Could not list dashboards: ${err.message || err}`;
+    }
   }
 
   async call(type, payload) {
     await this._hass.connection.sendMessagePromise({ type, ...payload });
     this._loaded = false;
     await this.load();
+  }
+
+  async pickDashboard(index) {
+    if (index === '') {
+      this._selectedDashboardIndex = undefined;
+      this._exportConfig = null;
+      this._exportResult = null;
+      this.render(this._lastState);
+      return;
+    }
+    const dashboard = this._dashboards?.[Number(index)];
+    if (!dashboard) return;
+    this._exportLoading = true;
+    this._exportError = '';
+    this.render(this._lastState);
+    try {
+      const message = { type: 'lovelace/config', force: false };
+      if (dashboard.url_path !== null && dashboard.url_path !== undefined) message.url_path = dashboard.url_path;
+      this._exportConfig = await this._hass.connection.sendMessagePromise(message);
+      this._selectedDashboardIndex = Number(index);
+      this._selectedViewIndex = '';
+      await this.refreshExportPreview();
+    } catch (err) {
+      this._exportError = `Could not load dashboard: ${err.message || err}`;
+      this._exportResult = null;
+    } finally {
+      this._exportLoading = false;
+      this.render(this._lastState);
+    }
+  }
+
+  async pickView(value) {
+    this._selectedViewIndex = value;
+    this._exportLoading = true;
+    this.render(this._lastState);
+    try {
+      await this.refreshExportPreview();
+    } catch (err) {
+      this._exportError = `Could not harvest view: ${err.message || err}`;
+    } finally {
+      this._exportLoading = false;
+      this.render(this._lastState);
+    }
+  }
+
+  async refreshExportPreview() {
+    const result = await this.requestDashboardExport();
+    this._exportResult = result;
+    this._selectedEntities = new Set(result.entities.filter((entity) => entity.selected).map((entity) => entity.entity_id));
+  }
+
+  async requestDashboardExport(selectedEntities) {
+    const dashboard = this._dashboards?.[this._selectedDashboardIndex];
+    const message = {
+      type: 'varco/dashboard_export',
+      config: this._exportConfig,
+      dashboard_title: dashboard?.title || 'Home Assistant dashboard',
+      dashboard_url_path: dashboard?.url_path ?? null,
+    };
+    if (this._selectedViewIndex !== '' && this._selectedViewIndex !== undefined && this._selectedViewIndex !== null) {
+      message.view_index = Number(this._selectedViewIndex);
+    }
+    if (selectedEntities) message.selected_entities = selectedEntities;
+    return this._hass.connection.sendMessagePromise(message);
+  }
+
+  toggleEntity(entityId, checked) {
+    if (!this._selectedEntities) this._selectedEntities = new Set();
+    if (checked) this._selectedEntities.add(entityId);
+    else this._selectedEntities.delete(entityId);
+    if (this._exportResult) {
+      this._exportResult.entities = this._exportResult.entities.map((entity) => entity.entity_id === entityId ? { ...entity, selected: checked } : entity);
+    }
+    this.render(this._lastState);
+  }
+
+  async downloadDashboardBrief() {
+    if (!this._exportResult) return;
+    this._exportLoading = true;
+    this.render(this._lastState);
+    try {
+      const selected = Array.from(this._selectedEntities || []);
+      const exportResult = await this.requestDashboardExport(selected);
+      const zip = this.createZip({
+        'brief.md': exportResult.brief,
+        'manifest.json': `${JSON.stringify(exportResult.manifest, null, 2)}\n`,
+      });
+      const dashboard = this._dashboards?.[this._selectedDashboardIndex];
+      const name = this.slugify(`${dashboard?.title || 'varco-dashboard'}-${exportResult.dashboard?.view_title || 'brief'}`);
+      this.downloadBlob(zip, `${name}.zip`);
+      this._exportResult = exportResult;
+      this._selectedEntities = new Set(exportResult.entities.filter((entity) => entity.selected).map((entity) => entity.entity_id));
+    } catch (err) {
+      this._exportError = `Could not generate brief: ${err.message || err}`;
+    } finally {
+      this._exportLoading = false;
+      this.render(this._lastState);
+    }
   }
 
   escape(value) {
@@ -55,7 +172,6 @@ class VarcoPanel extends HTMLElement {
       actions: this.readScopes(manifest, 'actions'),
     };
   }
-
 
   scopeSummary(manifest) {
     const scopes = this.scopes(manifest);
@@ -162,6 +278,99 @@ class VarcoPanel extends HTMLElement {
       </div>`;
   }
 
+  dashboardExportSection() {
+    const dashboards = this._dashboards || [];
+    const dashboard = dashboards[this._selectedDashboardIndex];
+    const views = Array.isArray(this._exportConfig?.views) ? this._exportConfig.views : [];
+    const result = this._exportResult;
+    const selectedCount = this._selectedEntities?.size || 0;
+    return `
+      <h3>Dashboard brief export</h3>
+      <div class="varco-card export-card">
+        <div class="eyebrow">Manifest blueprint</div>
+        <p>Harvest an existing Lovelace dashboard or view into a local zip for a coding agent. The zip contains <code>brief.md</code> and <code>manifest.json</code>; it does not create a grant.</p>
+        ${this._dashboardError ? `<p class="warning">${this.escape(this._dashboardError)}</p>` : ''}
+        ${this._exportError ? `<p class="warning">${this.escape(this._exportError)}</p>` : ''}
+        <label class="field-label">Dashboard</label>
+        <select data-dashboard-select>
+          <option value="">Choose a dashboard...</option>
+          ${dashboards.map((item, index) => `<option value="${index}" ${index === this._selectedDashboardIndex ? 'selected' : ''}>${this.escape(item.title)} (${this.escape(item.url_path || 'default')})</option>`).join('')}
+        </select>
+        ${dashboard && views.length ? `
+          <label class="field-label">Scope</label>
+          <select data-view-select>
+            <option value="" ${this._selectedViewIndex === '' ? 'selected' : ''}>Whole dashboard</option>
+            ${views.map((view, index) => `<option value="${index}" ${String(index) === String(this._selectedViewIndex) ? 'selected' : ''}>View: ${this.escape(view.title || view.path || `View ${index + 1}`)}</option>`).join('')}
+          </select>` : ''}
+        ${this._exportLoading ? '<p>Harvesting dashboard...</p>' : ''}
+        ${result ? this.exportPreview(result, selectedCount) : ''}
+      </div>`;
+  }
+
+  exportPreview(result, selectedCount) {
+    const groups = this.groupExportEntities(result.entities);
+    const previewManifest = this.previewManifest(result);
+    return `
+      <div class="export-summary">
+        <strong>${selectedCount}</strong> of <strong>${result.entities.length}</strong> harvested entities selected.
+        <span>${this.escape(this.scopeSummary(previewManifest))}</span>
+      </div>
+      ${result.warnings.length ? `
+        <details class="scope-details">
+          <summary>${result.warnings.length} unresolved or dynamic dashboard references</summary>
+          <ul>${result.warnings.map((warning) => `<li><code>${this.escape(warning.path)}</code>: ${this.escape(warning.message)}</li>`).join('')}</ul>
+        </details>` : ''}
+      <div class="entity-checklist">
+        ${groups.length ? groups.map((group) => `
+          <div class="entity-group">
+            <div class="entity-group-title">${this.escape(group.title)}</div>
+            ${group.entities.map((entity) => this.entityCheckbox(entity)).join('')}
+          </div>`).join('') : '<p>No entities were harvested from this selection.</p>'}
+      </div>
+      <div class="button-row">
+        <button class="primary" data-download-brief ${selectedCount ? '' : 'disabled'}>Download agent brief zip</button>
+      </div>`;
+  }
+
+  groupExportEntities(entities) {
+    const groups = new Map();
+    entities.forEach((entity) => {
+      const ref = entity.references?.[0];
+      const title = ref ? `${ref.view} / ${ref.card_type}` : 'Other harvested entities';
+      if (!groups.has(title)) groups.set(title, []);
+      groups.get(title).push(entity);
+    });
+    return Array.from(groups.entries()).map(([title, groupEntities]) => ({ title, entities: groupEntities }));
+  }
+
+  previewManifest(result) {
+    const selected = result.entities.filter((entity) => entity.selected);
+    return {
+      read_entities: selected.filter((entity) => entity.scopes.read).map((entity) => entity.entity_id),
+      subscriptions: selected.filter((entity) => entity.scopes.subscriptions).map((entity) => entity.entity_id),
+      history: selected.filter((entity) => entity.scopes.history).map((entity) => entity.entity_id),
+      camera_snapshots: selected.filter((entity) => entity.scopes.camera_snapshots).map((entity) => entity.entity_id),
+      actions: [],
+    };
+  }
+
+  entityCheckbox(entity) {
+    const scopes = [];
+    if (entity.scopes.read) scopes.push('read');
+    if (entity.scopes.subscriptions) scopes.push('live');
+    if (entity.scopes.history) scopes.push('history');
+    if (entity.scopes.camera_snapshots) scopes.push('camera');
+    const ref = entity.references?.[0];
+    return `
+      <label class="entity-row">
+        <input type="checkbox" data-export-entity="${this.escape(entity.entity_id)}" ${entity.selected ? 'checked' : ''}>
+        <span>
+          <code>${this.escape(entity.entity_id)}</code>
+          <small>${this.escape(scopes.join(', ') || 'referenced')} ${ref ? `from ${this.escape(ref.view)} / ${this.escape(ref.card_type)}` : ''}</small>
+        </span>
+      </label>`;
+  }
+
   styles() {
     return `
       <style>
@@ -170,8 +379,10 @@ class VarcoPanel extends HTMLElement {
         h3 { margin: 24px 0 12px; }
         h4 { margin: 2px 0 0; font-size: 18px; }
         button { margin: 4px 8px 4px 0; padding: 8px 12px; border: 0; border-radius: 6px; background: var(--primary-color); color: var(--text-primary-color); cursor: pointer; font-weight: 600; }
+        button[disabled] { opacity: 0.5; cursor: not-allowed; }
         button.secondary { background: var(--secondary-background-color); color: var(--primary-text-color); border: 1px solid var(--divider-color); }
         button.danger { background: var(--error-color, #db4437); color: white; }
+        select { display: block; max-width: 420px; width: 100%; margin: 4px 0 12px; padding: 8px; border: 1px solid var(--divider-color); border-radius: 6px; background: var(--card-background-color); color: var(--primary-text-color); }
         code { background: var(--secondary-background-color); padding: 2px 5px; border-radius: 4px; word-break: break-all; }
         .varco-card { border: 1px solid var(--divider-color); padding: 14px; margin: 10px 0; border-radius: 10px; background: var(--card-background-color); }
         .pending-card { border-left: 4px solid var(--primary-color); }
@@ -182,7 +393,8 @@ class VarcoPanel extends HTMLElement {
         .meta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px 16px; margin: 14px 0; }
         .meta-grid span { color: var(--secondary-text-color); display: block; font-size: 12px; margin-bottom: 2px; }
         .meta-grid strong { display: block; }
-        .approval-note { background: var(--secondary-background-color); border-radius: 8px; margin: 12px 0; padding: 10px; }
+        .approval-note, .warning { background: var(--secondary-background-color); border-radius: 8px; margin: 12px 0; padding: 10px; }
+        .warning { border-left: 4px solid var(--warning-color, #f4b400); }
         .scope-details { margin-top: 10px; }
         .scope-details summary { cursor: pointer; font-weight: 700; }
         .scope-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 12px; }
@@ -195,24 +407,36 @@ class VarcoPanel extends HTMLElement {
         .status-active { background: var(--success-color, #0b8043); color: white; }
         .status-revoked { background: var(--secondary-background-color); color: var(--secondary-text-color); }
         .button-row { margin-top: 12px; }
+        .field-label { display: block; font-weight: 700; margin-top: 12px; }
+        .export-summary { align-items: center; background: var(--secondary-background-color); border-radius: 8px; display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; padding: 10px; }
+        .entity-checklist { border: 1px solid var(--divider-color); border-radius: 8px; max-height: 360px; overflow: auto; padding: 6px; }
+        .entity-group { border-bottom: 1px solid var(--divider-color); padding: 6px 0; }
+        .entity-group:last-child { border-bottom: 0; }
+        .entity-group-title { color: var(--secondary-text-color); font-size: 12px; font-weight: 700; margin: 4px; text-transform: uppercase; }
+        .entity-row { align-items: flex-start; border-bottom: 1px solid var(--divider-color); display: flex; gap: 8px; padding: 8px 4px; }
+        .entity-row:last-child { border-bottom: 0; }
+        .entity-row small { color: var(--secondary-text-color); display: block; margin-top: 3px; }
       </style>`;
   }
 
   render(state) {
-    if (state.loading) {
+    if (state) this._lastState = state;
+    if (!this._lastState || this._lastState.loading) {
       this.innerHTML = `<ha-card><div class="card-content">${this.styles()}Loading Varco...</div></ha-card>`;
       return;
     }
-    const pending = state.requests.filter((request) => request.status === 'pending');
+    const current = this._lastState;
+    const pending = current.requests.filter((request) => request.status === 'pending');
     this.innerHTML = `
       <ha-card header="Varco Authority">
         <div class="card-content">${this.styles()}
-          <p><b>Authority ID</b><br><code>${this.escape(state.info.authority_id)}</code></p>
-          <p><b>Relay</b>: ${state.info.relay.connected ? 'connected' : 'disconnected'}</p>
+          <p><b>Authority ID</b><br><code>${this.escape(current.info.authority_id)}</code></p>
+          <p><b>Relay</b>: ${current.info.relay.connected ? 'connected' : 'disconnected'}</p>
+          ${this.dashboardExportSection()}
           <h3>Pending access requests</h3>
           ${pending.length ? pending.map((request) => this.requestCard(request)).join('') : '<p>No pending requests.</p>'}
           <h3>Grants</h3>
-          ${state.grants.length ? state.grants.map((grant) => this.grantCard(grant)).join('') : '<p>No grants.</p>'}
+          ${current.grants.length ? current.grants.map((grant) => this.grantCard(grant)).join('') : '<p>No grants.</p>'}
         </div>
       </ha-card>`;
     this.querySelectorAll('[data-approve]').forEach((el) => el.onclick = () => this.call('varco/approve_request', { request_id: el.dataset.approve }));
@@ -222,6 +446,94 @@ class VarcoPanel extends HTMLElement {
       if (!window.confirm(`Delete grant record for ${el.dataset.name}? This also removes active access for that consumer.`)) return;
       this.call('varco/delete_grant', { grant_id: el.dataset.deleteGrant });
     });
+    const dashboardSelect = this.querySelector('[data-dashboard-select]');
+    if (dashboardSelect) dashboardSelect.onchange = () => this.pickDashboard(dashboardSelect.value);
+    const viewSelect = this.querySelector('[data-view-select]');
+    if (viewSelect) viewSelect.onchange = () => this.pickView(viewSelect.value);
+    this.querySelectorAll('[data-export-entity]').forEach((el) => el.onchange = () => this.toggleEntity(el.dataset.exportEntity, el.checked));
+    const download = this.querySelector('[data-download-brief]');
+    if (download) download.onclick = () => this.downloadDashboardBrief();
+  }
+
+  slugify(value) {
+    return String(value || 'varco-brief').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'varco-brief';
+  }
+
+  downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  createZip(files) {
+    const encoder = new TextEncoder();
+    const localParts = [];
+    const centralParts = [];
+    let offset = 0;
+    Object.entries(files).forEach(([name, content]) => {
+      const nameBytes = encoder.encode(name);
+      const data = encoder.encode(content);
+      const crc = this.crc32(data);
+      const local = this.zipHeader(30, 0x04034b50, nameBytes, data, crc, offset);
+      localParts.push(local, nameBytes, data);
+      const central = this.zipHeader(46, 0x02014b50, nameBytes, data, crc, offset);
+      centralParts.push(central, nameBytes);
+      offset += local.length + nameBytes.length + data.length;
+    });
+    const centralSize = centralParts.reduce((sum, part) => sum + part.length, 0);
+    const end = new Uint8Array(22);
+    const view = new DataView(end.buffer);
+    view.setUint32(0, 0x06054b50, true);
+    view.setUint16(8, Object.keys(files).length, true);
+    view.setUint16(10, Object.keys(files).length, true);
+    view.setUint32(12, centralSize, true);
+    view.setUint32(16, offset, true);
+    return new Blob([...localParts, ...centralParts, end], { type: 'application/zip' });
+  }
+
+  zipHeader(size, signature, nameBytes, data, crc, offset) {
+    const header = new Uint8Array(size);
+    const view = new DataView(header.buffer);
+    view.setUint32(0, signature, true);
+    const dosDate = (44 << 9) | (1 << 5) | 1;
+    if (signature === 0x04034b50) {
+      view.setUint16(4, 20, true);
+      view.setUint16(8, 0, true);
+      view.setUint16(10, 0, true);
+      view.setUint16(12, dosDate, true);
+      view.setUint32(14, crc, true);
+      view.setUint32(18, data.length, true);
+      view.setUint32(22, data.length, true);
+      view.setUint16(26, nameBytes.length, true);
+    } else {
+      view.setUint16(4, 20, true);
+      view.setUint16(6, 20, true);
+      view.setUint16(10, 0, true);
+      view.setUint16(12, 0, true);
+      view.setUint16(14, dosDate, true);
+      view.setUint32(16, crc, true);
+      view.setUint32(20, data.length, true);
+      view.setUint32(24, data.length, true);
+      view.setUint16(28, nameBytes.length, true);
+      view.setUint32(42, offset, true);
+    }
+    return header;
+  }
+
+  crc32(data) {
+    if (!this._crcTable) {
+      this._crcTable = Array.from({ length: 256 }, (_, index) => {
+        let crc = index;
+        for (let bit = 0; bit < 8; bit += 1) crc = (crc & 1) ? (0xedb88320 ^ (crc >>> 1)) : (crc >>> 1);
+        return crc >>> 0;
+      });
+    }
+    let crc = 0xffffffff;
+    for (let index = 0; index < data.length; index += 1) crc = this._crcTable[(crc ^ data[index]) & 0xff] ^ (crc >>> 8);
+    return (crc ^ 0xffffffff) >>> 0;
   }
 }
 customElements.define('varco-panel', VarcoPanel);

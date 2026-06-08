@@ -19,6 +19,7 @@
     "dev:ha:local-smoke": "npm --workspace packages/client run build && node dev/home-assistant/tools/ha-varco.mjs local-smoke",
     "dev:ha:local-assets": "npm --workspace packages/client run build && node dev/home-assistant/tools/sync-local-assets.mjs",
     "dev:ha:local-browser": "npm run dev:ha:local-assets && node dev/home-assistant/tools/browser-local-hass-e2e.mjs",
+    "dev:ha:dashboard-export-browser": "node dev/home-assistant/tools/browser-dashboard-export-e2e.mjs",
     "dev:ha:gazzetta-demo": "npm --workspace packages/client run build && npm --workspace examples/gazzetta-energy-showcase run build && node dev/home-assistant/tools/prepare-gazzetta-demo.mjs && npm --workspace examples/gazzetta-energy-showcase run build",
     "dev:ha:tools:test": "node --test dev/home-assistant/tools/test/*.test.mjs"
   },

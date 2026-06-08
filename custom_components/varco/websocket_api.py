@@ -5,6 +5,7 @@ from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
+from .dashboard_export import build_dashboard_export
 
 
 def _authority(hass: HomeAssistant):
@@ -23,6 +24,7 @@ def async_setup(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, websocket_reject)
     websocket_api.async_register_command(hass, websocket_revoke)
     websocket_api.async_register_command(hass, websocket_delete_grant)
+    websocket_api.async_register_command(hass, websocket_dashboard_export)
 
 
 @websocket_api.websocket_command({vol.Required("type"): "varco/info"})
@@ -86,3 +88,30 @@ async def websocket_revoke(hass: HomeAssistant, connection, msg) -> None:
 async def websocket_delete_grant(hass: HomeAssistant, connection, msg) -> None:
     grant = await _authority(hass).delete_grant(msg["grant_id"])
     connection.send_result(msg["id"], grant.as_dict())
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "varco/dashboard_export",
+        vol.Required("config"): dict,
+        vol.Optional("selected_entities"): [str],
+        vol.Optional("dashboard_title"): str,
+        vol.Optional("dashboard_url_path"): vol.Any(None, str),
+        vol.Optional("view_index"): vol.Any(None, int),
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def websocket_dashboard_export(hass: HomeAssistant, connection, msg) -> None:
+    relay = next(value["relay"] for value in hass.data.get(DOMAIN, {}).values() if isinstance(value, dict) and "relay" in value)
+    export = build_dashboard_export(
+        msg["config"],
+        hass=hass,
+        authority_id=relay.authority_id,
+        bridge_url=getattr(relay, "bridge_url", "") or getattr(relay, "bridge_ws_url", ""),
+        selected_entities=msg.get("selected_entities"),
+        dashboard_title=msg.get("dashboard_title"),
+        dashboard_url_path=msg.get("dashboard_url_path"),
+        view_index=msg.get("view_index"),
+    )
+    connection.send_result(msg["id"], export)

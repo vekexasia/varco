@@ -55,6 +55,8 @@ Related demo endpoints:
 6. Copy the **Authority ID** from the panel and paste it into the consumer app.
 7. When the consumer requests access, compare the pairing code shown by the consumer with the one in Home Assistant, then approve or reject the request in the Varco panel.
 
+The `/varco` panel can also export an existing Lovelace dashboard or view into a local agent brief zip (`brief.md` plus `manifest.json`) so a coding agent can scaffold a consumer from the owner's current dashboard choices.
+
 Full owner instructions: [`docs/home-assistant.md`](docs/home-assistant.md).
 
 ## Quick start for consumer developers

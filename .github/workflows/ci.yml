@@ -49,23 +49,14 @@ jobs:
           set -euo pipefail
           docker pull ghcr.io/home-assistant/home-assistant:2026.6.1
           rm -rf .pi/ci-ha-config
-          mkdir -p .pi/ci-ha-config/.storage
+          mkdir -p .pi/ci-ha-config/.storage .pi/ci-ha-config/custom_components
+          cp dev/home-assistant/config/configuration.yaml .pi/ci-ha-config/configuration.yaml
           python - <<'PY'
           from pathlib import Path
-
-          source = Path('dev/home-assistant/config/configuration.yaml').read_text().splitlines()
-          output = []
-          skip = False
-          for line in source:
-              if line.startswith('varco:'):
-                  skip = True
-                  continue
-              if skip and (line.startswith(' ') or not line.strip()):
-                  continue
-              skip = False
-              output.append(line)
-          Path('.pi/ci-ha-config/configuration.yaml').write_text('\n'.join(output) + '\n')
+          path = Path('.pi/ci-ha-config/configuration.yaml')
+          path.write_text(path.read_text().replace('webrtc_enabled: true', 'webrtc_enabled: false'))
           PY
+          cp -a custom_components/varco .pi/ci-ha-config/custom_components/
           cp -a dev/home-assistant/config/dashboards .pi/ci-ha-config/
           cp -a dev/home-assistant/config/packages .pi/ci-ha-config/
           cp -a dev/home-assistant/config/www .pi/ci-ha-config/
@@ -94,18 +85,29 @@ jobs:
             -v "$PWD/.pi/ci-ha-config:/config" \
             ghcr.io/home-assistant/home-assistant:2026.6.1
 
-      - name: Run hass-first local client e2e
+      - name: Run Home Assistant browser e2e
         run: |
           set -euo pipefail
           for attempt in $(seq 1 60); do
-            if npm run dev:ha:local-smoke && npm run dev:ha:local-browser; then
+            if npm run dev:ha:local-smoke && npm run dev:ha:local-browser && npm run dev:ha:dashboard-export-browser; then
               exit 0
             fi
-            echo "Home Assistant not ready for hass-first e2e yet ($attempt/60)."
+            echo "Home Assistant not ready for browser e2e yet ($attempt/60)."
             sleep 5
           done
           docker logs varco-ci-ha
           exit 1
+
+      - name: Upload Home Assistant browser e2e artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: home-assistant-browser-e2e
+          path: |
+            .pi/varco-local-hass-e2e.png
+            .pi/varco-dashboard-export-e2e.png
+            .pi/varco-dashboard-export-e2e.zip
+          if-no-files-found: ignore
 
       - name: Stop local Home Assistant
         if: always()

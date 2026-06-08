@@ -74,6 +74,25 @@ Copy the Authority ID exactly. It is the stable public key/fingerprint for this 
 
 In the current MVP, approval is atomic: the owner approves or rejects the whole manifest. The panel does not trim individual scopes. If a consumer asks for too much, reject it and have the consumer request a smaller manifest.
 
+## Export a dashboard brief for a coding agent
+
+The Varco panel can turn an existing Lovelace dashboard or single view into a local agent brief zip. This is a bootstrap helper only: it creates a manifest blueprint, not a grant, and no Home Assistant token leaves Home Assistant.
+
+1. Open `/varco`.
+2. In **Dashboard brief export**, choose a Lovelace dashboard.
+3. Optionally choose a single view instead of the whole dashboard.
+4. Review the harvested entities grouped by the referencing view/card and uncheck anything the consumer should not use.
+5. Click **Download agent brief zip**.
+
+The zip contains:
+
+- `brief.md`: a self-contained instruction brief for a coding agent, including the manifest, entity catalog, unresolved dashboard warnings, and a ready-to-run `@varco/client` bootstrap with the current Authority ID and bridge URL.
+- `manifest.json`: the canonical read-only manifest blueprint.
+
+The export harvests `entity:` and `entities:` references into `read_entities` and `subscriptions`, `history-graph` entities into `history`, and camera entities from picture/camera cards into `camera_snapshots`. It does not emit `actions`; the brief tells the coding agent to ask which entities need write or history elevation before changing the manifest.
+
+The entity catalog includes static metadata and a trimmed point-in-time state snapshot. The downloaded zip may contain real state values, so treat it as private. Dynamic cards such as custom cards, `auto-entities`, templates, and area/tile/weather cards are listed as warnings instead of being silently resolved or dropped.
+
 ## Revoke or delete a grant
 Open `/varco` and review the grant card. The card shows the consumer name, version, consumer key, grant ID, original request, creation date, status, and approved scopes.
 

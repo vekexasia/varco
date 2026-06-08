@@ -112,6 +112,14 @@ npm run dev:ha:local-browser
 
 The browser test uses Playwright to log in to Home Assistant, open `/varco-local-hass/hass-first`, verify the visible `Varco Local Hass` custom card, click the local service-call and history buttons, wait for a local `state_delta`, and write a screenshot to `.pi/varco-local-hass-e2e.png`.
 
+Run the dashboard brief export browser test:
+
+```bash
+npm run dev:ha:dashboard-export-browser
+```
+
+The export browser test uses Playwright to log in, open `/varco`, select the **Varco Showcase** dashboard and **Energy** view, prune one harvested entity, download the generated zip, verify `brief.md` and `manifest.json`, and write artifacts to `.pi/varco-dashboard-export-e2e.png` and `.pi/varco-dashboard-export-e2e.zip`.
+
 Run the local Home Assistant frontend-session smoke loop:
 
 ```bash
