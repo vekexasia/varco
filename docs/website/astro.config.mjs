@@ -1,5 +1,6 @@
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
+import remarkGfm from "remark-gfm";
 
 const site = process.env.SITE_URL ?? "https://vekexasia.github.io";
 const base = process.env.SITE_BASE_PATH ?? "/varco";
@@ -7,6 +8,9 @@ const base = process.env.SITE_BASE_PATH ?? "/varco";
 export default defineConfig({
   site,
   base,
+  markdown: {
+    remarkPlugins: [remarkGfm],
+  },
   integrations: [
     starlight({
       title: "Varco",
