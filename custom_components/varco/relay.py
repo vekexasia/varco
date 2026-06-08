@@ -30,7 +30,7 @@ class VarcoRelay:
         self.hass = hass
         self.entry_data = entry_data
         self.store = store
-        self.peer_stack = create_peer_stack_or_none() if entry_data.get("webrtc_enabled", False) else None
+        self.peer_stack = create_peer_stack_or_none() if entry_data.get("webrtc_enabled", True) else None
         self.authority = VarcoAuthority(store=store, hass=hass, notify_owner=self._notify_owner, peer_stack=self.peer_stack)
         self.authority_id = entry_data["authority_id"]
         self.private_key = entry_data["private_key"]

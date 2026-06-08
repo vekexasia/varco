@@ -41,7 +41,7 @@ homeassistant:
 
 varco:
   bridge_ws_url: wss://varco-bridge.vekexasia.workers.dev
-  webrtc_enabled: false
+  webrtc_enabled: true
 
 lovelace:
   mode: yaml
