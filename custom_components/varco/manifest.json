@@ -6,6 +6,7 @@
   "dependencies": ["http", "websocket_api", "persistent_notification"],
   "documentation": "https://github.com/vekexasia/varco",
   "iot_class": "cloud_push",
+  "issue_tracker": "https://github.com/vekexasia/varco/issues",
   "requirements": ["cryptography>=42.0.0"],
   "version": "0.1.0"
 }
