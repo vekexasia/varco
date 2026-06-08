@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { createHomeAssistantAdmin, deleteGrant, listVarco, pairVarcoConsumer, runVarcoSmoke } from './lib/varco-dev.mjs';
+import { createHomeAssistantAdmin, deleteGrant, listVarco, pairVarcoConsumer, runVarcoLocalHomeAssistantSmoke, runVarcoSmoke } from './lib/varco-dev.mjs';
 
 const command = process.argv[2] || 'help';
 const arg = process.argv[3];
@@ -35,6 +35,8 @@ try {
     }
   } else if (command === 'smoke') {
     await runVarcoSmoke();
+  } else if (command === 'local-smoke') {
+    console.log(JSON.stringify(await runVarcoLocalHomeAssistantSmoke(), null, 2));
   } else {
     throw new Error(`Unknown command: ${command}`);
   }
@@ -51,7 +53,8 @@ Commands:
   approve REQUEST_ID      Approve a pending Varco request through Home Assistant
   pair                    Create, approve, connect, and leave a reusable development grant
   delete-grant GRANT_ID   Delete a Varco grant through Home Assistant
-  smoke                   Request, approve, connect, verify data plane, and delete the test grant
+  smoke                   Request, approve, connect, verify relay data plane, and delete the test grant
+  local-smoke             Verify createVarcoConsumerClient({ hass }) against real Home Assistant
 
 Defaults for the development Home Assistant instance:
   HA_URL=http://127.0.0.1:8123

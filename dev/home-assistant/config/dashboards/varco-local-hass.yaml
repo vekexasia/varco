@@ -1,0 +1,24 @@
+title: Varco Local Hass
+resources:
+  - url: /local/varco-client.js
+    type: module
+  - url: /local/varco-local-hass-card.js
+    type: module
+views:
+  - title: Hass-first
+    path: hass-first
+    icon: mdi:home-assistant
+    cards:
+      - type: custom:varco-local-hass-card
+        entities:
+          - sensor.powerwall_load_w
+          - sensor.powerwall_charge
+          - switch.ev_charger
+        history_entity: sensor.powerwall_load_w
+        action_entity: switch.ev_charger
+      - type: entities
+        title: Same Home Assistant entities
+        entities:
+          - sensor.powerwall_load_w
+          - sensor.powerwall_charge
+          - switch.ev_charger

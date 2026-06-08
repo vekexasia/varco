@@ -1,6 +1,6 @@
 # Consumer integration guide
 
-This guide is for developers building an external browser consumer for Varco.
+This guide is for developers building browser consumers for Varco, including external relay consumers and dashboards embedded inside Home Assistant.
 
 A consumer is not a Home Assistant user. It has its own keypair, declares the Home Assistant capabilities it wants, requests owner approval, and then communicates through Varco after Home Assistant approves a grant.
 
@@ -25,7 +25,46 @@ Consumer examples depend on it through a local workspace file dependency:
 
 When the package is published, external apps should install it as a normal npm dependency.
 
-## Minimal client
+## Unified consumer client
+
+Use `createVarcoConsumerClient()` when the same dashboard or consumer app should run both inside Home Assistant and outside Home Assistant.
+
+Inside a Home Assistant custom card or panel, pass the explicit frontend `hass` object:
+
+```ts
+import { createVarcoConsumerClient } from "@varco/client";
+
+const client = createVarcoConsumerClient({ hass });
+
+await client.requestAccess();
+await client.connect();
+const states = await client.getStates(["sensor.temperature"]);
+```
+
+Local Home Assistant mode uses the already-authenticated frontend session. It does not request a Varco grant, does not pair through the relay, and does not enforce the manifest. `requestAccess()` returns an already-approved local result and `connect()` is a no-op. `getStates()` reads from `hass.states`, `callService()` calls `hass.callService()`, and `queryHistory()` calls the Home Assistant websocket command `history/history_during_period`. If Home Assistant rejects the history call, the client throws an error with code `local-history-unavailable`.
+
+Custom cards receive a new `hass` object on each frontend update. Forward it to the client so local subscriptions can emit `state_delta` events:
+
+```ts
+client.updateHass(nextHass);
+```
+
+Outside Home Assistant, use the same entry point with relay options:
+
+```ts
+const client = createVarcoConsumerClient({
+  authorityId: "PASTE_AUTHORITY_ID_FROM_HOME_ASSISTANT",
+  bridgeUrl: "wss://varco-bridge.vekexasia.workers.dev",
+  manifest,
+  webrtc: true,
+});
+```
+
+Mode selection is explicit: if `hass` is passed, local Home Assistant mode wins even when relay options are also present. If `hass` is not passed, the client uses the existing Varco relay path and optional WebRTC upgrade. In relay mode, omitting `manifest` requests an empty read-only manifest.
+
+## Minimal relay client
+
+Use `createVarcoClient()` when you specifically want the low-level Varco relay client.
 
 ```ts
 import { createVarcoClient } from "@varco/client";
@@ -50,7 +89,7 @@ const client = createVarcoClient({
 });
 ```
 
-The client stores the consumer identity in `localStorage` by default. Clearing browser storage creates a new consumer identity and requires pairing again.
+The relay client stores the consumer identity in `localStorage` by default. Clearing browser storage creates a new consumer identity and requires pairing again.
 
 ## Request access
 

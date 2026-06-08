@@ -1,7 +1,12 @@
 {
   "name": "varco",
   "private": true,
-  "workspaces": ["bridge", "packages/client", "examples/consumer-dashboard", "examples/gazzetta-energy-showcase"],
+  "workspaces": [
+    "bridge",
+    "packages/client",
+    "examples/consumer-dashboard",
+    "examples/gazzetta-energy-showcase"
+  ],
   "scripts": {
     "test": "npm run test --workspaces --if-present && npm run dev:ha:tools:test && pytest -q tests",
     "build": "npm run build --workspaces --if-present",
@@ -11,10 +16,14 @@
     "dev:ha:pair": "npm --workspace packages/client run build && node dev/home-assistant/tools/ha-varco.mjs pair",
     "dev:ha:delete-grant": "node dev/home-assistant/tools/ha-varco.mjs delete-grant",
     "dev:ha:smoke": "npm --workspace packages/client run build && node dev/home-assistant/tools/ha-varco.mjs smoke",
+    "dev:ha:local-smoke": "npm --workspace packages/client run build && node dev/home-assistant/tools/ha-varco.mjs local-smoke",
+    "dev:ha:local-assets": "npm --workspace packages/client run build && node dev/home-assistant/tools/sync-local-assets.mjs",
+    "dev:ha:local-browser": "npm run dev:ha:local-assets && node dev/home-assistant/tools/browser-local-hass-e2e.mjs",
     "dev:ha:gazzetta-demo": "npm --workspace packages/client run build && npm --workspace examples/gazzetta-energy-showcase run build && node dev/home-assistant/tools/prepare-gazzetta-demo.mjs && npm --workspace examples/gazzetta-energy-showcase run build",
     "dev:ha:tools:test": "node --test dev/home-assistant/tools/test/*.test.mjs"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "typescript": "^5.9.3"
   }
 }

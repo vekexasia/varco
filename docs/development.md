@@ -59,7 +59,8 @@ http://127.0.0.1:8123
 After onboarding, the sidebar should contain:
 
 - **Varco**: the custom integration admin panel, with Authority ID, relay status, requests, and grants.
-- **Varco Showcase**: the Lovelace dashboard with synthetic entities.
+- **Varco Showcase**: the standard Lovelace dashboard with synthetic entities.
+- **Varco Local Hass**: a custom-card dashboard that uses `createVarcoConsumerClient({ hass })` with the Home Assistant frontend session.
 
 The synthetic energy dashboard is available at:
 
@@ -87,13 +88,37 @@ List the local Authority, access requests, and grants:
 npm run dev:ha:list
 ```
 
-Run the end-to-end smoke loop:
+Run the relay end-to-end smoke loop:
 
 ```bash
 npm run dev:ha:smoke
 ```
 
-The smoke command builds `@varco/client`, creates a new consumer identity, requests access, approves it through `/varco` admin WebSocket commands, connects over the relay, reads `sensor.powerwall_load_w`, queries history, toggles `switch.ev_charger`, and deletes the smoke-test grant.
+The relay smoke command builds `@varco/client`, creates a new consumer identity, requests access, approves it through `/varco` admin WebSocket commands, connects over the relay, reads `sensor.powerwall_load_w`, queries history, toggles `switch.ev_charger`, and deletes the smoke-test grant.
+
+Build the local Home Assistant custom-card assets:
+
+```bash
+npm run dev:ha:local-assets
+```
+
+This copies the built `@varco/client` browser bundle and the `Varco Local Hass` custom card into `dev/home-assistant/config/www`, which Home Assistant serves under `/local/`.
+
+Run the local Home Assistant frontend-session browser test:
+
+```bash
+npm run dev:ha:local-browser
+```
+
+The browser test uses Playwright to log in to Home Assistant, open `/varco-local-hass/hass-first`, verify the visible `Varco Local Hass` custom card, click the local service-call and history buttons, wait for a local `state_delta`, and write a screenshot to `.pi/varco-local-hass-e2e.png`.
+
+Run the local Home Assistant frontend-session smoke loop:
+
+```bash
+npm run dev:ha:local-smoke
+```
+
+The local smoke command builds `@varco/client`, logs in to the real development Home Assistant instance, creates a `hass`-shaped object from the Home Assistant admin WebSocket API, and verifies `createVarcoConsumerClient({ hass })` without pairing or grants. It reads `sensor.powerwall_load_w`, subscribes to `switch.ev_charger`, calls the local Home Assistant service API, forwards a fresh `hass` object through `updateHass()`, checks the local `state_delta`, and queries recorder history through `history/history_during_period`.
 
 Create and approve a reusable development grant without cleanup:
 

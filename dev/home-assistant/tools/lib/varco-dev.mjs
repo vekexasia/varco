@@ -118,12 +118,98 @@ export async function runVarcoSmoke(options = {}) {
   }
 }
 
+export async function runVarcoLocalHomeAssistantSmoke(options = {}) {
+  const admin = options.admin || await createHomeAssistantAdmin(options);
+  const log = options.log || console.log;
+  const manifestName = `Varco local Home Assistant smoke ${Date.now()}`;
+  const createClient = options.createClient || await defaultCreateConsumerClient();
+  let client;
+  let subscriptionId;
+  try {
+    await admin.command('call_service', { domain: 'switch', service: 'turn_off', service_data: {}, target: { entity_id: SMOKE_SWITCH_ID } });
+    const offHass = await waitForAdminState(admin, SMOKE_SWITCH_ID, 'off');
+    const clientOptions = {
+      hass: offHass,
+      authorityId: 'local-mode-must-ignore-authority',
+      bridgeUrl: 'ws://127.0.0.1/unused-local-mode-bridge',
+      manifest: { ...SMOKE_MANIFEST, name: manifestName },
+      webrtc: false,
+    };
+    client = createClient(clientOptions);
+
+    const access = await client.requestAccess();
+    if (access.status !== 'approved' || access.mode !== 'home-assistant' || access.request_id !== 'local') throw new Error(`Unexpected local access result: ${JSON.stringify(access)}`);
+    await client.connect();
+    log('Connected: local Home Assistant frontend session');
+
+    const states = await client.getStates([SMOKE_ENTITY_ID]);
+    const state = states[SMOKE_ENTITY_ID];
+    if (!state || state.state === 'unknown' || state.state === 'unavailable') throw new Error(`${SMOKE_ENTITY_ID} returned ${state?.state || 'missing'}`);
+    log(`local getStates ${SMOKE_ENTITY_ID}: ${state.state}`);
+
+    const events = [];
+    subscriptionId = await client.subscribeEntities([SMOKE_SWITCH_ID], (event) => events.push(event));
+    if (events[0]?.type !== 'state_snapshot' || events[0]?.states?.[SMOKE_SWITCH_ID]?.state !== 'off') throw new Error(`Unexpected local subscription snapshot: ${JSON.stringify(events[0])}`);
+
+    await client.callService('switch', 'turn_on', { entity_id: SMOKE_SWITCH_ID });
+    const onHass = await waitForAdminState(admin, SMOKE_SWITCH_ID, 'on');
+    client.updateHass(onHass);
+    const delta = events.find((event) => event.type === 'state_delta' && event.states?.[SMOKE_SWITCH_ID]?.state === 'on');
+    if (!delta) throw new Error(`Local subscription did not emit an on delta: ${JSON.stringify(events)}`);
+    log(`local subscribe/updateHass ${SMOKE_SWITCH_ID}: on delta`);
+
+    const end = new Date();
+    const start = new Date(end.getTime() - 60 * 60 * 1000);
+    const history = await client.queryHistory([SMOKE_ENTITY_ID], { start_time: start.toISOString(), end_time: end.toISOString() });
+    if (!history || typeof history !== 'object' || !(SMOKE_ENTITY_ID in history)) throw new Error(`Local history missing ${SMOKE_ENTITY_ID}`);
+    log(`local history ${SMOKE_ENTITY_ID}: ok`);
+
+    await client.unsubscribe(subscriptionId);
+    subscriptionId = undefined;
+    await client.callService('switch', 'turn_off', { entity_id: SMOKE_SWITCH_ID });
+    await waitForAdminState(admin, SMOKE_SWITCH_ID, 'off');
+
+    log('local mode completed without Varco pairing or relay connection');
+
+    return { mode: access.mode, state: state.state, subscriptionVerified: true, historyEntities: Object.keys(history) };
+  } finally {
+    if (subscriptionId && client) await client.unsubscribe(subscriptionId).catch(() => {});
+    if (client) await client.close?.();
+    await admin.command('call_service', { domain: 'switch', service: 'turn_off', service_data: {}, target: { entity_id: SMOKE_SWITCH_ID } }).catch(() => {});
+    admin.close?.();
+  }
+}
+
 async function defaultCreateClient(options = {}) {
   const { createVarcoClient, MemoryStorage } = await import('../../../../packages/client/dist/index.js');
   return (clientOptions) => createVarcoClient({
     ...clientOptions,
     storage: options.persistent ? new FileStorage(options.storagePath || '.pi/varco-dev-consumer.json') : new MemoryStorage(),
   });
+}
+
+async function defaultCreateConsumerClient() {
+  const { createVarcoConsumerClient } = await import('../../../../packages/client/dist/index.js');
+  return (clientOptions) => createVarcoConsumerClient(clientOptions);
+}
+
+async function hassFrontendFromAdmin(admin) {
+  const states = await admin.command('get_states');
+  return {
+    states: Object.fromEntries(states.map((state) => [state.entity_id, state])),
+    callWS: ({ type, ...payload }) => admin.command(type, payload),
+    callService: (domain, service, serviceData = {}, target = {}) => admin.command('call_service', { domain, service, service_data: serviceData, target }),
+  };
+}
+
+async function waitForAdminState(admin, entityId, expectedState, attempts = 20) {
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    const hass = await hassFrontendFromAdmin(admin);
+    if (hass.states[entityId]?.state === expectedState) return hass;
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  const hass = await hassFrontendFromAdmin(admin);
+  throw new Error(`${entityId} did not become ${expectedState}; current state is ${hass.states[entityId]?.state || 'missing'}`);
 }
 
 class FileStorage {

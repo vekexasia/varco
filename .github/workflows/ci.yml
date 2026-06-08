@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python test dependencies
+        run: python -m pip install pytest cryptography
+
+      - name: Run unit and integration tests
+        run: npm test
+
+      - name: Run type checks
+        run: npm run check
+
+      - name: Create Home Assistant test user
+        run: |
+          set -euo pipefail
+          cd dev/home-assistant
+          docker compose pull homeassistant
+          docker compose run --rm homeassistant python -m homeassistant --script auth -c /config add test test
+
+      - name: Build local Home Assistant dashboard assets
+        run: npm run dev:ha:local-assets
+
+      - name: Start local Home Assistant
+        run: |
+          set -euo pipefail
+          cd dev/home-assistant
+          docker compose up -d homeassistant
+
+      - name: Run hass-first local client e2e
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 60); do
+            if npm run dev:ha:local-smoke && npm run dev:ha:local-browser; then
+              exit 0
+            fi
+            echo "Home Assistant not ready for hass-first e2e yet ($attempt/60)."
+            sleep 5
+          done
+          cd dev/home-assistant
+          docker compose logs homeassistant
+          exit 1
+
+      - name: Stop local Home Assistant
+        if: always()
+        run: |
+          cd dev/home-assistant
+          docker compose down

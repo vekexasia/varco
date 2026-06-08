@@ -70,9 +70,9 @@ npm test
 Minimal browser client:
 
 ```ts
-import { createVarcoClient } from "@varco/client";
+import { createVarcoConsumerClient } from "@varco/client";
 
-const client = createVarcoClient({
+const client = createVarcoConsumerClient({
   authorityId: "PASTE_AUTHORITY_ID_FROM_HOME_ASSISTANT",
   bridgeUrl: "wss://varco-bridge.vekexasia.workers.dev",
   manifest: {
@@ -93,6 +93,8 @@ console.log(access.pairing_code);
 await client.connect();
 const states = await client.getStates(["sensor.temperature"]);
 ```
+
+The same high-level client can also run inside a Home Assistant custom card with `createVarcoConsumerClient({ hass })`, using the already-authenticated frontend session instead of Varco pairing.
 
 Full client guide: [`docs/consumer-integration.md`](docs/consumer-integration.md).
 

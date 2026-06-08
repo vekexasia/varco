@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createVarcoClient, MemoryStorage } from '../dist/index.js';
+import { createVarcoClient, createVarcoConsumerClient, MemoryStorage } from '../dist/index.js';
 
 class FakeTransport {
   constructor() { this.messages = []; this.handler = null; this.next = new Map(); }
@@ -18,6 +18,144 @@ class FakeTransport {
     throw new Error(message.type);
   }
 }
+
+test('consumer client uses explicit Home Assistant frontend session without relay options', async () => {
+  const hass = {
+    states: {
+      'sensor.temp': { entity_id: 'sensor.temp', state: '21', attributes: {} },
+    },
+  };
+  const client = createVarcoConsumerClient({ hass });
+
+  assert.deepEqual(await client.requestAccess(), {
+    request_id: 'local',
+    pairing_code: '',
+    status: 'approved',
+    mode: 'home-assistant',
+  });
+  await client.connect();
+  assert.deepEqual(await client.getStates(['sensor.temp', 'sensor.missing']), {
+    'sensor.temp': { entity_id: 'sensor.temp', state: '21', attributes: {} },
+    'sensor.missing': null,
+  });
+});
+
+test('local Home Assistant subscriptions emit relay-shaped snapshots and deltas', async () => {
+  const client = createVarcoConsumerClient({
+    hass: {
+      states: {
+        'sensor.temp': { entity_id: 'sensor.temp', state: '21', attributes: { unit_of_measurement: '°C' } },
+        'light.kitchen': { entity_id: 'light.kitchen', state: 'off', attributes: {} },
+      },
+    },
+  });
+  const events = [];
+  const subscriptionId = await client.subscribeEntities(['sensor.temp', 'sensor.missing'], (event) => events.push(event));
+
+  assert.equal(events[0].type, 'state_snapshot');
+  assert.equal(events[0].subscription_id, subscriptionId);
+  assert.deepEqual(events[0].states, {
+    'sensor.temp': { entity_id: 'sensor.temp', state: '21', attributes: { unit_of_measurement: '°C' } },
+    'sensor.missing': null,
+  });
+
+  client.updateHass({
+    states: {
+      'sensor.temp': { entity_id: 'sensor.temp', state: '22', attributes: { unit_of_measurement: '°C' } },
+      'light.kitchen': { entity_id: 'light.kitchen', state: 'on', attributes: {} },
+    },
+  });
+  assert.equal(events[1].type, 'state_delta');
+  assert.equal(events[1].subscription_id, subscriptionId);
+  assert.deepEqual(events[1].states, {
+    'sensor.temp': { entity_id: 'sensor.temp', state: '22', attributes: { unit_of_measurement: '°C' } },
+  });
+
+  await client.unsubscribe(subscriptionId);
+  client.updateHass({
+    states: {
+      'sensor.temp': { entity_id: 'sensor.temp', state: '23', attributes: { unit_of_measurement: '°C' } },
+    },
+  });
+  assert.equal(events.length, 2);
+});
+
+test('local Home Assistant service calls use the frontend service API', async () => {
+  const calls = [];
+  const client = createVarcoConsumerClient({
+    hass: {
+      states: {},
+      callService: async (...args) => calls.push(args),
+    },
+  });
+
+  await client.callService('light', 'turn_on', { entity_id: 'light.kitchen', brightness_pct: 50 });
+
+  assert.deepEqual(calls, [[
+    'light',
+    'turn_on',
+    { brightness_pct: 50 },
+    { entity_id: 'light.kitchen' },
+  ]]);
+});
+
+test('local Home Assistant history uses websocket history command and reports unavailable errors clearly', async () => {
+  const messages = [];
+  const client = createVarcoConsumerClient({
+    hass: {
+      states: {},
+      callWS: async (message) => {
+        messages.push(message);
+        if (message.start_time === 'bad') throw new Error('recorder disabled');
+        return { 'sensor.temp': [{ state: '21' }] };
+      },
+    },
+  });
+
+  assert.deepEqual(await client.queryHistory(['sensor.temp'], { start_time: '2026-06-08T00:00:00.000Z', end_time: '2026-06-08T01:00:00.000Z' }), {
+    'sensor.temp': [{ state: '21' }],
+  });
+  assert.deepEqual(messages[0], {
+    type: 'history/history_during_period',
+    entity_ids: ['sensor.temp'],
+    start_time: '2026-06-08T00:00:00.000Z',
+    end_time: '2026-06-08T01:00:00.000Z',
+    minimal_response: true,
+  });
+
+  await assert.rejects(
+    () => client.queryHistory(['sensor.temp'], { start_time: 'bad' }),
+    (err) => err.code === 'local-history-unavailable' && err.message.includes('recorder disabled'),
+  );
+});
+
+test('consumer client chooses local mode when hass is explicit and otherwise uses relay defaults', async () => {
+  const localTransport = new FakeTransport();
+  const local = createVarcoConsumerClient({
+    hass: { states: { 'sensor.local': { entity_id: 'sensor.local', state: 'ok', attributes: {} } } },
+    authorityId: 'authority',
+    bridgeUrl: 'ws://bridge',
+    manifest: { name: 'Remote', version: '1', read_entities: ['sensor.remote'] },
+    transport: localTransport,
+  });
+  assert.equal((await local.getStates(['sensor.local']))['sensor.local'].state, 'ok');
+  assert.equal(localTransport.messages.length, 0);
+
+  const relayTransport = new FakeTransport();
+  const relay = createVarcoConsumerClient({ authorityId: 'authority', bridgeUrl: 'ws://bridge', transport: relayTransport, storage: new MemoryStorage() });
+  await relay.requestAccess();
+  await relay.connect();
+  assert.deepEqual(relayTransport.messages[0].manifest, {
+    name: 'Varco consumer',
+    version: '0.1.0',
+    read_entities: [],
+    subscriptions: [],
+    history: [],
+    camera_snapshots: [],
+    actions: [],
+  });
+  assert.equal(relayTransport.messages[1].type, 'authenticate');
+});
 
 test('requestAccess persists identity and sends signed manifest access request', async () => {
   const transport = new FakeTransport();
