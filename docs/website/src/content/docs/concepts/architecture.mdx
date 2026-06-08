@@ -1,0 +1,37 @@
+---
+title: Architecture
+description: The main Varco actors and data flow.
+---
+
+Varco is relay-first, but Home Assistant remains the Authority.
+
+| Actor | Role |
+| --- | --- |
+| Owner | The person who owns the Home Assistant instance and approves, rejects, or revokes access. |
+| Consumer | External app, dashboard, script, or browser client. It has its own keypair and self-declared manifest. |
+| Authority | The Home Assistant custom integration. It approves grants, enforces policy, executes Home Assistant calls, and stores audit data. |
+| Bridge | Cloudflare Worker plus Durable Object relay. It routes encrypted envelopes and does not enforce Home Assistant permissions. |
+
+## Flow
+
+1. Home Assistant creates or loads an Authority keypair.
+2. The Authority opens an outbound WebSocket to the bridge.
+3. A consumer connects to the bridge using the Authority ID.
+4. Consumer and Authority establish an encrypted session through the relay.
+5. The consumer sends an access request with a manifest.
+6. The owner approves or rejects the request in Home Assistant.
+7. Approval creates a grant bound to the consumer public key.
+8. Later sessions authenticate with the same consumer key.
+9. Every data-plane message is checked against the current grant.
+
+## Main implementation paths
+
+| Path | Role |
+| --- | --- |
+| `custom_components/varco/authority.py` | Authority data-plane handlers and policy enforcement. |
+| `custom_components/varco/relay.py` | Outbound Authority connection and encrypted session handling. |
+| `custom_components/varco/policy.py` | Scope matching for entities and actions. |
+| `custom_components/varco/storage.py` | Access request, grant, and audit storage. |
+| `custom_components/varco/websocket_api.py` | Admin WebSocket API used by the `/varco` panel. |
+| `bridge/src/index.ts` | Worker entrypoint, Durable Object room, relay routing, bridge auth, limits. |
+| `packages/client/src/client.ts` | Public TypeScript client API. |

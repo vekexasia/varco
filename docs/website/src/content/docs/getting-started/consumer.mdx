@@ -1,0 +1,62 @@
+---
+title: Consumer quickstart
+description: Build a browser consumer with @varco/client.
+---
+
+This path is for developers building browser dashboards, scripts, custom cards, panel experiences, or agent-facing tools.
+
+Inside this repository, `@varco/client` is available as the `packages/client` workspace.
+
+```bash
+npm install
+npm --workspace packages/client run build
+```
+
+## Minimal relay consumer
+
+```ts
+import { createVarcoConsumerClient } from "@varco/client";
+
+const client = createVarcoConsumerClient({
+  authorityId: "PASTE_AUTHORITY_ID_FROM_HOME_ASSISTANT",
+  bridgeUrl: "wss://varco-bridge.vekexasia.workers.dev",
+  manifest: {
+    name: "My dashboard",
+    version: "0.1.0",
+    read_entities: ["sensor.temperature"],
+    subscriptions: ["sensor.temperature"],
+    history: [],
+    camera_snapshots: [],
+    actions: [],
+  },
+});
+
+const access = await client.requestAccess();
+console.log(access.pairing_code);
+
+// After the Home Assistant owner approves the request:
+await client.connect();
+const states = await client.getStates(["sensor.temperature"]);
+```
+
+## Inside Home Assistant
+
+Inside a Home Assistant custom card or panel, pass the frontend `hass` object:
+
+```ts
+import { createVarcoConsumerClient } from "@varco/client";
+
+const client = createVarcoConsumerClient({ hass });
+
+await client.requestAccess();
+await client.connect();
+const states = await client.getStates(["sensor.temperature"]);
+```
+
+Local Home Assistant mode uses the already-authenticated frontend session. It does not pair through the relay and does not request a Varco grant.
+
+## Next
+
+- [Build a consumer dashboard](../../guides/build-consumer-dashboard/)
+- [Client API](../../reference/client-api/)
+- [Manifest reference](../../reference/manifest/)

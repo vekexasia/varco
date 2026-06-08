@@ -1,0 +1,74 @@
+---
+title: Client API
+description: Public @varco/client entry points and common operations.
+---
+
+## `createVarcoConsumerClient()`
+
+Use `createVarcoConsumerClient()` when the same dashboard or consumer app should run both inside Home Assistant and outside Home Assistant.
+
+### Local Home Assistant mode
+
+Inside a Home Assistant custom card or panel, pass the explicit frontend `hass` object:
+
+```ts
+import { createVarcoConsumerClient } from "@varco/client";
+
+const client = createVarcoConsumerClient({ hass });
+```
+
+Local mode uses the already-authenticated frontend session. `requestAccess()` returns an already-approved local result and `connect()` is a no-op.
+
+Custom cards receive a new `hass` object on each frontend update. Forward it to the client so local subscriptions can emit `state_delta` events:
+
+```ts
+client.updateHass(nextHass);
+```
+
+### Relay mode
+
+Outside Home Assistant, use relay options:
+
+```ts
+const client = createVarcoConsumerClient({
+  authorityId: "PASTE_AUTHORITY_ID_FROM_HOME_ASSISTANT",
+  bridgeUrl: "wss://varco-bridge.vekexasia.workers.dev",
+  manifest,
+  webrtc: true,
+});
+```
+
+Mode selection is explicit: if `hass` is passed, local Home Assistant mode wins even when relay options are also present. If `hass` is not passed, the client uses the relay path and optional WebRTC upgrade.
+
+## `createVarcoClient()`
+
+Use `createVarcoClient()` when you specifically want the low-level relay client.
+
+```ts
+import { createVarcoClient } from "@varco/client";
+
+const client = createVarcoClient({
+  authorityId: "PASTE_AUTHORITY_ID_FROM_HOME_ASSISTANT",
+  bridgeUrl: "wss://varco-bridge.vekexasia.workers.dev",
+  manifest,
+  warn: console.warn,
+  onTransportStatus: (status) => {
+    console.log(status.mode, status.detail);
+  },
+});
+```
+
+The relay client stores the consumer identity in `localStorage` by default. Clearing browser storage creates a new consumer identity and requires pairing again.
+
+## Main methods
+
+| Method | Purpose |
+| --- | --- |
+| `requestAccess()` | Send the manifest for owner approval and return the pairing code. |
+| `connect()` | Authenticate the stored consumer key against the approved grant. |
+| `getStates(entityIds)` | Read current state for approved entities. |
+| `subscribeEntities(entityIds, callback)` | Receive initial state and live state updates. |
+| `unsubscribe(subscriptionId)` | Remove a runtime subscription. |
+| `queryHistory(entityIds, range)` | Query Home Assistant recorder history. |
+| `cameraSnapshot(entityId)` | Request a camera snapshot. |
+| `callService(domain, service, data)` | Call an approved Home Assistant service. |

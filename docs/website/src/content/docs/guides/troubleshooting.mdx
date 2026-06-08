@@ -1,0 +1,35 @@
+---
+title: Troubleshooting
+description: Common Varco installation, relay, pairing, and WebRTC issues.
+---
+
+## The Varco panel does not appear
+
+- Confirm the integration directory is at `config/custom_components/varco`.
+- Restart Home Assistant after copying the integration.
+- Confirm the integration was added from **Settings -> Devices & services**.
+
+## Relay is disconnected
+
+- Confirm Home Assistant can make outbound WebSocket connections.
+- Confirm the configured bridge URL starts with `wss://`.
+- Confirm no second Home Assistant instance is using the same Authority ID. The bridge rejects duplicate active authorities for the same ID.
+- Check Home Assistant logs for `Varco relay disconnected`.
+
+## Consumer says the Authority is offline
+
+- Confirm the Varco panel says the relay is connected.
+- Confirm the consumer Authority ID exactly matches the panel value.
+- Check bridge presence in a browser:
+
+  ```text
+  https://varco-bridge.vekexasia.workers.dev/presence/AUTHORITY_ID
+  ```
+
+## WebRTC does not connect
+
+WebRTC is opportunistic. Relay transport should continue working even when WebRTC is unavailable.
+
+- Confirm the consumer works with `webrtc: false`.
+- Check Home Assistant logs for `aiortc` import or setup warnings.
+- Treat relay as the baseline transport while debugging WebRTC.

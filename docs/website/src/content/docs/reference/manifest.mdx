@@ -1,0 +1,55 @@
+---
+title: Manifest
+description: Varco consumer manifest fields and scope syntax.
+---
+
+A consumer manifest declares the Home Assistant capabilities the consumer wants.
+
+```ts
+type VarcoManifest = {
+  name: string;
+  icon?: string;
+  version: string;
+  read_entities?: string[];
+  readEntities?: string[];
+  subscriptions?: string[];
+  history?: string[];
+  camera_snapshots?: string[];
+  cameraSnapshots?: string[];
+  actions?: string[];
+};
+```
+
+Use snake_case fields unless you need compatibility with camelCase callers. The current client and Authority accept both `read_entities`/`readEntities` and `camera_snapshots`/`cameraSnapshots`.
+
+## Read-only dashboard example
+
+```json
+{
+  "name": "Kitchen display",
+  "version": "0.1.0",
+  "read_entities": ["sensor.kitchen_temperature", "sensor.kitchen_humidity"],
+  "subscriptions": ["sensor.kitchen_temperature", "sensor.kitchen_humidity"],
+  "history": [],
+  "camera_snapshots": [],
+  "actions": []
+}
+```
+
+## Entity scopes
+
+```text
+sensor.temperature
+sensor.*
+*
+```
+
+## Action scopes
+
+```text
+light.turn_on@light.kitchen
+light.*
+*@light.kitchen
+```
+
+Request the smallest manifest that supports the app. The Authority still enforces the stored grant on every request, even if the consumer code changes later.

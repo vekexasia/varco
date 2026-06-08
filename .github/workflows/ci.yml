@@ -41,6 +41,9 @@ jobs:
       - name: Run type checks
         run: npm run check
 
+      - name: Build docs
+        run: npm run docs:build
+
       - name: Build local Home Assistant dashboard assets
         run: npm run dev:ha:local-assets
 

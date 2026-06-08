@@ -1,0 +1,22 @@
+---
+title: Bridge endpoints
+description: Implemented Varco bridge HTTP and WebSocket endpoints.
+---
+
+Default bridge origin:
+
+```text
+https://varco-bridge.vekexasia.workers.dev
+```
+
+Implemented endpoints:
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /` | Plain text bridge identity response. |
+| `GET /health` or `/healthz` | JSON health check. |
+| `GET /presence/{authorityId}` | JSON presence check for an Authority room. |
+| `WebSocket /authority/{authorityId}` | Home Assistant Authority outbound relay connection. |
+| `WebSocket /consumer/{authorityId}` | Consumer relay connection. |
+
+The bridge accepts one active Authority socket per Authority ID. Duplicate Authority connections are closed.

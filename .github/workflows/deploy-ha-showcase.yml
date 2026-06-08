@@ -10,7 +10,7 @@ on:
       - "custom_components/varco/**"
       - "dev/home-assistant/**"
       - "examples/gazzetta-energy-showcase/**"
-      - "docs/development.md"
+      - "docs/website/src/content/docs/development/**"
       - ".github/workflows/deploy-ha-showcase.yml"
 
 concurrency:

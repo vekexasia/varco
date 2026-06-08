@@ -4,10 +4,12 @@ Varco is a relay-first access layer for Home Assistant. It lets external consume
 
 ## Primary docs
 
-- README.md: overview, quick starts, repository layout, commands.
-- docs/home-assistant.md: manual installation, configuration, owner workflow, grants, services, troubleshooting.
-- docs/consumer-integration.md: browser TypeScript client usage, manifest fields, scopes, examples.
-- docs/protocol.md: actors, bridge endpoints, pairing flow, encryption boundaries, messages, security invariants.
+- README.md: repository overview, source map, core guarantees, commands.
+- docs/website/src/content/docs/: canonical documentation source.
+- docs/website/src/content/docs/getting-started/home-assistant.mdx: Home Assistant owner quickstart.
+- docs/website/src/content/docs/getting-started/consumer.mdx: browser consumer quickstart.
+- docs/website/src/content/docs/reference/protocol.mdx: protocol messages.
+- docs/website/src/content/docs/concepts/trust-model.mdx: trust boundaries and security invariants.
 - AGENTS.md: coding-agent instructions for this repository.
 
 ## Source map

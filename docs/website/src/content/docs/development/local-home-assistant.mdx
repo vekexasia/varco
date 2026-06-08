@@ -1,0 +1,36 @@
+---
+title: Local Home Assistant
+description: Run the local Varco Home Assistant development instance.
+---
+
+The development Home Assistant instance lives in `dev/home-assistant/`. It runs Home Assistant Container pinned to `2026.6.1` by default, with this checkout's `custom_components/varco` mounted into `/config/custom_components/varco`.
+
+## Run locally
+
+```bash
+cd dev/home-assistant
+docker compose down
+docker compose up -d
+```
+
+Check the instance:
+
+```bash
+docker compose ps
+curl -f http://127.0.0.1:8123/
+curl -f http://127.0.0.1:8123/varco
+```
+
+Open:
+
+```text
+http://127.0.0.1:8123
+```
+
+Development login:
+
+```text
+HA_URL=http://127.0.0.1:8123
+HA_USERNAME=test
+HA_PASSWORD=test
+```

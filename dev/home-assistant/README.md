@@ -2,7 +2,7 @@
 
 This directory contains the Docker Compose Home Assistant instance used for local Varco integration development and remote showcase deployment.
 
-The canonical development guide is [`docs/development.md`](../../docs/development.md). It covers repository commands, local restart/verification, synthetic entities, Proxmox/LXC deployment, and CI deployment secrets.
+The canonical development docs live in [`docs/website/src/content/docs/development`](../../docs/website/src/content/docs/development). They cover repository commands, local restart/verification, testing, and deployment notes.
 
 Quick local restart from this directory:
 

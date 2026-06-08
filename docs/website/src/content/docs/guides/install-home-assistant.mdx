@@ -1,0 +1,49 @@
+---
+title: Install Home Assistant
+description: Manual installation and setup for the Varco custom integration.
+---
+
+## Requirements
+
+- A Home Assistant installation where you can install a custom integration.
+- Outbound HTTPS/WebSocket access from Home Assistant to the bridge.
+- The `custom_components/varco` directory from this repository.
+
+## Manual install
+
+1. Copy the integration into your Home Assistant config directory:
+
+   ```text
+   config/custom_components/varco
+   ```
+
+   The final path should contain files such as:
+
+   ```text
+   config/custom_components/varco/manifest.json
+   config/custom_components/varco/__init__.py
+   config/custom_components/varco/frontend/panel.js
+   ```
+
+2. Restart Home Assistant.
+3. Open **Settings -> Devices & services -> Add integration**.
+4. Search for **Varco** and add it.
+5. Keep the default bridge unless you operate a different bridge:
+
+   ```text
+   wss://varco-bridge.vekexasia.workers.dev
+   ```
+
+6. Submit the config flow.
+
+Only one Varco Authority can be configured in a Home Assistant instance.
+
+## Open the panel
+
+After setup, open the **Varco** sidebar panel or browse directly to:
+
+```text
+/varco
+```
+
+The panel shows the Authority ID, relay status, pending requests, and existing grants.

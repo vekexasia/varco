@@ -1,0 +1,35 @@
+---
+title: Repository
+description: Main paths and repository-level development commands.
+---
+
+## Main paths
+
+| Path | Role |
+| --- | --- |
+| `custom_components/varco/` | Home Assistant custom integration. |
+| `bridge/` | Cloudflare Worker and Durable Object bridge. |
+| `packages/client/` | Browser TypeScript client. |
+| `examples/consumer-dashboard/` | Minimal external dashboard consumer. |
+| `examples/gazzetta-energy-showcase/` | Read-only energy showcase. |
+| `tests/` | Python Authority tests. |
+| `docs/website/` | Documentation website source. |
+
+## Commands
+
+From the repository root:
+
+```bash
+npm test
+npm run build
+npm run check
+pytest -q tests
+```
+
+Package-level commands:
+
+```bash
+npm --workspace bridge run test
+npm --workspace packages/client run test
+npm --workspace examples/consumer-dashboard run build
+```

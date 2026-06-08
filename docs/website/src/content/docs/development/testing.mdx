@@ -1,0 +1,48 @@
+---
+title: Testing
+description: Relevant test, build, smoke, and browser commands.
+---
+
+## Main suite
+
+```bash
+npm test
+npm run build
+npm run check
+pytest -q tests
+```
+
+## Package tests
+
+```bash
+npm --workspace packages/client run test
+npm --workspace bridge run test
+npm run dev:ha:tools:test
+```
+
+## Home Assistant smoke commands
+
+List the local Authority, access requests, and grants:
+
+```bash
+npm run dev:ha:list
+```
+
+Run the relay end-to-end smoke loop:
+
+```bash
+npm run dev:ha:smoke
+```
+
+Run the local Home Assistant frontend-session smoke loop:
+
+```bash
+npm run dev:ha:local-smoke
+```
+
+Run browser tests:
+
+```bash
+npm run dev:ha:local-browser
+npm run dev:ha:dashboard-export-browser
+```

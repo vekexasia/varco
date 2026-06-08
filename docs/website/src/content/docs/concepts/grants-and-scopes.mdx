@@ -1,0 +1,57 @@
+---
+title: Grants and scopes
+description: How Varco turns a consumer manifest into enforced Home Assistant access.
+---
+
+A consumer manifest describes the maximum access the consumer wants. If the owner approves it, Home Assistant stores a grant bound to the consumer public key.
+
+The grant is enforced by the Authority on every data-plane message.
+
+## Manifest capabilities
+
+A manifest may request:
+
+- `read_entities`: entity state snapshots.
+- `subscriptions`: live state updates.
+- `history`: recorder history queries.
+- `camera_snapshots`: camera snapshot retrieval.
+- `actions`: Home Assistant service calls.
+
+## Entity scopes
+
+Entity scopes support exact entities, domain wildcards, and `*`:
+
+```text
+sensor.temperature
+sensor.*
+*
+```
+
+Use narrow scopes whenever possible.
+
+## Action scopes
+
+Action scopes use one of these forms:
+
+```text
+light.turn_on@light.kitchen
+light.*
+*@cover.awning
+```
+
+Meaning:
+
+- `light.turn_on@light.kitchen`: allow only one service on one entity.
+- `light.*`: allow any service in the `light` domain.
+- `*@cover.awning`: allow any service targeting one entity.
+
+## Runtime subscriptions
+
+A grant defines the maximum allowed scope. A runtime subscription defines the current subset of entities the consumer wants to observe.
+
+1. Consumer sends `subscribe_states` with entity IDs.
+2. Authority validates every entity.
+3. Authority stores a runtime subscription for that session.
+4. Authority returns an initial `state_snapshot`.
+5. Home Assistant state changes produce `state_delta` events for matching subscriptions.
+6. Consumer sends `unsubscribe_states` to remove the runtime subscription.

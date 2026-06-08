@@ -1,0 +1,26 @@
+---
+title: Pair a consumer
+description: Request, approve, reject, revoke, or delete consumer access.
+---
+
+## Pairing flow
+
+1. Copy the Authority ID from the Varco panel.
+2. Paste it into the consumer app.
+3. The consumer sends an access request with a self-declared manifest.
+4. Home Assistant creates a persistent notification and shows the request in the Varco panel.
+5. Compare the pairing code shown by the consumer with the pairing code shown in Home Assistant.
+6. Review the requested permissions.
+7. Click **Approve** or **Reject**.
+
+Current approval is atomic: the owner approves or rejects the whole manifest. If a consumer asks for too much, reject it and have the consumer request a smaller manifest.
+
+## Revoke access
+
+Open `/varco` and review the grant card. Use **Revoke access** to keep the grant record but disable it.
+
+Revocation marks the grant as revoked inside Home Assistant. Active sessions for that consumer are marked closed and subsequent messages are rejected by the Authority.
+
+## Delete a grant record
+
+Use **Delete grant record** to remove the stored grant from the panel. Deleting an active grant also closes active sessions and future authentication fails because no grant exists.

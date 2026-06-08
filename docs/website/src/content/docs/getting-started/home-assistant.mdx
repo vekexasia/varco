@@ -1,0 +1,52 @@
+---
+title: Home Assistant quickstart
+description: Install Varco, find your Authority ID, and approve a consumer.
+---
+
+This path is for the Home Assistant owner.
+
+## Install
+
+1. Copy `custom_components/varco` into your Home Assistant config directory:
+
+   ```text
+   config/custom_components/varco
+   ```
+
+2. Restart Home Assistant.
+3. Go to **Settings -> Devices & services -> Add integration**.
+4. Search for **Varco** and add it.
+5. Keep the default bridge URL unless you operate another bridge:
+
+   ```text
+   wss://varco-bridge.vekexasia.workers.dev
+   ```
+
+Only one Varco Authority can be configured in a Home Assistant instance.
+
+## Find the Authority ID
+
+Open the **Varco** sidebar panel or browse to:
+
+```text
+/varco
+```
+
+Copy the **Authority ID**. Consumer apps need this public identifier to request access.
+
+## Approve a consumer
+
+1. Paste the Authority ID into the consumer app.
+2. The consumer sends an access request with its manifest.
+3. Home Assistant shows the pending request in the Varco panel.
+4. Compare the pairing code shown by the consumer with the code shown in Home Assistant.
+5. Review the requested permissions.
+6. Click **Approve** or **Reject**.
+
+Current approval is atomic: the owner approves or rejects the whole manifest. If a consumer asks for too much, reject it and have the consumer request a smaller manifest.
+
+## Next
+
+- [Install Home Assistant](../../guides/install-home-assistant/) has the full installation guide.
+- [Pair a consumer](../../guides/pair-consumer/) explains the approval flow.
+- [Troubleshooting](../../guides/troubleshooting/) covers common relay and panel issues.

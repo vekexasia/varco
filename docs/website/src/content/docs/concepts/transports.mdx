@@ -1,0 +1,22 @@
+---
+title: Relay and WebRTC
+description: Varco's baseline relay transport and opportunistic WebRTC upgrade.
+---
+
+Relay transport is the required baseline.
+
+The Home Assistant Authority opens an outbound WebSocket to the bridge. This avoids requiring inbound public access to the Home Assistant instance.
+
+Consumers connect to the bridge with the Authority ID. Application messages are encrypted between consumer and Authority before the bridge relays them.
+
+## WebRTC
+
+WebRTC is opportunistic:
+
+- Consumers must work completely over relay.
+- WebRTC uses the same application protocol.
+- WebRTC uses the same Authority enforcement path.
+- If WebRTC setup fails, the client falls back to relay.
+- Consumers can disable WebRTC with `webrtc: false`.
+
+The Home Assistant integration declares `aiortc>=1.9.0`. If `aiortc` fails to install or import at runtime, Varco logs a warning and keeps relay transport working.

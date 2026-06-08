@@ -1,0 +1,26 @@
+---
+title: Deployment
+description: Documentation site and showcase deployment notes.
+---
+
+## Documentation website
+
+The documentation website lives in `docs/website/` and is built with Astro Starlight.
+
+```bash
+npm run docs:build
+```
+
+GitHub Pages deployment is handled by `.github/workflows/deploy-docs.yml`. The workflow builds `docs/website` and uploads the generated `dist` directory as a Pages artifact.
+
+For GitHub Pages project hosting, the workflow sets:
+
+```text
+SITE_BASE_PATH=/varco
+```
+
+## Home Assistant showcase
+
+The Home Assistant showcase deployment is handled by `.github/workflows/deploy-ha-showcase.yml`.
+
+The remote showcase path and credentials are configured through GitHub Actions secrets.

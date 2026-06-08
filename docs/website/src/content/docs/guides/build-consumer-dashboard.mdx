@@ -1,0 +1,88 @@
+---
+title: Build a consumer dashboard
+description: Use @varco/client to read, subscribe, query history, snapshot cameras, and call services.
+---
+
+## Create the client
+
+```ts
+import { createVarcoConsumerClient } from "@varco/client";
+
+const client = createVarcoConsumerClient({
+  authorityId: "PASTE_AUTHORITY_ID_FROM_HOME_ASSISTANT",
+  bridgeUrl: "wss://varco-bridge.vekexasia.workers.dev",
+  manifest,
+  webrtc: true,
+});
+```
+
+Call `requestAccess()` before the first connection:
+
+```ts
+const access = await client.requestAccess();
+console.log(access.request_id);
+console.log(access.pairing_code);
+console.log(access.status);
+```
+
+After approval:
+
+```ts
+await client.connect();
+```
+
+## Read states
+
+```ts
+const states = await client.getStates(["sensor.temperature"]);
+console.log(states["sensor.temperature"]?.state);
+```
+
+## Subscribe to updates
+
+```ts
+const subscriptionId = await client.subscribeEntities(
+  ["sensor.temperature"],
+  (event) => {
+    if (event.type === "state_snapshot") {
+      console.log("initial", event.states);
+    }
+
+    if (event.type === "state_delta") {
+      console.log("delta", event.states);
+    }
+  },
+);
+
+await client.unsubscribe(subscriptionId);
+```
+
+## Query history
+
+```ts
+const end = new Date();
+const start = new Date(end.getTime() - 24 * 60 * 60 * 1000);
+
+const history = await client.queryHistory(["sensor.temperature"], {
+  start_time: start.toISOString(),
+  end_time: end.toISOString(),
+});
+```
+
+## Request a camera snapshot
+
+```ts
+const snapshot = await client.cameraSnapshot("camera.front_door");
+const imageUrl = `data:${snapshot.contentType};base64,${snapshot.body}`;
+```
+
+## Call a Home Assistant service
+
+```ts
+await client.callService("light", "turn_on", {
+  entity_id: "light.kitchen",
+  brightness_pct: 50,
+});
+```
+
+Every operation is checked by the Authority against the approved grant.

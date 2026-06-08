@@ -11,10 +11,15 @@ Varco is a relay-first access protocol for Home Assistant consumers. The consume
 Before changing behavior, read:
 
 1. `README.md`
-2. `docs/home-assistant.md`
-3. `docs/consumer-integration.md`
-4. `docs/protocol.md`
-5. The specific source files involved in the change.
+2. The relevant canonical docs in `docs/website/src/content/docs/`
+3. The specific source files involved in the change.
+
+Useful entry points:
+
+- `docs/website/src/content/docs/getting-started/home-assistant.mdx`
+- `docs/website/src/content/docs/getting-started/consumer.mdx`
+- `docs/website/src/content/docs/concepts/trust-model.mdx`
+- `docs/website/src/content/docs/reference/protocol.mdx`
 
 `PRD.md` contains product notes and may lag behind implementation. Do not edit it unless the user explicitly asks for PRD changes.
 
@@ -30,6 +35,7 @@ Before changing behavior, read:
 - `packages/client/`: browser TypeScript client.
 - `examples/consumer-dashboard/`: minimal consumer dashboard.
 - `examples/gazzetta-energy-showcase/`: read-only energy showcase.
+- `docs/website/`: canonical documentation website source.
 - `tests/`: Python Authority tests.
 
 ## Non-negotiable invariants

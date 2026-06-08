@@ -1,0 +1,38 @@
+---
+title: Home Assistant services
+description: Varco service fallbacks for automations, scripts, and recovery.
+---
+
+Use the panel for normal operation. Use services for automation, scripts, or recovery.
+
+## Approve request
+
+```yaml
+service: varco.approve_request
+data:
+  request_id: "REQUEST_ID"
+```
+
+## Reject request
+
+```yaml
+service: varco.reject_request
+data:
+  request_id: "REQUEST_ID"
+```
+
+## Revoke grant
+
+```yaml
+service: varco.revoke_grant
+data:
+  grant_id: "GRANT_ID"
+```
+
+## Delete grant
+
+```yaml
+service: varco.delete_grant
+data:
+  grant_id: "GRANT_ID"
+```
