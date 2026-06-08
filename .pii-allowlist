@@ -6,3 +6,6 @@ http://localhost:8123/
 3j3rQeFlaFN1KOphZ2E4b7fFWoZSjF1A6KqgsntDhUg
 http://localhost:8123/
 http://\$\{HA_SHOWCASE_HOST\}
+# Public project identity (GitHub repo, owner handle, integration name).
+https://github\.com/vekexasia/varco/issues
+"name": "Varco"
