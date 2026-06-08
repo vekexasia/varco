@@ -13,8 +13,9 @@ Varco does not give the consumer a Home Assistant token. Home Assistant remains 
 The integration declares this Python requirement in `custom_components/varco/manifest.json`:
 
 - `cryptography>=42.0.0`
+- `aiortc>=1.9.0` (WebRTC peer connection for opportunistic P2P transport)
 
-Home Assistant installs declared custom integration requirements during setup. WebRTC support is opportunistic: if `aiortc` is not installed, Varco keeps relay transport working.
+Home Assistant installs declared custom integration requirements during setup, including `aiortc`. WebRTC support is opportunistic: if `aiortc` fails to import at runtime, Varco logs a warning and keeps relay transport working.
 
 ## Install manually
 
