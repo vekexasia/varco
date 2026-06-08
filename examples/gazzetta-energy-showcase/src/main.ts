@@ -20,7 +20,8 @@ const values = new Map<string, HassState | null>();
 const samples: number[] = [];
 let client: VarcoClient | null = null;
 let lastUpdate = "-";
-let transport = "Cloudflare relay - P2P disabled";
+let transport = FORCE_RELAY_ONLY ? "Cloudflare relay - P2P disabled" : "Cloudflare relay - negotiating P2P";
+let transportMode: "relay" | "p2p" = "relay";
 let phase: "setup" | "pending" | "live" | "error" = "setup";
 let message = "";
 const grantStorage = createDemoStorage(window.localStorage);
@@ -72,26 +73,41 @@ function renderChart(): string {
   return `<svg class="chart" viewBox="0 0 100 148" preserveAspectRatio="none"><line x1="0" y1="74" x2="100" y2="74" stroke="var(--line)" stroke-width="1"/><polyline points="${points}" fill="none" stroke="var(--accent)" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>`;
 }
 
+type PsychroPoint = { key: string; label: string; tempC: number; rh: number; color: string };
+
 function renderPsychrometricChart(): string {
-  const dryBulb = num(COMFORT_ENTITIES.livingRoomTemperature);
-  const relativeHumidity = num(COMFORT_ENTITIES.livingRoomHumidity);
-  if (dryBulb == null || relativeHumidity == null) return `<div class="psychro"><div class="psychro-title">Psychrometric chart</div><div class="status">Waiting for temperature and humidity.</div></div>`;
+  const points: PsychroPoint[] = [];
+  const outsideT = num(COMFORT_ENTITIES.outdoorTemperature);
+  const outsideRh = num(COMFORT_ENTITIES.outdoorHumidity);
+  if (outsideT != null && outsideRh != null) points.push({ key: "outside", label: "outside", tempC: outsideT, rh: outsideRh, color: "var(--cool)" });
+  const insideT = num(COMFORT_ENTITIES.livingRoomTemperature);
+  const insideRh = num(COMFORT_ENTITIES.livingRoomHumidity);
+  if (insideT != null && insideRh != null) points.push({ key: "inside", label: "inside", tempC: insideT, rh: insideRh, color: "var(--accent)" });
+  const climateTarget = Number(attr(COMFORT_ENTITIES.climate, "temperature"));
+  const climateRh = insideRh;
+  if (Number.isFinite(climateTarget) && climateRh != null) points.push({ key: "climate", label: "climate", tempC: climateTarget, rh: climateRh, color: "var(--ok)" });
+  if (points.length === 0) return `<div class="psychro"><div class="psychro-title">Psychrometric chart</div><div class="status">Waiting for temperature and humidity.</div></div>`;
   const W = 430, H = 210, padL = 32, padR = 14, padT = 14, padB = 28;
-  const minT = 16, maxT = 30, minW = 3, maxW = 18;
-  const x = (t: number) => padL + ((t - minT) / (maxT - minT)) * (W - padL - padR);
-  const y = (w: number) => padT + (1 - (w - minW) / (maxW - minW)) * (H - padT - padB);
-  const pointLine = (points: [number, number][]) => points.map(([t, w], index) => `${index ? "L" : "M"}${x(t).toFixed(1)} ${y(w).toFixed(1)}`).join(" ");
-  const rhCurve = (rh: number) => pointLine(Array.from({ length: 29 }, (_, index) => {
-    const t = minT + (index / 28) * (maxT - minT);
+  const minT = 0, maxT = 40, minW = 0, maxW = 25;
+  const clamp = (value: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, value));
+  const x = (t: number) => padL + ((clamp(t, minT, maxT) - minT) / (maxT - minT)) * (W - padL - padR);
+  const y = (w: number) => padT + (1 - (clamp(w, minW, maxW) - minW) / (maxW - minW)) * (H - padT - padB);
+  const pointLine = (pts: [number, number][]) => pts.map(([t, w], index) => `${index ? "L" : "M"}${x(t).toFixed(1)} ${y(w).toFixed(1)}`).join(" ");
+  const rhCurve = (rh: number) => pointLine(Array.from({ length: 41 }, (_, index) => {
+    const t = minT + (index / 40) * (maxT - minT);
     return [t, humidityRatio(t, rh)] as [number, number];
   }));
   const comfort = [[20, 40], [26, 40], [26, 60], [20, 60]].map(([t, rh]) => `${x(t).toFixed(1)},${y(humidityRatio(t, rh)).toFixed(1)}`).join(" ");
-  const w = humidityRatio(dryBulb, relativeHumidity);
-  const dew = dewPoint(dryBulb, relativeHumidity);
-  const wet = wetBulb(dryBulb, relativeHumidity);
-  const ticks = [16, 20, 24, 28].map((t) => `<text class="psychro-axis" x="${x(t).toFixed(0)}" y="${H - 7}" text-anchor="middle">${t}C</text>`).join("");
-  const wTicks = [5, 10, 15].map((value) => `<text class="psychro-axis" x="${padL - 7}" y="${y(value).toFixed(0)}" text-anchor="end">${value}</text><line x1="${padL}" y1="${y(value).toFixed(1)}" x2="${W - padR}" y2="${y(value).toFixed(1)}" stroke="var(--line)" stroke-width="1"/>`).join("");
-  return `<div class="psychro"><div class="psychro-head"><div class="psychro-title">Psychrometric chart</div><div class="psychro-read">${dryBulb.toFixed(1)}C - ${Math.round(relativeHumidity)}% RH - ${w.toFixed(1)} g/kg</div></div><svg viewBox="0 0 ${W} ${H}" aria-label="Psychrometric chart"><rect x="${padL}" y="${padT}" width="${W - padL - padR}" height="${H - padT - padB}" fill="rgba(244,239,225,.45)" stroke="var(--line)"/><polygon points="${comfort}" fill="var(--ok)" opacity=".16" stroke="var(--ok)" stroke-width="1.2"/><path d="${rhCurve(30)}" fill="none" stroke="var(--line-2)" stroke-width="1"/><path d="${rhCurve(50)}" fill="none" stroke="var(--cool)" stroke-width="1.4"/><path d="${rhCurve(70)}" fill="none" stroke="var(--line-2)" stroke-width="1"/>${wTicks}${ticks}<text class="psychro-axis" x="${W - padR}" y="${padT + 10}" text-anchor="end">relative humidity curves</text><text class="psychro-axis" x="${padL + 5}" y="${padT + 13}">humidity ratio g/kg</text><circle cx="${x(dryBulb).toFixed(1)}" cy="${y(w).toFixed(1)}" r="5" fill="var(--accent)" stroke="var(--paper)" stroke-width="2"/><line x1="${x(dryBulb).toFixed(1)}" y1="${y(w).toFixed(1)}" x2="${x(dryBulb).toFixed(1)}" y2="${H - padB}" stroke="var(--accent)" stroke-dasharray="3 3"/><text class="psychro-axis" x="${x(dryBulb).toFixed(1)}" y="${Math.max(padT + 11, y(w) - 9).toFixed(1)}" text-anchor="middle" fill="var(--ink)">room</text></svg><div class="psychro-note"><span>Comfort band 20-26C / 40-60% RH</span><span>Dew ${dew.toFixed(1)}C - wet bulb ${wet.toFixed(1)}C</span></div></div>`;
+  const ticks = [0, 10, 20, 30, 40].map((t) => `<text class="psychro-axis" x="${x(t).toFixed(0)}" y="${H - 7}" text-anchor="middle">${t}C</text>`).join("");
+  const wTicks = [5, 10, 15, 20].map((value) => `<text class="psychro-axis" x="${padL - 7}" y="${y(value).toFixed(0)}" text-anchor="end">${value}</text><line x1="${padL}" y1="${y(value).toFixed(1)}" x2="${W - padR}" y2="${y(value).toFixed(1)}" stroke="var(--line)" stroke-width="1"/>`).join("");
+  const markers = points.map((p) => {
+    const w = humidityRatio(p.tempC, p.rh);
+    const cx = x(p.tempC), cy = y(w);
+    const ly = Math.max(padT + 11, cy - 9);
+    return `<line x1="${cx.toFixed(1)}" y1="${cy.toFixed(1)}" x2="${cx.toFixed(1)}" y2="${(H - padB).toFixed(1)}" stroke="${p.color}" stroke-dasharray="3 3" opacity=".6"/><circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="5" fill="${p.color}" stroke="var(--paper)" stroke-width="2"/><text class="psychro-axis" x="${cx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" fill="var(--ink)">${esc(p.label)}</text>`;
+  }).join("");
+  const legend = points.map((p) => `<span style="color:${p.color}">&#9679; ${esc(p.label)} ${p.tempC.toFixed(1)}C / ${Math.round(p.rh)}% RH</span>`).join("");
+  return `<div class="psychro"><div class="psychro-head"><div class="psychro-title">Psychrometric chart</div><div class="psychro-read">${legend}</div></div><svg viewBox="0 0 ${W} ${H}" aria-label="Psychrometric chart"><rect x="${padL}" y="${padT}" width="${W - padL - padR}" height="${H - padT - padB}" fill="rgba(244,239,225,.45)" stroke="var(--line)"/><polygon points="${comfort}" fill="var(--ok)" opacity=".16" stroke="var(--ok)" stroke-width="1.2"/><path d="${rhCurve(30)}" fill="none" stroke="var(--line-2)" stroke-width="1"/><path d="${rhCurve(50)}" fill="none" stroke="var(--cool)" stroke-width="1.4"/><path d="${rhCurve(70)}" fill="none" stroke="var(--line-2)" stroke-width="1"/><path d="${rhCurve(90)}" fill="none" stroke="var(--line-2)" stroke-width="1"/>${wTicks}${ticks}<text class="psychro-axis" x="${W - padR}" y="${padT + 10}" text-anchor="end">relative humidity curves</text><text class="psychro-axis" x="${padL + 5}" y="${padT + 13}">humidity ratio g/kg</text>${markers}</svg><div class="psychro-note"><span>Comfort band 20-26C / 40-60% RH</span><span>outside / inside / climate target</span></div></div>`;
 }
 
 function humidityRatio(tempC: number, relativeHumidity: number): number {
@@ -143,8 +159,9 @@ function render(): void {
   const headline = solar !== "-" && load !== "-" ? `Solar is producing ${solar} kW while the house is drawing ${load} kW` : "The synthetic home is waiting for live data";
   const first = headline.charAt(0);
   const rest = headline.slice(1);
+  const transportBadge = phase === "live" ? (transportMode === "p2p" ? "P2P" : "Relay") : (FORCE_RELAY_ONLY ? "Relay only" : "Relay / P2P");
   app.innerHTML = `<style>${css}</style><div class="page">
-    <header class="mast"><div class="mast-top"><span>Varco showcase</span><span>Relay only</span></div><h1 class="flag">La&nbsp;Casa</h1><div class="mast-rule"><span>${esc(day)}</span><span>${esc(gridLabel)}</span><span>Home edition</span></div><nav class="nav"><span>energy</span><span>comfort</span><span>lights</span><span>security</span></nav></header>
+    <header class="mast"><div class="mast-top"><span>Varco showcase</span><span>${esc(transportBadge)}</span></div><h1 class="flag">La&nbsp;Casa</h1><div class="mast-rule"><span>${esc(day)}</span><span>${esc(gridLabel)}</span><span>Home edition</span></div><nav class="nav"><span>energy</span><span>comfort</span><span>lights</span><span>security</span></nav></header>
     <section class="lead"><div class="kick">${esc(now.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }).toUpperCase())} - READ ONLY</div><div class="byline">Varco - updated ${esc(lastUpdate)} - ${esc(transport)}</div><h2 class="headline"><span class="drop">${esc(first)}</span>${esc(rest)}</h2><p class="sub">Gazzetta-style showcase: read-only grant, no Home Assistant token in the browser, relay transport by default.</p></section>
     ${phase !== "live" ? renderSetup() : renderLive()}
     <div class="foot">Varco - read-only grant - encrypted relay transport</div>
@@ -154,18 +171,21 @@ function render(): void {
 
 function renderSetup(): string {
   const saved = loadShowcaseGrant(grantStorage, DEFAULT_AUTHORITY_ID);
+  const connectLabel = FORCE_RELAY_ONLY ? "Connect relay-only" : "Connect";
+  const streamWord = FORCE_RELAY_ONLY ? "relay-only stream" : "encrypted stream";
   if (DEMO_GRANT_BUNDLE) {
-    const text = phase === "error" ? message : "Demo grant embedded. Connecting relay-only stream...";
-    return `<section class="setup"><div class="box"><div class="kicker"><span>Live demo</span><span class="note">read-only</span></div><button id="connect">Connect relay-only</button><div class="status${phase === "error" ? " error" : ""}">${esc(text)}</div></div></section>`;
+    const text = phase === "error" ? message : `Demo grant embedded. Connecting ${streamWord}...`;
+    return `<section class="setup"><div class="box"><div class="kicker"><span>Live demo</span><span class="note">read-only</span></div><button id="connect">${esc(connectLabel)}</button><div class="status${phase === "error" ? " error" : ""}">${esc(text)}</div></div></section>`;
   }
   const savedMessage = saved?.status === "approved"
-    ? "Saved grant for this browser. Press Connect to resume the relay-only stream."
+    ? `Saved grant for this browser. Press Connect to resume the ${streamWord}.`
     : saved?.status === "pending"
       ? `Saved pending request. Pairing code ${saved.pairingCode}. Approve it in the Varco panel, then press Connect.`
       : "Read-only access to: " + READ_ENTITIES.join(", ");
   const clearButton = saved ? `<button id="clearGrant">Forget saved grant</button>` : "";
-  return `<section class="setup"><div class="box"><div class="kicker"><span>Pairing</span><span class="note">read-only</span></div><label class="field">Authority ID <input id="authority" value="${esc(DEFAULT_AUTHORITY_ID)}"></label><button id="request">Request read-only grant</button><button id="connect">Connect relay-only</button>${clearButton}<div class="status${phase === "error" ? " error" : ""}">${esc(message || savedMessage)}</div></div></section>`;
+  return `<section class="setup"><div class="box"><div class="kicker"><span>Pairing</span><span class="note">read-only</span></div><label class="field">Authority ID <input id="authority" value="${esc(DEFAULT_AUTHORITY_ID)}"></label><button id="request">Request read-only grant</button><button id="connect">${esc(connectLabel)}</button>${clearButton}<div class="status${phase === "error" ? " error" : ""}">${esc(message || savedMessage)}</div></div></section>`;
 }
+
 
 function renderLive(): string {
   return `<div class="full">
@@ -177,11 +197,8 @@ function renderLive(): string {
     </div></section>
   </div>
   <div class="grid"><div class="col"><section class="panel"><div class="kicker"><span>Comfort desk</span><span class="note">climate</span></div><div class="stat-grid">
-    ${stat("outside", temp(COMFORT_ENTITIES.outdoorTemperature), "C", COMFORT_ENTITIES.outdoorTemperature, "cool")}
-    ${stat("inside", temp(COMFORT_ENTITIES.livingRoomTemperature), "C", COMFORT_ENTITIES.livingRoomTemperature)}
-    ${stat("humidity", pct(COMFORT_ENTITIES.livingRoomHumidity), "%", COMFORT_ENTITIES.livingRoomHumidity, "ok")}
     ${stat("co2", ppm(COMFORT_ENTITIES.co2), "ppm", COMFORT_ENTITIES.co2, co2Tone())}
-    ${room("climate", climateSummary(), climateDetail(), COMFORT_ENTITIES.climate)}
+    ${room("climate", titleState(COMFORT_ENTITIES.climate), climateDetail(), COMFORT_ENTITIES.climate)}
     ${room("cooling", titleState(COMFORT_ENTITIES.cooling), "generic thermostat actuator", COMFORT_ENTITIES.cooling)}
   </div>${renderPsychrometricChart()}</section></div><div class="col col-rule"><section class="panel"><div class="kicker"><span>Lights bureau</span><span class="note">rooms</span></div><div class="room-grid">
     ${lightRoom("Kitchen", LIGHT_ENTITIES.kitchen)}
@@ -209,14 +226,9 @@ function lightRoom(name: string, entity: string): string {
 
 function gridAbs(): string { const n = num(ENERGY_ENTITIES.grid); return n == null ? "-" : Math.abs(n / 1000).toFixed(1); }
 function gridWording(): string { const n = num(ENERGY_ENTITIES.grid); return n == null ? "grid" : n < 0 ? "export" : "import"; }
-function climateSummary(): string {
-  const current = attr(COMFORT_ENTITIES.climate, "current_temperature");
-  return current == null ? titleState(COMFORT_ENTITIES.climate) : `${Number(current).toFixed(1)}C`;
-}
 function climateDetail(): string {
-  const target = attr(COMFORT_ENTITIES.climate, "temperature");
   const action = attr(COMFORT_ENTITIES.climate, "hvac_action") || state(COMFORT_ENTITIES.climate);
-  return `target ${target ?? "-"}C - ${String(action)}`;
+  return String(action);
 }
 function co2Tone(): string { const n = num(COMFORT_ENTITIES.co2); return n != null && n > 900 ? "accent" : "ok"; }
 function titleState(entity: string): string { const s = state(entity); return s === "-" ? "-" : s.charAt(0).toUpperCase() + s.slice(1); }
@@ -240,7 +252,7 @@ function makeClient(): VarcoClient {
     bridgeUrl: BRIDGE_URL,
     manifest: createReadOnlyManifest(),
     webrtc: !FORCE_RELAY_ONLY,
-    onTransportStatus: (status) => { transport = status.mode === "relay" ? "Cloudflare relay - P2P disabled" : "WebRTC P2P"; render(); },
+    onTransportStatus: (status) => { transportMode = status.mode; transport = status.mode === "p2p" ? "WebRTC P2P" : status.detail || "Cloudflare relay"; render(); },
     warn: console.warn,
     storage: grantStorage,
   });

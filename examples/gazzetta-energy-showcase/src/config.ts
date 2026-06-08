@@ -16,6 +16,7 @@ export const ENERGY_ENTITIES = {
 
 export const COMFORT_ENTITIES = {
   outdoorTemperature: "sensor.outdoor_temperature",
+  outdoorHumidity: "sensor.outdoor_humidity",
   livingRoomTemperature: "sensor.living_room_temperature",
   livingRoomHumidity: "sensor.living_room_humidity",
   co2: "sensor.air_quality_co2",
@@ -53,6 +54,7 @@ export const READ_ENTITIES = [
 export const HISTORY_ENTITIES = [
   ...Object.values(ENERGY_ENTITIES),
   COMFORT_ENTITIES.outdoorTemperature,
+  COMFORT_ENTITIES.outdoorHumidity,
   COMFORT_ENTITIES.livingRoomTemperature,
   COMFORT_ENTITIES.livingRoomHumidity,
   COMFORT_ENTITIES.co2,
@@ -72,4 +74,4 @@ export function createReadOnlyManifest(): VarcoManifest {
   };
 }
 
-export const FORCE_RELAY_ONLY = true;
+export const FORCE_RELAY_ONLY = false;

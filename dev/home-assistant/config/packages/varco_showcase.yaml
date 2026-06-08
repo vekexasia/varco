@@ -48,6 +48,12 @@ input_number:
     max: 80
     step: 1
     mode: box
+  varco_outdoor_humidity:
+    name: Varco Outdoor Humidity Raw
+    min: 20
+    max: 100
+    step: 1
+    mode: box
   varco_air_quality_co2:
     name: Varco Air Quality CO2 Raw
     min: 380
@@ -292,6 +298,13 @@ template:
         device_class: humidity
         state_class: measurement
         state: "{{ states('input_number.varco_indoor_humidity') | float(0) | round(0) }}"
+      - name: Outdoor Humidity
+        unique_id: varco_demo_outdoor_humidity
+        icon: mdi:water-percent
+        unit_of_measurement: "%"
+        device_class: humidity
+        state_class: measurement
+        state: "{{ states('input_number.varco_outdoor_humidity') | float(0) | round(0) }}"
       - name: Air Quality CO2
         unique_id: varco_demo_air_quality_co2
         icon: mdi:molecule-co2
@@ -402,6 +415,7 @@ automation:
           next_charge: "{{ ([8, ([98, previous_charge | float + charge_delta | float] | min)] | max) | round(1) }}"
           indoor_temp: "{{ (20.8 + ((outdoor_temp | float - 18) * 0.07) + ((range(-4, 5) | random) / 10)) | round(1) }}"
           humidity: "{{ ([35, ([68, 47 + (6 if 390 <= minute | float <= 520 else 0) + (range(-4, 5) | random)] | min)] | max) | round(0) }}"
+          outdoor_humidity: "{{ ([30, ([95, 82 - (outdoor_temp | float - 12) * 1.6 + (range(-5, 6) | random)] | min)] | max) | round(0) }}"
           co2: "{{ (430 + (280 if 390 <= minute | float <= 520 else 0) + (180 if 1080 <= minute | float <= 1320 else 0) + (range(-20, 35) | random)) | round(0) }}"
           previous_ev_charge: "{{ states('input_number.varco_ev_charge') | float(46) }}"
           ev_delta: "{{ 0.041 if is_state('switch.ev_charger', 'on') else -0.004 }}"
@@ -446,6 +460,11 @@ automation:
           entity_id: input_number.varco_indoor_humidity
         data:
           value: "{{ humidity }}"
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.varco_outdoor_humidity
+        data:
+          value: "{{ outdoor_humidity }}"
       - service: input_number.set_value
         target:
           entity_id: input_number.varco_air_quality_co2

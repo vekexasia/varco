@@ -23,8 +23,8 @@ test('showcase requests a read-only grant for all public demo entities', () => {
   assert.deepEqual(manifest.subscriptions, READ_ENTITIES);
 });
 
-test('showcase forces relay-only transport so browser never exposes P2P candidates', () => {
-  assert.equal(FORCE_RELAY_ONLY, true);
+test('showcase allows P2P upgrade in production while keeping relay fallback', () => {
+  assert.equal(FORCE_RELAY_ONLY, false);
 });
 
 test('showcase defaults to the remote Home Assistant synthetic Authority and entity set', () => {
@@ -38,6 +38,7 @@ test('showcase defaults to the remote Home Assistant synthetic Authority and ent
   });
   assert.deepEqual(COMFORT_ENTITIES, {
     outdoorTemperature: 'sensor.outdoor_temperature',
+    outdoorHumidity: 'sensor.outdoor_humidity',
     livingRoomTemperature: 'sensor.living_room_temperature',
     livingRoomHumidity: 'sensor.living_room_humidity',
     co2: 'sensor.air_quality_co2',

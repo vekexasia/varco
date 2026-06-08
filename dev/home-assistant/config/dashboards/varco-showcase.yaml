@@ -128,6 +128,10 @@ views:
             name: Living room humidity
             graph: line
           - type: sensor
+            entity: sensor.outdoor_humidity
+            name: Outdoor humidity
+            graph: line
+          - type: sensor
             entity: sensor.air_quality_co2
             name: CO2
             graph: line
@@ -151,4 +155,5 @@ views:
           - sensor.outdoor_temperature
           - sensor.living_room_temperature
           - sensor.living_room_humidity
+          - sensor.outdoor_humidity
           - sensor.air_quality_co2
