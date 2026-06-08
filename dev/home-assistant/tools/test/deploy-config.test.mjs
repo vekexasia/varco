@@ -33,7 +33,9 @@ test('showcase workflow prepares and deploys the public Gazzetta demo after HA d
 test('CI runs the hass-first local Home Assistant e2e smoke test', () => {
   assert.match(ciWorkflow, /npx playwright install --with-deps chromium/);
   assert.match(ciWorkflow, /npm run dev:ha:local-assets/);
-  assert.match(ciWorkflow, /docker compose up -d homeassistant/);
+  assert.match(ciWorkflow, /\.pi\/ci-ha-config/);
+  assert.match(ciWorkflow, /"done": \["user", "core_config", "analytics", "integration"\]/);
+  assert.match(ciWorkflow, /--name varco-ci-ha/);
   assert.match(ciWorkflow, /npm run dev:ha:local-smoke/);
   assert.match(ciWorkflow, /npm run dev:ha:local-browser/);
 });
