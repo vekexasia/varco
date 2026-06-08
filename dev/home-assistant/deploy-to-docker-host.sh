@@ -29,7 +29,6 @@ rsync -az --delete \
   --exclude '.cloud/' \
   --exclude '.cache/' \
   --exclude 'deps/' \
-  --exclude 'www/' \
   --exclude '*.db' \
   --exclude '*.db-*' \
   --exclude 'home-assistant.log*' \

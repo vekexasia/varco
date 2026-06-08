@@ -34,6 +34,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -47,6 +50,9 @@ jobs:
 
       - name: Run test suite
         run: npm test
+
+      - name: Build Home Assistant local dashboard assets
+        run: npm run dev:ha:local-assets
 
       - name: Configure SSH
         env:
@@ -89,14 +95,21 @@ jobs:
           fi
           BASE="${HA_SHOWCASE_PUBLIC_URL%/}"
           for i in $(seq 1 60); do
-            if curl -fsS "$BASE/" >/dev/null && curl -fsS "$BASE/varco" >/dev/null; then
-              echo "Home Assistant and Varco panel responded at $BASE"
-              exit 0
+            if curl -fsS "$BASE/" >/dev/null \
+              && curl -fsS "$BASE/varco" >/dev/null \
+              && curl -fsS "$BASE/varco-local-hass/hass-first" >/dev/null \
+              && curl -fsS "$BASE/local/varco-client.js" >/dev/null \
+              && curl -fsS "$BASE/local/varco-local-hass-card.js" >/dev/null; then
+              echo "Home Assistant, Varco panel, local hass dashboard, and local assets responded at $BASE"
+              break
+            fi
+            if [ "$i" = "60" ]; then
+              echo "Home Assistant public dashboard/assets did not respond at $BASE" >&2
+              exit 1
             fi
             sleep 5
           done
-          echo "Home Assistant did not respond at $BASE" >&2
-          exit 1
+          HA_URL="$BASE" HA_USERNAME=test HA_PASSWORD=test npm run dev:ha:local-browser
 
       - name: Prepare Gazzetta demo grant
         env:
