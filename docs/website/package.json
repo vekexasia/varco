@@ -10,7 +10,8 @@
   },
   "dependencies": {
     "@astrojs/starlight": "^0.39.3",
-    "remark-gfm": "^4.0.1",
-    "astro": "^6.4.4"
+    "astro": "^6.4.4",
+    "mermaid": "^11.15.0",
+    "remark-gfm": "^4.0.1"
   }
 }
