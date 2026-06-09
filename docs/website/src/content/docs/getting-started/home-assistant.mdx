@@ -45,6 +45,17 @@ Copy the **Authority ID**. Consumer apps need this public identifier to request 
 
 Current approval is atomic: the owner approves or rejects the whole manifest. If a consumer asks for too much, reject it and have the consumer request a smaller manifest.
 
+## Manage active grants
+
+Each active grant appears in the **Grants** section of the Varco panel. From there you can:
+
+- **Revoke access** — suspends the grant immediately. The consumer is disconnected and cannot reconnect.
+- **Delete grant record** — removes the grant permanently, including its audit history.
+- **Add or remove restrictions** — expand the **Restrictions** summary to narrow the grant without revoking it. Supported restriction types: expiry, schedule, PIN, and rate-limit. See [Grants and scopes](../../concepts/grants-and-scopes/) for details.
+
+## Dashboard brief export
+
+The panel includes a **Dashboard brief export** tool. Select a Lovelace dashboard or view to download a zip containing `brief.md` and `manifest.json`. This is useful for giving a coding agent enough context to build a consumer dashboard without exposing a Home Assistant token.
 ## Next
 
 - [Install Home Assistant](../../guides/install-home-assistant/) has the full installation guide.

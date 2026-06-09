@@ -52,8 +52,8 @@ A grant defines the maximum allowed scope. A runtime subscription defines the cu
 1. Consumer sends `subscribe_states` with entity IDs.
 2. Authority validates every entity.
 3. Authority stores a runtime subscription for that session.
-4. Authority returns an initial `state_snapshot`.
-5. Home Assistant state changes produce `state_delta` events for matching subscriptions.
+4. Authority returns an initial `state_snapshot` with the full current states.
+5. Home Assistant state changes produce `state_delta` events for matching subscriptions; each delta carries only the changed entities and the `subscription_id`.
 6. Consumer sends `unsubscribe_states` to remove the runtime subscription.
 
 ## Owner-managed grant restrictions
@@ -86,12 +86,14 @@ A restriction has this generic shape:
 
 `applies_to` may be `grant`, `read`, `subscriptions`, `history`, `camera`, `actions`, or an action selector such as `light.turn_on@light.kitchen`, `light.*`, or `*@cover.awning`.
 
+Restrictions are evaluated in declaration order. The first matching restriction that denies the operation stops evaluation immediately (fail-fast). Rate-limit counters are a second pass: they are only incremented when all stateless checks (expiry, schedule, PIN) have passed.
+
 Implemented restriction types:
 
-- `expiry`: deny after `params.expires_at`, an ISO timestamp.
-- `schedule`: allow only on configured `days`, `start_time`, and `end_time`.
-- `pin`: require a matching request PIN. PINs are hashed in storage; owners can change or remove them, not reveal them.
-- `rate_limit`: limit matching operations with `limit` and `window_seconds`, and optionally `cooldown_seconds`.
+- `expiry`: deny after `params.expires_at`, an ISO timestamp. The type alias `expires_at` is also accepted, as is placing `expires_at` directly on the restriction root rather than inside `params`.
+- `schedule`: allow only on configured `days` (lowercase three-letter abbreviations: `mon`–`sun`), `start_time`, and `end_time` (both `HH:MM`).
+- `pin`: require a matching request PIN. PINs are stored hashed with pbkdf2_sha256; owners can change or remove them but not retrieve the plaintext.
+- `rate_limit`: limit matching operations with `limit` and `window_seconds`. An optional `cooldown_seconds` enforces a minimum gap between consecutive operations.
 
 For service calls protected by a PIN, the consumer sends either a top-level `pin` for the matching restriction or a `pins` object keyed by restriction id:
 

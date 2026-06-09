@@ -46,14 +46,14 @@ Inside a Home Assistant custom card or panel, pass the frontend `hass` object:
 ```ts
 import { createVarcoConsumerClient } from "@varco/client";
 
+// Pass the HA frontend `hass` object — no relay, no pairing, no grant needed.
 const client = createVarcoConsumerClient({ hass });
 
-await client.requestAccess();
-await client.connect();
+// requestAccess() and connect() are no-ops in local mode.
 const states = await client.getStates(["sensor.temperature"]);
 ```
 
-Local Home Assistant mode uses the already-authenticated frontend session. It does not pair through the relay and does not request a Varco grant.
+Local Home Assistant mode uses the already-authenticated frontend session. It does not pair through the relay and does not request a Varco grant. Calls go directly to the HA WebSocket API using the session credentials already present in the browser.
 
 ## Next
 
