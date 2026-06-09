@@ -7,6 +7,8 @@ A consumer manifest describes the maximum access the consumer wants. If the owne
 
 The grant is enforced by the Authority on every data-plane message.
 
+<img src="/varco/assets/grant-scope-enforcement.png" alt="Diagram showing a consumer manifest becoming a stored grant, then passing through scope and restriction checks before Home Assistant APIs are called" />
+
 ## Manifest capabilities
 
 A manifest may request:
@@ -69,6 +71,8 @@ all enabled matching restrictions allow the operation
 ```
 
 Restrictions are enforced by the Home Assistant Authority on every data-plane request. They never widen a manifest scope, and the bridge/consumer are not trusted to enforce them.
+
+<img src="/varco/assets/restriction-evaluation-stack.png" alt="Diagram showing Varco's fail-fast restriction evaluation stack: grant scope, expiry, schedule, PIN, and rate limit" />
 
 A restriction has this generic shape:
 

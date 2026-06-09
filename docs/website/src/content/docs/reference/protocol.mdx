@@ -1,16 +1,18 @@
 ---
 title: Protocol messages
-description: Application messages handled by the Varco Authority.
+description: Data-plane and control messages exchanged between Varco consumers and the Home Assistant Authority.
 ---
 
 Messages handled by the Authority:
+
+<img src="/varco/assets/protocol-message-flow.png" alt="Diagram showing Varco protocol flow between consumer app, opaque bridge, and Home Assistant Authority" />
 
 | Message type | Request fields | Response | Scope checked |
 | --- | --- | --- | --- |
 | `access_request` | `consumer_pk`, `manifest`, `nonce`, `signature` | `access_request_pending` | Signature only; creates pending request. |
 | `authenticate` | `consumer_pk`, `nonce`, `signature` | `authenticated` | Active grant for consumer key. |
 | `get_states` | `entity_ids` | `states` | `read_entities`. |
-| `subscribe_states` | `entity_ids` | `state_snapshot` then `state_delta` events | `subscriptions` plus `read_entities`. |
+| `subscribe_states` | `entity_ids` | `state_snapshot`, then `state_delta` events | `subscriptions` plus `read_entities`. |
 | `unsubscribe_states` | `subscription_id` | `unsubscribed` | Authenticated session. |
 | `history_query` | `entity_ids`, optional range fields | `history_result` | `history`. |
 | `camera_snapshot` | `entity_id` | `camera_snapshot` | `camera_snapshots`. |
@@ -43,6 +45,7 @@ For PIN-protected operations, include `pin` (single PIN) or `pins` (object keyed
   "target": { "entity_id": "lock.front_door" },
   "pin": "1234"
 }
+```
 
 The Authority denies the request if the matching restriction is expired, outside schedule, rate-limited, missing a required PIN, or has an invalid PIN. Restriction failures return `permission_denied` and are audited as `restriction_denied`.
 
@@ -51,5 +54,6 @@ All responses echo the `request_id` from the originating request.
 ### Subscription responses
 
 `subscribe_states` returns two distinct message types:
+
 - `state_snapshot`: sent once on subscription with the full current states for all requested entities.
 - `state_delta`: sent on each Home Assistant state change; contains only the changed entities and the `subscription_id`.

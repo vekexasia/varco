@@ -3,45 +3,45 @@ title: What is Varco?
 description: Scoped Home Assistant access without handing consumers a Home Assistant token.
 ---
 
-<img src="./assets/header.png" alt="Varco" />
+<img src="/varco/assets/header.png" alt="Varco — scoped access for Home Assistant" />
 
 Varco lets external apps use Home Assistant without receiving a Home Assistant token and without requiring Home Assistant to be publicly reachable.
 
-A consumer asks for a narrow grant. The Home Assistant owner approves or rejects it in the Varco panel. From then on, every read, subscription, history query, camera snapshot, or service call is checked against that stored grant by Home Assistant itself.
+A consumer asks for a narrow grant. The Home Assistant owner approves or rejects it in the Varco panel. After approval, every read, subscription, history query, camera snapshot, or service call is checked against that stored grant by Home Assistant itself.
 
 ## Why Varco exists
 
-Home Assistant integrations usually assume that trusted code runs inside Home Assistant, or that an external tool receives a Home Assistant access token. That is awkward for dashboards, scripts, AI agents, or one-off consumers that should only see a few entities or perform a few actions.
+Home Assistant integrations inside the frontend already have an authenticated `hass` object. External dashboards, AI agents, companion apps, and hosted tools usually do not.
 
 Varco separates access from credentials:
 
 - Consumers never receive a Home Assistant long-lived access token.
-- Home Assistant does not need an inbound public URL for Varco traffic.
+- Home Assistant does not need a public inbound URL for normal Varco traffic.
 - The bridge carries encrypted envelopes and does not make permission decisions.
 - Home Assistant remains the Authority for consent, grants, policy checks, service calls, and audit.
 
-## What it is useful for
+<img src="/varco/assets/security-transport-model.png" alt="Varco security and transport model" />
 
-- External dashboards that show only selected energy, climate, room, or device state.
-- Shared family or guest dashboards without broad Home Assistant access.
-- Internal Home Assistant dashboard experiences that use the same client shape through the authenticated `hass` object.
-- Read-only AI agents that inspect selected sensors and history without being able to change devices.
-- Agent-built companion apps generated from a Lovelace dashboard brief.
-- Temporary browser tools or scripts with narrow, revocable access.
+## Common uses
+
+- External dashboards for rooms, energy, or public status displays.
+- Read-only showcase dashboards without direct Home Assistant access.
+- Internal Home Assistant dashboard experiences using the existing `hass` object.
+- AI-assisted tools that need scoped entity state or service access.
+- Agent-built companion apps with pairing, signaling, and relay fallback.
 
 ## How it works
 
-<img src="./assets/security-transport-model.png" alt="How Varco works" />
-
-1. A consumer declares the entities, subscriptions, history queries, camera snapshots, and actions it wants.
-2. The Home Assistant owner reviews the request in the Varco panel.
-3. If approved, Home Assistant stores a grant bound to the consumer public key.
-4. The consumer connects using direct/WebRTC when possible, or the relay path for pairing, signaling, and fallback.
-5. The Authority enforces the stored grant on every data-plane message, regardless of transport.
-6. The owner can revoke or delete the grant from Home Assistant.
+1. Home Assistant runs the Varco Authority integration and opens an outbound WebSocket to the bridge.
+2. A consumer connects to the bridge with the Authority ID and submits an access request manifest.
+3. The owner approves or rejects the request in Home Assistant.
+4. If approved, Home Assistant stores a grant bound to the consumer public key.
+5. The consumer connects using direct/WebRTC when possible, or the relay path for pairing, signaling, and fallback.
+6. The Authority enforces the stored grant on every data-plane message, regardless of transport.
+7. The owner can revoke or delete the grant from Home Assistant.
 
 ## Start here
 
-- If you own the Home Assistant instance, start with [Home Assistant quickstart](getting-started/home-assistant/).
+- If you own a Home Assistant instance, start with [Home Assistant quickstart](getting-started/home-assistant/).
 - If you are building a browser consumer, start with [Consumer quickstart](getting-started/consumer/).
 - If you want the protocol model, read [Architecture](concepts/architecture/) and [Trust model](concepts/trust-model/).
