@@ -55,3 +55,54 @@ A grant defines the maximum allowed scope. A runtime subscription defines the cu
 4. Authority returns an initial `state_snapshot`.
 5. Home Assistant state changes produce `state_delta` events for matching subscriptions.
 6. Consumer sends `unsubscribe_states` to remove the runtime subscription.
+
+## Owner-managed grant restrictions
+
+A grant is the maximum permission boundary approved by the Home Assistant owner. The owner can add mutable `restrictions` to an approved grant to narrow that access without issuing a Home Assistant token to the consumer and without trusting the relay.
+
+Effective access is:
+
+```text
+stored grant scope allows the operation
+AND
+all enabled matching restrictions allow the operation
+```
+
+Restrictions are enforced by the Home Assistant Authority on every data-plane request. They never widen a manifest scope, and the bridge/consumer are not trusted to enforce them.
+
+A restriction has this generic shape:
+
+```json
+{
+  "id": "front-door-pin",
+  "enabled": true,
+  "type": "pin",
+  "applies_to": "lock.unlock@lock.front_door",
+  "params": {
+    "pin_hash": "pbkdf2_sha256$..."
+  }
+}
+```
+
+`applies_to` may be `grant`, `read`, `subscriptions`, `history`, `camera`, `actions`, or an action selector such as `light.turn_on@light.kitchen`, `light.*`, or `*@cover.awning`.
+
+Implemented restriction types:
+
+- `expiry`: deny after `params.expires_at`, an ISO timestamp.
+- `schedule`: allow only on configured `days`, `start_time`, and `end_time`.
+- `pin`: require a matching request PIN. PINs are hashed in storage; owners can change or remove them, not reveal them.
+- `rate_limit`: limit matching operations with `limit` and `window_seconds`, and optionally `cooldown_seconds`.
+
+For service calls protected by a PIN, the consumer sends either a top-level `pin` for the matching restriction or a `pins` object keyed by restriction id:
+
+```json
+{
+  "type": "call_service",
+  "domain": "lock",
+  "service": "unlock",
+  "target": { "entity_id": "lock.front_door" },
+  "pins": { "front-door-pin": "1234" }
+}
+```
+
+Denied restrictions are audited as `restriction_denied` with the restriction id and reason, without logging entity state, camera data, history payloads, or sensitive service data.

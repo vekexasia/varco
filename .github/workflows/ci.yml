@@ -116,6 +116,10 @@ jobs:
         timeout-minutes: 5
         run: timeout -k 10s 240s npm run dev:ha:dashboard-export-browser
 
+      - name: Run restrictions smoke e2e
+        timeout-minutes: 5
+        run: timeout -k 10s 240s npm run dev:ha:restrictions-smoke
+
       - name: Upload Home Assistant browser e2e artifacts
         if: always()
         uses: actions/upload-artifact@v4

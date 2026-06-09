@@ -123,3 +123,72 @@ test('pairVarcoConsumer creates and approves a reusable development grant withou
     { type: 'varco/approve_request', payload: { request_id: 'req-1' } },
   ]);
 });
+
+test('runVarcoRestrictionsSmoke verifies add/remove/PIN/rate-limit grant restrictions without a live HA', async () => {
+  const adminCalls = [];
+  const restrictions = { current: [] };
+
+  const admin = {
+    async command(type, payload = {}) {
+      adminCalls.push({ type, payload });
+      if (type === 'varco/info') return { authority_id: 'authority-1' };
+      if (type === 'varco/approve_request') return { grant_id: payload.request_id };
+      if (type === 'varco/delete_grant') return {};
+      if (type === 'varco/update_grant_restrictions') {
+        restrictions.current = payload.restrictions ?? [];
+        return {};
+      }
+      throw new Error(`Unexpected admin command: ${type}`);
+    },
+  };
+
+  let callCount = 0;
+  const createClient = () => ({
+    async requestAccess() { return { request_id: 'req-1', pairing_code: '123456', status: 'pending' }; },
+    async connect() {},
+    async callService(domain, service, data) {
+      callCount++;
+      const active = restrictions.current;
+      // Simulate expiry restriction.
+      const expiry = active.find((r) => r.type === 'expiry' && r.enabled !== false);
+      if (expiry) {
+        const err = new Error('permission_denied: expired');
+        err.code = 'permission_denied';
+        throw err;
+      }
+      // Simulate PIN restriction on switch.turn_on.
+      const pin = active.find((r) => r.type === 'pin' && r.enabled !== false);
+      if (pin && service === 'turn_on') {
+        if (!data?.pin || data.pin !== '9876') {
+          const err = new Error('permission_denied: pin_required');
+          err.code = 'permission_denied';
+          throw err;
+        }
+      }
+      // Simulate rate limit (limit:2 per window).
+      const rate = active.find((r) => r.type === 'rate_limit' && r.enabled !== false);
+      if (rate) {
+        rate._hits = (rate._hits ?? 0) + 1;
+        if (rate._hits > (rate.params?.limit ?? 2)) {
+          const err = new Error('permission_denied: rate_limited');
+          err.code = 'permission_denied';
+          throw err;
+        }
+      }
+    },
+    async close() {},
+  });
+
+  const { runVarcoRestrictionsSmoke } = await import('../lib/varco-dev.mjs');
+  const result = await runVarcoRestrictionsSmoke({ admin, createClient, bridgeUrl: 'ws://mock', log: () => {} });
+
+  assert.ok(result.deniedByExpiry, 'should be denied by expiry');
+  assert.ok(result.deniedByPin, 'should be denied without PIN');
+  assert.ok(result.deniedByWrongPin, 'should be denied with wrong PIN');
+  assert.ok(result.deniedByRateLimit, 'should be denied by rate limit');
+
+  // Verify the admin was asked to update and clear restrictions.
+  const updateCalls = adminCalls.filter((c) => c.type === 'varco/update_grant_restrictions');
+  assert.ok(updateCalls.length >= 3, 'should have set and cleared restrictions at least 3 times');
+  assert.deepEqual(updateCalls.at(-1).payload.restrictions, [], 'last update should clear restrictions');
+});

@@ -25,7 +25,8 @@
     "dev:ha:tools:test": "node --test dev/home-assistant/tools/test/*.test.mjs",
     "docs:dev": "npm --workspace @varco/docs-website run dev",
     "docs:build": "npm --workspace @varco/docs-website run build",
-    "docs:preview": "npm --workspace @varco/docs-website run preview"
+    "docs:preview": "npm --workspace @varco/docs-website run preview",
+    "dev:ha:restrictions-smoke": "npm --workspace packages/client run build && node --test dev/home-assistant/tools/test/restrictions-smoke.test.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",

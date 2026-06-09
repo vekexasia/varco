@@ -57,9 +57,9 @@ export function createLocalHomeAssistantClient(hass: HassFrontend): VarcoConsume
       throw Object.assign(new Error("Local camera snapshots are unavailable"), { code: "local-camera-snapshot-unavailable" });
     },
 
-    async callService(domain: string, service: string, data: { entity_id?: string; [key: string]: unknown } = {}) {
+    async callService(domain: string, service: string, data: { entity_id?: string; pin?: string; pins?: Record<string, string>; [key: string]: unknown } = {}) {
       if (!currentHass.callService) throw Object.assign(new Error("Local Home Assistant service API is unavailable"), { code: "local-service-unavailable" });
-      const { entity_id, ...serviceData } = data;
+      const { entity_id, pin: _pin, pins: _pins, ...serviceData } = data;
       await currentHass.callService(domain, service, serviceData, entity_id ? { entity_id } : {});
     },
 

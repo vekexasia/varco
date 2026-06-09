@@ -28,3 +28,14 @@ Errors use:
   "message": "Entity not allowed"
 }
 ```
+
+## Restriction-aware requests
+
+Approved grants may include owner-managed restrictions. These restrictions are evaluated only by the Home Assistant Authority after the normal grant scope check.
+
+For PIN-protected operations, a data-plane request may include:
+
+- `pin`: a single PIN for the matching restriction.
+- `pins`: an object keyed by restriction id when multiple PIN restrictions may apply.
+
+The Authority denies the request if the matching restriction is expired, outside schedule, rate-limited, missing a required PIN, or has an invalid PIN. Restriction failures return `permission_denied` and are audited as `restriction_denied`.

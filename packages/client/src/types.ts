@@ -134,7 +134,7 @@ export type VarcoClient = VarcoDomainHelpers & {
   unsubscribe(subscriptionId: string): Promise<void>;
   queryHistory(entityIds: string[], range?: Record<string, unknown>): Promise<any>;
   cameraSnapshot(entityId: string): Promise<{ contentType: string; body: string }>;
-  callService(domain: string, service: string, data?: { entity_id?: string; [key: string]: unknown }): Promise<void>;
+  callService(domain: string, service: string, data?: { entity_id?: string; pin?: string; pins?: Record<string, string>; [key: string]: unknown }): Promise<void>;
   close(): Promise<void>;
 };
 

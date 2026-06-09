@@ -242,3 +242,149 @@ class FileStorage {
     }
   }
 }
+
+export async function runVarcoRestrictionsSmoke(options = {}) {
+  const admin = options.admin || await createHomeAssistantAdmin(options);
+  const log = options.log || console.log;
+  const bridgeUrl = options.bridgeUrl || process.env.VARCO_BRIDGE_URL || DEFAULT_BRIDGE_URL;
+  const info = await admin.command('varco/info');
+  const authorityId = info.authority_id;
+  log(`Authority: ${authorityId}`);
+
+  const createClient = options.createClient || await defaultCreateClient();
+  const client = createClient({
+    authorityId,
+    bridgeUrl,
+    manifest: SMOKE_MANIFEST,
+    webrtc: false,
+  });
+
+  let grantId;
+  try {
+    const access = await client.requestAccess();
+    log(`Request: ${access.request_id} pairing ${access.pairing_code}`);
+    const grant = await approveRequest(admin, access.request_id);
+    grantId = grant.grant_id || access.request_id;
+    log(`Approved grant: ${grantId}`);
+    await client.connect();
+    log('Connected');
+
+    // 1. Without restrictions: service call must succeed.
+    await client.callService('switch', 'turn_on', { entity_id: SMOKE_SWITCH_ID });
+    log('call_service without restrictions: ok');
+    await client.callService('switch', 'turn_off', { entity_id: SMOKE_SWITCH_ID });
+
+    // 2. Add an expired whole-grant expiry restriction — all data-plane calls must now be denied.
+    const expiredRestriction = [{
+      id: 'expired-grant',
+      type: 'expiry',
+      enabled: true,
+      applies_to: 'grant',
+      params: { expires_at: new Date(Date.now() - 60_000).toISOString() },
+    }];
+    await admin.command('varco/update_grant_restrictions', { grant_id: grantId, restrictions: expiredRestriction });
+    log('Set expired grant restriction');
+
+    let deniedByExpiry = false;
+    try {
+      await client.callService('switch', 'turn_on', { entity_id: SMOKE_SWITCH_ID });
+    } catch (err) {
+      if (err?.code === 'permission_denied' || /permission_denied|expired/i.test(String(err))) {
+        deniedByExpiry = true;
+        log('call_service with expired restriction: correctly denied');
+      } else {
+        throw err;
+      }
+    }
+    if (!deniedByExpiry) throw new Error('Expected expired restriction to deny the service call');
+
+    // 3. Remove the expiry restriction — service call must succeed again.
+    await admin.command('varco/update_grant_restrictions', { grant_id: grantId, restrictions: [] });
+    log('Cleared restrictions');
+    await client.callService('switch', 'turn_on', { entity_id: SMOKE_SWITCH_ID });
+    await client.callService('switch', 'turn_off', { entity_id: SMOKE_SWITCH_ID });
+    log('call_service after clearing restrictions: ok');
+
+    // 4. Add a PIN restriction on switch.turn_on.
+    const pinRestriction = [{
+      id: 'switch-pin',
+      type: 'pin',
+      enabled: true,
+      applies_to: `switch.turn_on@${SMOKE_SWITCH_ID}`,
+      pin: '9876',
+    }];
+    await admin.command('varco/update_grant_restrictions', { grant_id: grantId, restrictions: pinRestriction });
+    log('Set PIN restriction on switch.turn_on');
+
+    // 4a. Without PIN: must be denied.
+    let deniedByPin = false;
+    try {
+      await client.callService('switch', 'turn_on', { entity_id: SMOKE_SWITCH_ID });
+    } catch (err) {
+      if (err?.code === 'permission_denied' || /permission_denied|pin/i.test(String(err))) {
+        deniedByPin = true;
+        log('call_service without PIN: correctly denied');
+      } else {
+        throw err;
+      }
+    }
+    if (!deniedByPin) throw new Error('Expected PIN restriction to deny the service call without a PIN');
+
+    // 4b. With wrong PIN: must be denied.
+    let deniedByWrongPin = false;
+    try {
+      await client.callService('switch', 'turn_on', { entity_id: SMOKE_SWITCH_ID, pin: '0000' });
+    } catch (err) {
+      if (err?.code === 'permission_denied' || /permission_denied|pin/i.test(String(err))) {
+        deniedByWrongPin = true;
+        log('call_service with wrong PIN: correctly denied');
+      } else {
+        throw err;
+      }
+    }
+    if (!deniedByWrongPin) throw new Error('Expected wrong PIN to be denied');
+
+    // 4c. With correct PIN: must succeed.
+    await client.callService('switch', 'turn_on', { entity_id: SMOKE_SWITCH_ID, pin: '9876' });
+    await client.callService('switch', 'turn_off', { entity_id: SMOKE_SWITCH_ID });
+    log('call_service with correct PIN: ok');
+
+    // 5. Rate-limit: 2 calls per 60 s. First two succeed; third must be denied.
+    const rateLimitRestriction = [{
+      id: 'rate-limit',
+      type: 'rate_limit',
+      enabled: true,
+      applies_to: 'actions',
+      params: { limit: 2, window_seconds: 60 },
+    }];
+    await admin.command('varco/update_grant_restrictions', { grant_id: grantId, restrictions: rateLimitRestriction });
+    log('Set rate-limit restriction');
+
+    await client.callService('switch', 'turn_on', { entity_id: SMOKE_SWITCH_ID });
+    await client.callService('switch', 'turn_off', { entity_id: SMOKE_SWITCH_ID });
+    let deniedByRateLimit = false;
+    try {
+      await client.callService('switch', 'turn_on', { entity_id: SMOKE_SWITCH_ID });
+    } catch (err) {
+      if (err?.code === 'permission_denied' || /permission_denied|rate/i.test(String(err))) {
+        deniedByRateLimit = true;
+        log('call_service over rate limit: correctly denied');
+      } else {
+        throw err;
+      }
+    }
+    if (!deniedByRateLimit) throw new Error('Expected rate-limit restriction to deny the third call');
+
+    // 6. Cleanup: clear restrictions and delete grant.
+    await admin.command('varco/update_grant_restrictions', { grant_id: grantId, restrictions: [] });
+    await deleteGrant(admin, grantId);
+    grantId = undefined;
+    log('Restrictions smoke completed, grant cleaned up');
+
+    return { authorityId, deniedByExpiry, deniedByPin, deniedByWrongPin, deniedByRateLimit };
+  } finally {
+    if (grantId) await deleteGrant(admin, grantId).catch(() => {});
+    await client.close?.();
+    admin.close?.();
+  }
+}

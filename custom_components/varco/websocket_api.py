@@ -24,6 +24,7 @@ def async_setup(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, websocket_reject)
     websocket_api.async_register_command(hass, websocket_revoke)
     websocket_api.async_register_command(hass, websocket_delete_grant)
+    websocket_api.async_register_command(hass, websocket_update_grant_restrictions)
     websocket_api.async_register_command(hass, websocket_dashboard_export)
 
 
@@ -87,6 +88,14 @@ async def websocket_revoke(hass: HomeAssistant, connection, msg) -> None:
 @websocket_api.async_response
 async def websocket_delete_grant(hass: HomeAssistant, connection, msg) -> None:
     grant = await _authority(hass).delete_grant(msg["grant_id"])
+    connection.send_result(msg["id"], grant.as_dict())
+
+
+@websocket_api.websocket_command({vol.Required("type"): "varco/update_grant_restrictions", vol.Required("grant_id"): str, vol.Required("restrictions"): list})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def websocket_update_grant_restrictions(hass: HomeAssistant, connection, msg) -> None:
+    grant = await _authority(hass).set_grant_restrictions(msg["grant_id"], msg["restrictions"])
     connection.send_result(msg["id"], grant.as_dict())
 
 

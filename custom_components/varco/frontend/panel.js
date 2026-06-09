@@ -4,7 +4,24 @@ class VarcoPanel extends HTMLElement {
     if (!this._loaded) this.load();
   }
 
-  connectedCallback() { this.render({ loading: true }); }
+  connectedCallback() {
+    this.render({ loading: true });
+    // Delegated click handler for dynamically-injected buttons.
+    // Attached once here so it survives re-renders without accumulating listeners.
+    this.addEventListener('click', async (ev) => {
+      const saveBtn = ev.target.closest('[data-rf-save]');
+      if (saveBtn) {
+        const grantId = saveBtn.dataset.rfSave;
+        const newR = this.buildNewRestriction(grantId);
+        if (!newR) return;
+        saveBtn.disabled = true; saveBtn.textContent = 'Saving…';
+        const grant = this._lastState?.grants?.find((g) => g.grant_id === grantId);
+        const existing = Array.isArray(grant?.restrictions) ? grant.restrictions : [];
+        await this._hass.connection.sendMessagePromise({ type: 'varco/update_grant_restrictions', grant_id: grantId, restrictions: [...existing, newR] });
+        this._loaded = false; await this.load();
+      }
+    });
+  }
 
   async load() {
     if (!this._hass) return;
@@ -252,6 +269,7 @@ class VarcoPanel extends HTMLElement {
   grantCard(grant) {
     const name = this.manifestName(grant);
     const revoked = Boolean(grant.revoked);
+    const restrictions = Array.isArray(grant.restrictions) ? grant.restrictions : [];
     return `
       <div class="varco-card grant-card ${revoked ? 'revoked' : ''}">
         <div class="card-header-row">
@@ -271,11 +289,118 @@ class VarcoPanel extends HTMLElement {
           ${grant.request_id ? `<div><span>Original request</span><code>${this.escape(grant.request_id)}</code></div>` : ''}
         </div>
         ${this.scopeDetails(grant.manifest, false)}
+        ${revoked ? '' : this.restrictionsSection(grant.grant_id, restrictions)}
         <div class="button-row">
           ${revoked ? '' : `<button class="secondary" data-revoke="${this.escape(grant.grant_id)}">Revoke access</button>`}
           <button class="danger" data-delete-grant="${this.escape(grant.grant_id)}" data-name="${this.escape(name)}">Delete grant record</button>
         </div>
       </div>`;
+  }
+
+  restrictionsSection(grantId, restrictions) {
+    const formId = `rf-${grantId}`;
+    const activeHtml = restrictions.length
+      ? `<div class="restriction-list">${restrictions.map((r, i) => this.restrictionRow(r, i, grantId)).join('')}</div>`
+      : '<p class="empty-scope">No restrictions set.</p>';
+    return `
+      <details class="scope-details restriction-section">
+        <summary>Restrictions (${restrictions.length})</summary>
+        ${activeHtml}
+        <div class="restriction-form" id="${this.escape(formId)}">
+          <div class="field-label" style="margin-top:14px">Add restriction</div>
+          <div class="restriction-form-row">
+            <select data-rf-type="${this.escape(grantId)}">
+              <option value="">Choose type…</option>
+              <option value="expiry">Expiry — deny after a date/time</option>
+              <option value="schedule">Schedule — allow only in time window</option>
+              <option value="pin">PIN — require a code to act</option>
+              <option value="rate_limit">Rate limit — max N calls per window</option>
+            </select>
+          </div>
+          <div data-rf-fields="${this.escape(grantId)}"></div>
+        </div>
+      </details>`;
+  }
+
+  restrictionTypeFields(type) {
+    const appliesToField = `
+      <label class="field-label" style="margin-top:10px">Applies to
+        <small style="font-weight:400;color:var(--secondary-text-color)"> — grant / actions / read / history / camera / domain.service@entity_id</small>
+      </label>
+      <input type="text" data-rf-applies placeholder="grant" value="grant" style="display:block;width:100%;max-width:420px;padding:7px;border:1px solid var(--divider-color);border-radius:6px;background:var(--card-background-color);color:var(--primary-text-color);margin-bottom:10px">`; 
+    if (type === 'expiry') return appliesToField + `
+      <label class="field-label">Deny after</label>
+      <input type="datetime-local" data-rf-expires style="display:block;width:100%;max-width:420px;padding:7px;border:1px solid var(--divider-color);border-radius:6px;background:var(--card-background-color);color:var(--primary-text-color);margin-bottom:10px">`; 
+    if (type === 'schedule') return appliesToField + `
+      <label class="field-label">Allowed days</label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+        ${['mon','tue','wed','thu','fri','sat','sun'].map(d => `<label><input type="checkbox" data-rf-day="${d}" checked> ${d}</label>`).join(' ')}
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <label class="field-label">From <input type="time" data-rf-start value="08:00" style="margin-left:6px;padding:5px;border:1px solid var(--divider-color);border-radius:6px;background:var(--card-background-color);color:var(--primary-text-color)"></label>
+        <label class="field-label">Until <input type="time" data-rf-end value="22:00" style="margin-left:6px;padding:5px;border:1px solid var(--divider-color);border-radius:6px;background:var(--card-background-color);color:var(--primary-text-color)"></label>
+      </div>`;
+    if (type === 'pin') return appliesToField + `
+      <label class="field-label">PIN <small style="font-weight:400;color:var(--secondary-text-color)">(set by you, never stored as plaintext)</small></label>
+      <input type="password" data-rf-pin placeholder="Enter PIN" autocomplete="new-password" style="display:block;width:100%;max-width:280px;padding:7px;border:1px solid var(--divider-color);border-radius:6px;background:var(--card-background-color);color:var(--primary-text-color);margin-bottom:10px">`; 
+    if (type === 'rate_limit') return appliesToField + `
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
+        <label class="field-label">Max calls <input type="number" data-rf-limit min="1" value="10" style="margin-left:6px;width:70px;padding:5px;border:1px solid var(--divider-color);border-radius:6px;background:var(--card-background-color);color:var(--primary-text-color)"></label>
+        <label class="field-label">per <input type="number" data-rf-window min="1" value="3600" style="margin-left:6px;width:80px;padding:5px;border:1px solid var(--divider-color);border-radius:6px;background:var(--card-background-color);color:var(--primary-text-color)"> seconds</label>
+      </div>`;
+    return '';
+  }
+
+  restrictionRow(r, index, grantId) {
+    const type = String(r.type || '');
+    const appliesTo = String(r.applies_to || 'grant');
+    const params = r.params || {};
+    let detail = '';
+    if (type === 'expiry')    detail = `deny after ${this.escape(params.expires_at || '?')}`;
+    if (type === 'schedule')  detail = `${this.escape((params.days || []).join(', '))} ${this.escape(params.start_time || '')}–${this.escape(params.end_time || '')}`;
+    if (type === 'pin')       detail = 'PIN set';
+    if (type === 'rate_limit') detail = `max ${this.escape(String(params.limit || '?'))} per ${this.escape(String(params.window_seconds || '?'))} s`;
+    return `
+      <div class="restriction-row">
+        <div>
+          <span class="restriction-type-badge">${this.escape(type)}</span>
+          <code>${this.escape(appliesTo)}</code>
+          <small>${detail}</small>
+        </div>
+        <button class="secondary" style="padding:4px 10px;font-size:12px" data-remove-restriction="${this.escape(grantId)}" data-restriction-index="${index}">Remove</button>
+      </div>`;
+  }
+
+  buildNewRestriction(grantId) {
+    const container = this.querySelector(`[data-rf-fields="${grantId}"]`);
+    if (!container) return null;
+    const typeEl = this.querySelector(`[data-rf-type="${grantId}"]`);
+    const type = typeEl?.value;
+    if (!type) return null;
+    const appliesTo = (container.querySelector('[data-rf-applies]')?.value || 'grant').trim();
+    const id = `${type}-${Date.now()}`;
+    if (type === 'expiry') {
+      const raw = container.querySelector('[data-rf-expires]')?.value;
+      if (!raw) { alert('Please set a date/time for the expiry.'); return null; }
+      return { id, type, enabled: true, applies_to: appliesTo, params: { expires_at: new Date(raw).toISOString() } };
+    }
+    if (type === 'schedule') {
+      const days = ['mon','tue','wed','thu','fri','sat','sun'].filter(d => container.querySelector(`[data-rf-day="${d}"]`)?.checked);
+      const start = container.querySelector('[data-rf-start]')?.value || '00:00';
+      const end   = container.querySelector('[data-rf-end]')?.value   || '23:59';
+      return { id, type, enabled: true, applies_to: appliesTo, params: { days, start_time: start, end_time: end } };
+    }
+    if (type === 'pin') {
+      const pin = container.querySelector('[data-rf-pin]')?.value;
+      if (!pin) { alert('Please enter a PIN.'); return null; }
+      return { id, type, enabled: true, applies_to: appliesTo, pin };
+    }
+    if (type === 'rate_limit') {
+      const limit   = Number(container.querySelector('[data-rf-limit]')?.value  || 10);
+      const window_ = Number(container.querySelector('[data-rf-window]')?.value || 3600);
+      return { id, type, enabled: true, applies_to: appliesTo, params: { limit, window_seconds: window_ } };
+    }
+    return null;
   }
 
   dashboardExportSection() {
@@ -416,6 +541,15 @@ class VarcoPanel extends HTMLElement {
         .entity-row { align-items: flex-start; border-bottom: 1px solid var(--divider-color); display: flex; gap: 8px; padding: 8px 4px; }
         .entity-row:last-child { border-bottom: 0; }
         .entity-row small { color: var(--secondary-text-color); display: block; margin-top: 3px; }
+        .restriction-section summary { cursor: pointer; font-weight: 700; }
+        .restriction-list { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+        .restriction-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--secondary-background-color); border-radius: 8px; padding: 8px 10px; }
+        .restriction-row > div { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .restriction-row small { color: var(--secondary-text-color); }
+        .restriction-type-badge { background: var(--primary-color); color: var(--text-primary-color); border-radius: 4px; font-size: 11px; font-weight: 700; padding: 2px 7px; text-transform: uppercase; }
+        .restriction-form { border: 1px dashed var(--divider-color); border-radius: 8px; margin-top: 12px; padding: 12px; }
+        .restriction-form-row { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
+        .restriction-form-row select { margin: 0; }
       </style>`;
   }
 
@@ -445,6 +579,42 @@ class VarcoPanel extends HTMLElement {
     this.querySelectorAll('[data-delete-grant]').forEach((el) => el.onclick = () => {
       if (!window.confirm(`Delete grant record for ${el.dataset.name}? This also removes active access for that consumer.`)) return;
       this.call('varco/delete_grant', { grant_id: el.dataset.deleteGrant });
+    });
+    // restriction type selector — swap in the appropriate fields
+    this.querySelectorAll('[data-rf-type]').forEach((sel) => {
+      sel.onchange = () => {
+        const grantId = sel.dataset.rfType;
+        const fieldsEl = this.querySelector(`[data-rf-fields="${grantId}"]`);
+        if (fieldsEl) fieldsEl.innerHTML = this.restrictionTypeFields(sel.value);
+        // insert save button
+        if (sel.value && fieldsEl) {
+          const existing = fieldsEl.querySelector('[data-rf-save]');
+          if (!existing) {
+            const btn = document.createElement('button');
+            btn.textContent = 'Save restriction';
+            btn.dataset.rfSave = grantId;
+            btn.style.marginTop = '12px';
+            fieldsEl.appendChild(btn);
+          }
+        }
+      };
+    });
+    // remove restriction
+    this.querySelectorAll('[data-remove-restriction]').forEach((btn) => {
+      btn.onclick = async () => {
+        const grantId = btn.dataset.removeRestriction;
+        const idx = Number(btn.dataset.restrictionIndex);
+        const grant = this._lastState?.grants?.find((g) => g.grant_id === grantId);
+        const existing = Array.isArray(grant?.restrictions) ? grant.restrictions : [];
+        const updated = existing.filter((_, i) => i !== idx);
+        await this._hass.connection.sendMessagePromise({
+          type: 'varco/update_grant_restrictions',
+          grant_id: grantId,
+          restrictions: updated,
+        });
+        this._loaded = false;
+        await this.load();
+      };
     });
     const dashboardSelect = this.querySelector('[data-dashboard-select]');
     if (dashboardSelect) dashboardSelect.onchange = () => this.pickDashboard(dashboardSelect.value);

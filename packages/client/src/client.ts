@@ -87,9 +87,17 @@ export function createVarcoClient(options: VarcoClientOptions): VarcoClient {
       return { contentType: response.content_type, body: response.body };
     },
 
-    async callService(domain: string, service: string, data: { entity_id?: string; [key: string]: unknown } = {}) {
-      const { entity_id, ...service_data } = data;
-      await activeTransport.request({ type: "call_service", domain, service, service_data, target: entity_id ? { entity_id } : {} });
+    async callService(domain: string, service: string, data: { entity_id?: string; pin?: string; pins?: Record<string, string>; [key: string]: unknown } = {}) {
+      const { entity_id, pin, pins, ...service_data } = data;
+      await activeTransport.request({
+        type: "call_service",
+        domain,
+        service,
+        service_data,
+        target: entity_id ? { entity_id } : {},
+        ...(pin ? { pin } : {}),
+        ...(pins ? { pins } : {}),
+      });
     },
 
     async close() {

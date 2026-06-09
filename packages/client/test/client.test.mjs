@@ -375,3 +375,39 @@ test('manifest helpers expand entity presets into deduplicated Varco scopes', ()
     ],
   });
 });
+
+test('relay callService sends restriction PINs at the top level', async () => {
+  class PinTransport {
+    messages = [];
+    onEvent() {}
+    async request(message) {
+      this.messages.push(message);
+      if (message.type === 'authenticate') return { type: 'authenticated', grant_id: 'grant1' };
+      if (message.type === 'call_service') return { type: 'service_called', ok: true };
+      return { type: 'ok' };
+    }
+    async close() {}
+  }
+
+  const transport = new PinTransport();
+  const client = createVarcoClient({
+    authorityId: 'authority',
+    bridgeUrl: 'ws://bridge',
+    manifest: { name: 'Demo', version: '1', actions: ['lock.unlock@lock.front_door'] },
+    transport,
+    storage: new MemoryStorage(),
+    webrtc: false,
+  });
+
+  await client.connect();
+  await client.callService('lock', 'unlock', {
+    entity_id: 'lock.front_door',
+    pin: '1234',
+    pins: { 'front-door-pin': '1234' },
+  });
+
+  const call = transport.messages.at(-1);
+  assert.equal(call.pin, '1234');
+  assert.deepEqual(call.pins, { 'front-door-pin': '1234' });
+  assert.deepEqual(call.service_data, {});
+});

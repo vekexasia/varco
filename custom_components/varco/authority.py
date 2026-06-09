@@ -1,13 +1,23 @@
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
 from . import audit
 from .crypto import new_id, pairing_code, verify_access_request, verify_authenticate
-from .models import AccessRequest, Grant
-from .policy import action_allowed, camera_entities, entity_allowed, history_entities, read_entities, subscription_entities
+from .models import AccessRequest, Grant, hash_pin
+from .policy import (
+    action_allowed,
+    camera_entities,
+    entity_allowed,
+    evaluate_restrictions,
+    history_entities,
+    rate_limit_restrictions,
+    read_entities,
+    subscription_entities,
+)
 from .storage import MemoryVarcoStore
 
 
@@ -33,12 +43,17 @@ class VarcoAuthority:
         hass: Any | None = None,
         notify_owner: Callable[[AccessRequest], Any] | None = None,
         peer_stack: Any | None = None,
+        now_provider: Callable[[], datetime] | None = None,
+        monotonic_provider: Callable[[], float] | None = None,
     ) -> None:
         self.store = store
         self.hass = hass
         self.notify_owner = notify_owner
         self.peer_stack = peer_stack
+        self.now_provider = now_provider or (lambda: datetime.now(timezone.utc))
+        self.monotonic_provider = monotonic_provider or time.monotonic
         self.sessions: dict[str, RuntimeSession] = {}
+        self._rate_hits: dict[tuple[str, str], list[float]] = {}
 
     def _session(self, session_id: str) -> RuntimeSession:
         return self.sessions.setdefault(session_id, RuntimeSession(session_id=session_id))
@@ -49,9 +64,11 @@ class VarcoAuthority:
             return await self._access_request(session_id, message)
         if typ == "authenticate":
             return await self._authenticate(session_id, message)
+
         grant = await self._require_grant(session_id, message.get("request_id"))
         if isinstance(grant, dict):
             return grant
+
         if typ == "get_states":
             return await self._get_states(grant, message)
         if typ == "subscribe_states":
@@ -76,10 +93,11 @@ class VarcoAuthority:
         await audit.async_log(self.store, "access_request_approved", grant.grant_id)
         return grant
 
-    async def reject_request(self, request_id: str) -> None:
-        await self.store.async_reject_request(request_id)
-        await self._dismiss_notification(request_id)
+    async def reject_request(self, request_id: str) -> AccessRequest:
+        request = await self.store.async_reject_request(request_id)
         await audit.async_log(self.store, "access_request_rejected", request_id)
+        await self._dismiss_notification(request_id)
+        return request
 
     async def revoke_grant(self, grant_id: str) -> Grant:
         grant = await self.store.async_revoke_grant(grant_id)
@@ -99,11 +117,35 @@ class VarcoAuthority:
         await audit.async_log(self.store, "grant_deleted", grant.grant_id)
         return grant
 
+    async def set_grant_restrictions(self, grant_id: str, restrictions: list[dict[str, Any]]) -> Grant:
+        grant = await self.store.async_get_grant(grant_id)
+        if grant is None:
+            raise KeyError(grant_id)
+        grant.restrictions = [self._normalize_restriction(item) for item in restrictions if isinstance(item, dict)]
+        await self.store.async_upsert_grant(grant)
+        await audit.async_log(self.store, "grant_restrictions_updated", grant.grant_id, {"restriction_count": len(grant.restrictions)})
+        return grant
+
+    def _normalize_restriction(self, restriction: dict[str, Any]) -> dict[str, Any]:
+        normalized = dict(restriction)
+        params = dict(normalized.get("params") or {}) if isinstance(normalized.get("params"), dict) else {}
+        if str(normalized.get("type") or "").lower() == "pin":
+            pin = params.pop("pin", None)
+            if pin is None:
+                pin = normalized.pop("pin", None)
+            else:
+                normalized.pop("pin", None)
+            if pin is not None:
+                params["pin_hash"] = hash_pin(str(pin))
+        normalized["params"] = params
+        return normalized
+
     async def _dismiss_notification(self, request_id: str) -> None:
         if self.hass is None:
             return
         try:
             from homeassistant.components import persistent_notification
+
             persistent_notification.async_dismiss(self.hass, f"varco_{request_id}")
         except Exception:
             pass
@@ -165,12 +207,12 @@ class VarcoAuthority:
         await audit.async_log(self.store, "consumer_connected", grant.grant_id, {"consumer_pk": consumer_pk})
         return {"type": "authenticated", "grant_id": grant.grant_id, "manifest": grant.manifest}
 
-    async def _require_grant(self, session_id: str, request_id: str | None) -> Grant | dict[str, Any]:
+    async def _require_grant(self, session_id: str, request_id: Any) -> Grant | dict[str, Any]:
         session = self._session(session_id)
         if session.closed:
             return self._error(request_id, "grant_revoked", "Grant revoked")
         if not session.consumer_pk:
-            return self._error(request_id, "not_authenticated", "Authenticate first")
+            return self._error(request_id, "not_authenticated", "Session is not authenticated")
         grant = await self.store.async_get_grant_by_consumer(session.consumer_pk)
         if grant is None or grant.revoked:
             session.closed = True
@@ -178,18 +220,25 @@ class VarcoAuthority:
         return grant
 
     async def _get_states(self, grant: Grant, message: dict[str, Any]) -> dict[str, Any]:
-        entity_ids = self._expand_entity_ids([str(item) for item in message.get("entity_ids", [])])
+        entity_ids = self._expand_entity_ids([str(entity) for entity in message.get("entity_ids") or []], read_entities(grant.manifest))
         denied = [entity for entity in entity_ids if not entity_allowed(entity, read_entities(grant.manifest))]
         if denied:
             await audit.async_log(self.store, "permission_error", grant.grant_id, {"request_id": message.get("request_id"), "operation": "get_states", "denied_count": len(denied)})
             return self._error(message.get("request_id"), "permission_denied", "Entity not allowed")
+        restriction_error = await self._enforce_restrictions(grant, "read", {"entity_ids": entity_ids}, message)
+        if restriction_error:
+            return restriction_error
         return {"type": "states", "request_id": message.get("request_id"), "states": {entity: self._state_payload(entity) for entity in entity_ids}}
 
     async def _subscribe(self, session_id: str, grant: Grant, message: dict[str, Any]) -> dict[str, Any]:
-        entity_ids = set(self._expand_entity_ids([str(item) for item in message.get("entity_ids", [])]))
-        if any(not entity_allowed(entity, subscription_entities(grant.manifest)) for entity in entity_ids):
-            await audit.async_log(self.store, "permission_error", grant.grant_id, {"operation": "subscribe_states", "denied_count": 1})
-            return self._error(message.get("request_id"), "permission_denied", "Entity not allowed")
+        entity_ids = set(self._expand_entity_ids([str(entity) for entity in message.get("entity_ids") or []], subscription_entities(grant.manifest)))
+        denied = [entity for entity in entity_ids if not entity_allowed(entity, subscription_entities(grant.manifest))]
+        if denied:
+            await audit.async_log(self.store, "permission_error", grant.grant_id, {"operation": "subscribe_states", "denied_count": len(denied)})
+            return self._error(message.get("request_id"), "permission_denied", "Subscription not allowed")
+        restriction_error = await self._enforce_restrictions(grant, "subscribe", {"entity_ids": list(entity_ids)}, message)
+        if restriction_error:
+            return restriction_error
         subscription_id = str(message.get("subscription_id") or new_id(8))
         self._session(session_id).subscriptions[subscription_id] = RuntimeSubscription(subscription_id, entity_ids)
         return {"type": "state_snapshot", "request_id": message.get("request_id"), "subscription_id": subscription_id, "states": {entity: self._state_payload(entity) for entity in sorted(entity_ids)}}
@@ -200,10 +249,13 @@ class VarcoAuthority:
         return {"type": "unsubscribed", "request_id": message.get("request_id"), "subscription_id": subscription_id}
 
     async def _history_query(self, grant: Grant, message: dict[str, Any]) -> dict[str, Any]:
-        entity_ids = [str(item) for item in message.get("entity_ids", [])]
+        entity_ids = [str(entity) for entity in message.get("entity_ids") or []]
         if any(not entity_allowed(entity, history_entities(grant.manifest)) for entity in entity_ids):
             await audit.async_log(self.store, "permission_error", grant.grant_id, {"operation": "history_query", "denied_count": 1})
             return self._error(message.get("request_id"), "permission_denied", "History not allowed")
+        restriction_error = await self._enforce_restrictions(grant, "history", {"entity_ids": entity_ids}, message)
+        if restriction_error:
+            return restriction_error
         return {"type": "history_result", "request_id": message.get("request_id"), "history": await self._history_payload(entity_ids, message)}
 
     async def _camera_snapshot(self, grant: Grant, message: dict[str, Any]) -> dict[str, Any]:
@@ -211,18 +263,20 @@ class VarcoAuthority:
         if not entity_allowed(entity_id, camera_entities(grant.manifest)):
             await audit.async_log(self.store, "permission_error", grant.grant_id, {"operation": "camera_snapshot"})
             return self._error(message.get("request_id"), "permission_denied", "Camera not allowed")
+        restriction_error = await self._enforce_restrictions(grant, "camera", {"entity_ids": [entity_id]}, message)
+        if restriction_error:
+            return restriction_error
         return {"type": "camera_snapshot", "request_id": message.get("request_id"), "entity_id": entity_id, "content_type": "image/jpeg", "body": await self._camera_payload(entity_id)}
 
     async def _call_service(self, grant: Grant, message: dict[str, Any]) -> dict[str, Any]:
         domain = str(message.get("domain") or "")
         service = str(message.get("service") or "")
         service_data = dict(message.get("service_data") or {})
-        target = dict(message.get("target") or {})
-        # Area, device, and label targeting cannot be resolved to entity scopes here, so reject it.
+        target = message.get("target") if isinstance(message.get("target"), dict) else {}
         if any(target.get(key) or service_data.get(key) for key in ("area_id", "device_id", "label_id")):
-            await audit.async_log(self.store, "permission_error", grant.grant_id, {"operation": "call_service", "domain": domain, "service": service, "reason": "non_entity_target"})
+            await audit.async_log(self.store, "permission_error", grant.grant_id, {"operation": "call_service", "domain": domain, "service": service})
             return self._error(message.get("request_id"), "permission_denied", "Service call not allowed")
-        entity_ids = self._collect_target_entity_ids(target, service_data)
+        entity_ids = self._service_entity_ids(target, service_data)
         if entity_ids:
             denied = [entity for entity in entity_ids if not action_allowed(grant.manifest, domain, service, entity)]
         elif action_allowed(grant.manifest, domain, service, None):
@@ -232,17 +286,62 @@ class VarcoAuthority:
         if denied:
             await audit.async_log(self.store, "permission_error", grant.grant_id, {"operation": "call_service", "domain": domain, "service": service, "denied_count": len(denied)})
             return self._error(message.get("request_id"), "permission_denied", "Service call not allowed")
+        context = {"domain": domain, "service": service, "entity_ids": entity_ids, "pin": message.get("pin"), "pins": message.get("pins")}
+        restriction_error = await self._enforce_restrictions(grant, "action", context, message)
+        if restriction_error:
+            return restriction_error
         if self.hass is not None and hasattr(self.hass, "services"):
             await self.hass.services.async_call(domain, service, service_data, target=target, blocking=True)
         await audit.async_log(self.store, "call_service", grant.grant_id, {"domain": domain, "service": service, "entity_count": len(entity_ids)})
         return {"type": "service_called", "request_id": message.get("request_id"), "ok": True}
 
-    @staticmethod
-    def _collect_target_entity_ids(target: dict[str, Any], service_data: dict[str, Any]) -> list[str]:
+    async def _enforce_restrictions(self, grant: Grant, operation: str, context: dict[str, Any], message: dict[str, Any]) -> dict[str, Any] | None:
+        decision = evaluate_restrictions(grant, operation, context, now=self.now_provider())
+        if not decision.allowed:
+            await self._audit_restriction_denied(grant, operation, decision.restriction_id, decision.reason)
+            return self._error(message.get("request_id"), "permission_denied", f"Restriction denied: {decision.reason}")
+        rate_decision = self._check_and_record_rate_limits(grant, operation, context)
+        if rate_decision is not None:
+            restriction_id, reason = rate_decision
+            await self._audit_restriction_denied(grant, operation, restriction_id, reason)
+            return self._error(message.get("request_id"), "permission_denied", f"Restriction denied: {reason}")
+        return None
+
+    def _check_and_record_rate_limits(self, grant: Grant, operation: str, context: dict[str, Any]) -> tuple[str, str] | None:
+        now = self.monotonic_provider()
+        matched = rate_limit_restrictions(grant, operation, context)
+        to_record: list[tuple[str, list[float]]] = []
+        for restriction in matched:
+            restriction_id = str(restriction.get("id") or "rate_limit")
+            params = restriction.get("params") if isinstance(restriction.get("params"), dict) else {}
+            hits = self._rate_hits.setdefault((grant.grant_id, restriction_id), [])
+            cooldown_seconds = float(params.get("cooldown_seconds") or 0)
+            if cooldown_seconds and hits and now - hits[-1] < cooldown_seconds:
+                return restriction_id, "cooldown_active"
+            limit = int(params.get("limit") or params.get("max") or 0)
+            window_seconds = float(params.get("window_seconds") or 0)
+            if limit and window_seconds:
+                hits[:] = [hit for hit in hits if now - hit < window_seconds]
+                if len(hits) >= limit:
+                    return restriction_id, "rate_limited"
+            to_record.append((restriction_id, hits))
+        for _, hits in to_record:
+            hits.append(now)
+        return None
+
+    async def _audit_restriction_denied(self, grant: Grant, operation: str, restriction_id: str | None, reason: str | None) -> None:
+        await audit.async_log(
+            self.store,
+            "restriction_denied",
+            grant.grant_id,
+            {"operation": operation, "restriction_id": restriction_id, "reason": reason},
+        )
+
+    def _service_entity_ids(self, target: dict[str, Any], service_data: dict[str, Any]) -> list[str]:
         entities: list[str] = []
         for source in (target.get("entity_id"), service_data.get("entity_id")):
             if isinstance(source, list):
-                entities.extend(str(item) for item in source if item)
+                entities.extend(str(item) for item in source)
             elif source:
                 entities.append(str(source))
         return list(dict.fromkeys(entities))
@@ -251,15 +350,10 @@ class VarcoAuthority:
         if self.peer_stack is None:
             return await self._webrtc_fallback(grant, message, "authority_peer_stack_unavailable")
         try:
-            answer = await self.peer_stack.create_answer(
-                session_id,
-                str(message.get("sdp") or ""),
-                lambda data: self.handle_plaintext(session_id, data),
-            )
+            answer = await self.peer_stack.create_answer(session_id, message.get("sdp"), lambda data: self.handle_plaintext(session_id, data))
         except Exception as err:
-            await audit.async_log(self.store, "webrtc_fallback", grant.grant_id, {"reason": type(err).__name__})
-            return {"type": "webrtc_unavailable", "request_id": message.get("request_id"), "fallback": "relay", "reason": type(err).__name__}
-        await audit.async_log(self.store, "webrtc_connected", grant.grant_id)
+            return await self._webrtc_fallback(grant, message, f"authority_peer_stack_error:{type(err).__name__}")
+        await audit.async_log(self.store, "webrtc_answer", grant.grant_id)
         return {
             "type": "webrtc_answer",
             "request_id": message.get("request_id"),
@@ -271,30 +365,33 @@ class VarcoAuthority:
     async def _webrtc_ice(self, grant: Grant, message: dict[str, Any]) -> dict[str, Any]:
         if self.peer_stack is None:
             return await self._webrtc_fallback(grant, message, "authority_peer_stack_unavailable")
-        await audit.async_log(self.store, "webrtc_ice", grant.grant_id)
         return {"type": "webrtc_ice_ack", "request_id": message.get("request_id")}
 
     async def _webrtc_fallback(self, grant: Grant, message: dict[str, Any], reason: str) -> dict[str, Any]:
         await audit.async_log(self.store, "webrtc_fallback", grant.grant_id, {"reason": reason})
         return {"type": "webrtc_unavailable", "request_id": message.get("request_id"), "fallback": "relay"}
 
-    def _expand_entity_ids(self, entity_ids: list[str]) -> list[str]:
+    def _error(self, request_id: Any, code: str, message: str) -> dict[str, Any]:
+        return {"type": "error", "request_id": request_id, "code": code, "message": message}
+
+    def _expand_entity_ids(self, requested: list[str], allowed: set[str]) -> list[str]:
         expanded: list[str] = []
-        known = self._known_entity_ids()
-        for entity_id in entity_ids:
-            if entity_id == "*":
-                expanded.extend(known)
-            elif entity_id.endswith(".*") and "." in entity_id:
-                domain = entity_id.split(".", 1)[0]
-                expanded.extend(entity for entity in known if entity.startswith(f"{domain}."))
+        known_entity_ids: list[str] | None = None
+        for entity in requested:
+            if entity == "*" or entity.endswith(".*"):
+                if known_entity_ids is None:
+                    known_entity_ids = self._known_entity_ids()
+                expanded.extend(item for item in known_entity_ids if entity_allowed(item, {entity}) and entity_allowed(item, allowed))
             else:
-                expanded.append(entity_id)
+                expanded.append(entity)
         return list(dict.fromkeys(expanded))
 
     def _known_entity_ids(self) -> list[str]:
         if self.hass is None or not hasattr(self.hass, "states"):
             return []
         states = self.hass.states
+        if hasattr(states, "async_entity_ids"):
+            return sorted(str(entity_id) for entity_id in states.async_entity_ids())
         if hasattr(states, "values") and isinstance(states.values, dict):
             return sorted(str(entity_id) for entity_id in states.values.keys())
         if hasattr(states, "async_all"):
@@ -310,7 +407,12 @@ class VarcoAuthority:
             return None
         if isinstance(state, dict):
             return dict(state)
-        return {"entity_id": entity_id, "state": getattr(state, "state", None), "attributes": dict(getattr(state, "attributes", {}) or {}), "last_changed": str(getattr(state, "last_changed", ""))}
+        return {
+            "entity_id": entity_id,
+            "state": getattr(state, "state", None),
+            "attributes": dict(getattr(state, "attributes", {}) or {}),
+            "last_changed": str(getattr(state, "last_changed", "")),
+        }
 
     async def _history_payload(self, entity_ids: list[str], message: dict[str, Any]) -> Any:
         if self.hass is not None and hasattr(self.hass, "varco_history"):
@@ -346,19 +448,19 @@ class VarcoAuthority:
         except ValueError:
             return None
         if parsed.tzinfo is None:
-            return parsed.replace(tzinfo=timezone.utc)
+            parsed = parsed.replace(tzinfo=timezone.utc)
         return parsed.astimezone(timezone.utc)
 
     def _history_point(self, item: Any) -> dict[str, Any]:
         if isinstance(item, dict):
             state = item.get("state", item.get("s"))
             updated = item.get("last_updated", item.get("last_changed"))
-            if item.get("lu") is not None:
+            if updated is None and "lu" in item:
                 updated = datetime.fromtimestamp(float(item["lu"]), timezone.utc).isoformat()
             return {"t": str(updated), "state": state, "v": self._numeric_or_none(state)}
         state = getattr(item, "state", None)
-        updated = getattr(item, "last_updated", None) or getattr(item, "last_changed", None)
-        return {"t": updated.isoformat() if hasattr(updated, "isoformat") else str(updated), "state": state, "v": self._numeric_or_none(state)}
+        updated = getattr(item, "last_updated", getattr(item, "last_changed", None))
+        return {"t": str(updated), "state": state, "v": self._numeric_or_none(state)}
 
     def _numeric_or_none(self, value: Any) -> float | None:
         try:
@@ -369,7 +471,4 @@ class VarcoAuthority:
     async def _camera_payload(self, entity_id: str) -> str:
         if self.hass is not None and hasattr(self.hass, "varco_camera_snapshot"):
             return await self.hass.varco_camera_snapshot(entity_id)
-        return ""
-
-    def _error(self, request_id: str | None, code: str, message: str) -> dict[str, Any]:
-        return {"type": "error", "request_id": request_id, "code": code, "message": message}
+        return f"snapshot:{entity_id}"
