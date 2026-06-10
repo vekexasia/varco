@@ -54,6 +54,8 @@ class VarcoAuthority:
         self.monotonic_provider = monotonic_provider or time.monotonic
         self.sessions: dict[str, RuntimeSession] = {}
         self._rate_hits: dict[tuple[str, str], list[float]] = {}
+        self._access_request_last: dict[str, float] = {}
+        self.access_request_min_interval = 5.0
 
     def _session(self, session_id: str) -> RuntimeSession:
         return self.sessions.setdefault(session_id, RuntimeSession(session_id=session_id))
@@ -188,8 +190,21 @@ class VarcoAuthority:
         if not verify_access_request(consumer_pk, nonce, manifest, signature):
             await audit.async_log(self.store, "session_error", details={"reason": "bad_access_request_signature"})
             return self._error(message.get("request_id"), "bad_signature", "Invalid access request signature")
+        now = self.monotonic_provider()
+        last = self._access_request_last.get(consumer_pk)
+        if last is not None and now - last < self.access_request_min_interval:
+            await audit.async_log(self.store, "session_error", details={"reason": "access_request_rate_limited"})
+            return self._error(message.get("request_id"), "rate_limited", "Access request rate limited")
+        if len(self._access_request_last) >= 1000:
+            cutoff = now - self.access_request_min_interval
+            self._access_request_last = {pk: ts for pk, ts in self._access_request_last.items() if ts > cutoff}
+        self._access_request_last[consumer_pk] = now
+        # Coalesce: reuse the pending request slot for this consumer so repeated
+        # requests do not grow storage; the stable request_id also keeps the
+        # owner notification_id stable.
+        existing = await self.store.async_get_pending_request_by_consumer(consumer_pk)
         request = AccessRequest(
-            request_id=new_id(12),
+            request_id=existing.request_id if existing else new_id(12),
             consumer_pk=consumer_pk,
             manifest=manifest,
             nonce=nonce,
