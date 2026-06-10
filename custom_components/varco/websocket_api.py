@@ -8,11 +8,15 @@ from .const import DOMAIN
 from .dashboard_export import build_dashboard_export
 
 
-def _authority(hass: HomeAssistant):
+def _relay(hass: HomeAssistant):
     for value in hass.data.get(DOMAIN, {}).values():
         if isinstance(value, dict) and "relay" in value:
-            return value["relay"].authority
+            return value["relay"]
     raise RuntimeError("Varco is not loaded")
+
+
+def _authority(hass: HomeAssistant):
+    return _relay(hass).authority
 
 
 def async_setup(hass: HomeAssistant) -> None:
@@ -32,7 +36,7 @@ def async_setup(hass: HomeAssistant) -> None:
 @websocket_api.require_admin
 @websocket_api.async_response
 async def websocket_info(hass: HomeAssistant, connection, msg) -> None:
-    relay = next(value["relay"] for value in hass.data.get(DOMAIN, {}).values() if isinstance(value, dict) and "relay" in value)
+    relay = _relay(hass)
     connection.send_result(msg["id"], {"authority_id": relay.authority_id, "relay": relay.status})
 
 
@@ -112,12 +116,12 @@ async def websocket_update_grant_restrictions(hass: HomeAssistant, connection, m
 @websocket_api.require_admin
 @websocket_api.async_response
 async def websocket_dashboard_export(hass: HomeAssistant, connection, msg) -> None:
-    relay = next(value["relay"] for value in hass.data.get(DOMAIN, {}).values() if isinstance(value, dict) and "relay" in value)
+    relay = _relay(hass)
     export = build_dashboard_export(
         msg["config"],
         hass=hass,
         authority_id=relay.authority_id,
-        bridge_url=getattr(relay, "bridge_url", "") or getattr(relay, "bridge_ws_url", ""),
+        bridge_url=relay.bridge_ws_url,
         selected_entities=msg.get("selected_entities"),
         dashboard_title=msg.get("dashboard_title"),
         dashboard_url_path=msg.get("dashboard_url_path"),

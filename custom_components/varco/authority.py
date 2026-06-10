@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -19,6 +20,8 @@ from .policy import (
     subscription_entities,
 )
 from .storage import MemoryVarcoStore
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
@@ -158,10 +161,12 @@ class VarcoAuthority:
             return
         try:
             from homeassistant.components import persistent_notification
-
+        except ImportError:
+            return
+        try:
             persistent_notification.async_dismiss(self.hass, f"varco_{request_id}")
         except Exception:
-            pass
+            _LOGGER.warning("Failed to dismiss notification for request %s", request_id, exc_info=True)
 
     async def state_changed(self, entity_id: str, state: Any | None = None) -> list[tuple[str, dict[str, Any]]]:
         events: list[tuple[str, dict[str, Any]]] = []
