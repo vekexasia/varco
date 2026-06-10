@@ -471,3 +471,20 @@ test('without provided storage the client uses non-extractable WebCrypto keys in
     delete globalThis.indexedDB;
   }
 });
+
+test('createVarcoClient rejects manifest with conflicting alias spellings', () => {
+  assert.throws(() => createVarcoClient({
+    authorityId: 'auth',
+    bridgeUrl: 'wss://bridge',
+    storage: new MemoryStorage(),
+    transport: new FakeTransport(),
+    manifest: { name: 'Demo', version: '1.0.0', read_entities: ['sensor.a'], readEntities: ['sensor.b'] },
+  }), /read_entities and readEntities/);
+  assert.throws(() => createVarcoClient({
+    authorityId: 'auth',
+    bridgeUrl: 'wss://bridge',
+    storage: new MemoryStorage(),
+    transport: new FakeTransport(),
+    manifest: { name: '', version: '1.0.0' },
+  }), /non-empty name/);
+});

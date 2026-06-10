@@ -8,6 +8,7 @@ from typing import Any, Callable
 
 from . import audit
 from .crypto import new_id, pairing_code, verify_access_request, verify_authenticate
+from .manifest import ManifestError, validate_manifest
 from .models import AccessRequest, Grant, hash_pin
 from .policy import (
     action_allowed,
@@ -195,6 +196,11 @@ class VarcoAuthority:
         if not verify_access_request(consumer_pk, nonce, manifest, signature):
             await audit.async_log(self.store, "session_error", details={"reason": "bad_access_request_signature"})
             return self._error(message.get("request_id"), "bad_signature", "Invalid access request signature")
+        try:
+            manifest = validate_manifest(manifest)
+        except ManifestError as err:
+            await audit.async_log(self.store, "session_error", details={"reason": "invalid_manifest", "error": str(err)})
+            return self._error(message.get("request_id"), "invalid_manifest", f"Invalid manifest: {err}")
         now = self.monotonic_provider()
         last = self._access_request_last.get(consumer_pk)
         if last is not None and now - last < self.access_request_min_interval:

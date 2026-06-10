@@ -2,3 +2,4 @@
 # Pinned for reproducible builds; bump deliberately.
 pytest==9.0.3
 cryptography==48.0.1
+voluptuous==0.16.0

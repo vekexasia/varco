@@ -14,16 +14,17 @@ class RestrictionDecision:
     reason: str | None = None
 
 
-def _list(manifest: dict[str, Any], *keys: str) -> list[str]:
-    for key in keys:
-        value = manifest.get(key)
-        if isinstance(value, list):
-            return [str(item) for item in value]
+def _list(manifest: dict[str, Any], key: str) -> list[str]:
+    # Manifests are normalized to canonical snake_case at the access_request
+    # boundary (manifest.validate_manifest) and on storage load (coerce_manifest).
+    value = manifest.get(key)
+    if isinstance(value, list):
+        return [str(item) for item in value]
     return []
 
 
 def read_entities(manifest: dict[str, Any]) -> set[str]:
-    return set(_list(manifest, "read_entities", "readEntities"))
+    return set(_list(manifest, "read_entities"))
 
 
 def subscription_entities(manifest: dict[str, Any]) -> set[str]:
@@ -35,7 +36,7 @@ def history_entities(manifest: dict[str, Any]) -> set[str]:
 
 
 def camera_entities(manifest: dict[str, Any]) -> set[str]:
-    return set(_list(manifest, "camera_snapshots", "cameraSnapshots"))
+    return set(_list(manifest, "camera_snapshots"))
 
 
 def action_scopes(manifest: dict[str, Any]) -> set[str]:

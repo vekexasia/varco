@@ -119,3 +119,73 @@ def test_pending_access_requests_capped_evicting_oldest():
         assert "req-0000" not in ids
         assert f"req-{MAX_PENDING_ACCESS_REQUESTS + 4:04d}" in ids
     asyncio.run(run())
+
+
+def test_access_request_normalizes_camel_case_manifest_to_snake_case():
+    async def run():
+        store = MemoryVarcoStore()
+        authority = VarcoAuthority(store=store)
+        consumer = generate_consumer_keypair()
+        manifest = {
+            "name": "Demo",
+            "version": "1.0.0",
+            "readEntities": ["sensor.temp"],
+            "cameraSnapshots": ["camera.door"],
+        }
+        result = await authority.handle_plaintext("session-1", _request_message(consumer, "nonce-camel", manifest))
+        assert result["type"] == "access_request_pending"
+        requests = await store.async_list_access_requests()
+        stored = requests[0].manifest
+        assert stored["read_entities"] == ["sensor.temp"]
+        assert stored["camera_snapshots"] == ["camera.door"]
+        assert "readEntities" not in stored
+        assert "cameraSnapshots" not in stored
+    asyncio.run(run())
+
+
+def test_access_request_rejects_conflicting_manifest_aliases():
+    async def run():
+        store = MemoryVarcoStore()
+        authority = VarcoAuthority(store=store)
+        consumer = generate_consumer_keypair()
+        manifest = {
+            "name": "Demo",
+            "version": "1.0.0",
+            "read_entities": ["sensor.temp"],
+            "readEntities": ["sensor.other"],
+        }
+        result = await authority.handle_plaintext("session-1", _request_message(consumer, "nonce-conflict", manifest))
+        assert result["type"] == "error"
+        assert result["code"] == "invalid_manifest"
+        assert await store.async_list_access_requests() == []
+    asyncio.run(run())
+
+
+def test_access_request_rejects_malformed_manifest():
+    async def run():
+        store = MemoryVarcoStore()
+        authority = VarcoAuthority(store=store)
+        consumer = generate_consumer_keypair()
+        for manifest in (
+            {"version": "1.0.0"},  # missing name
+            {"name": "", "version": "1.0.0"},  # empty name
+            {"name": "Demo", "read_entities": "sensor.temp"},  # scope not a list
+            {"name": "Demo", "actions": [{"bad": True}]},  # non-string scope entry
+        ):
+            result = await authority.handle_plaintext("session-1", _request_message(consumer, "nonce-bad", manifest))
+            assert result["type"] == "error", manifest
+            assert result["code"] == "invalid_manifest", manifest
+        assert await store.async_list_access_requests() == []
+    asyncio.run(run())
+
+
+def test_stored_camel_case_manifest_coerced_on_load():
+    from custom_components.varco.models import Grant
+
+    grant = Grant.from_dict({
+        "grant_id": "g1",
+        "consumer_pk": "pk",
+        "manifest": {"name": "Old", "readEntities": ["sensor.temp"], "cameraSnapshots": ["camera.door"]},
+    })
+    assert grant.manifest["read_entities"] == ["sensor.temp"]
+    assert grant.manifest["camera_snapshots"] == ["camera.door"]
