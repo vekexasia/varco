@@ -411,3 +411,63 @@ test('relay callService sends restriction PINs at the top level', async () => {
   assert.deepEqual(call.pins, { 'front-door-pin': '1234' });
   assert.deepEqual(call.service_data, {});
 });
+
+test('legacy localStorage identity keeps working and no identity is created without storage when WebCrypto path is used', async () => {
+  // Legacy path: existing plaintext identity in provided storage is reused.
+  const storage = new MemoryStorage();
+  const transport = new FakeTransport();
+  const first = createVarcoClient({ authorityId: 'authority', bridgeUrl: 'ws://bridge', manifest: { name: 'Demo', version: '1' }, storage, transport });
+  await first.requestAccess();
+  const persisted = storage.getItem('varco.consumerIdentity.v1');
+  assert.ok(persisted, 'identity persisted to provided storage');
+  const second = createVarcoClient({ authorityId: 'authority', bridgeUrl: 'ws://bridge', manifest: { name: 'Demo', version: '1' }, storage, transport: new FakeTransport() });
+  assert.equal(second.consumerPublicKey, first.consumerPublicKey);
+  assert.equal(JSON.parse(persisted).publicKey, first.consumerPublicKey);
+});
+
+test('without provided storage the client uses non-extractable WebCrypto keys in IndexedDB', async () => {
+  // Minimal in-memory fake IndexedDB.
+  const stores = new Map();
+  const makeRequest = (executor) => {
+    const request = { onsuccess: null, onerror: null, onupgradeneeded: null, result: undefined, error: null };
+    queueMicrotask(() => executor(request));
+    return request;
+  };
+  globalThis.indexedDB = {
+    open() {
+      return makeRequest((request) => {
+        request.result = {
+          createObjectStore(name) { stores.set(name, new Map()); },
+          transaction(name) {
+            const store = stores.get(name);
+            return { objectStore: () => ({
+              get: (key) => makeRequest((r) => { r.result = store.get(key); r.onsuccess?.(); }),
+              put: (value, key) => makeRequest((r) => { store.set(key, value); r.onsuccess?.(); }),
+            }) };
+          },
+          close() {},
+        };
+        if (!stores.has('keys')) request.onupgradeneeded?.();
+        request.onsuccess?.();
+      });
+    },
+  };
+  try {
+    const transport = new FakeTransport();
+    const client = createVarcoClient({ authorityId: 'authority', bridgeUrl: 'ws://bridge', manifest: { name: 'Demo', version: '1' }, transport, webrtc: false });
+    await client.requestAccess();
+    await client.connect();
+    const pair = stores.get('keys').get('consumerIdentity.v1');
+    assert.ok(pair, 'key pair stored in IndexedDB');
+    assert.equal(pair.privateKey.extractable, false);
+    assert.equal(typeof transport.messages[0].signature, 'string');
+    assert.equal(client.consumerPublicKey.length > 0, true);
+
+    // Same IndexedDB yields the same identity on a fresh client.
+    const again = createVarcoClient({ authorityId: 'authority', bridgeUrl: 'ws://bridge', manifest: { name: 'Demo', version: '1' }, transport: new FakeTransport(), webrtc: false });
+    await again.requestAccess();
+    assert.equal(again.consumerPublicKey, client.consumerPublicKey);
+  } finally {
+    delete globalThis.indexedDB;
+  }
+});

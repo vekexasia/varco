@@ -58,7 +58,7 @@ const client = createVarcoClient({
 });
 ```
 
-The relay client stores the consumer identity in `localStorage` by default. Clearing browser storage creates a new consumer identity and requires pairing again.
+By default the relay client creates a non-extractable WebCrypto Ed25519 key pair and persists it in IndexedDB, so the private key cannot be read by page scripts. If WebCrypto Ed25519 is unavailable, or a custom `storage` option is provided, the identity falls back to JSON in that storage (`localStorage` legacy identities keep working). Clearing browser storage creates a new consumer identity and requires pairing again.
 
 ## Main methods
 
