@@ -1,27 +1,21 @@
-import { ed25519 } from "@noble/curves/ed25519";
+import {
+  type Role,
+  type SocketState,
+  authorityConnectDecision,
+  authorityMessageAction,
+  b64urlEncode,
+  consumerConnectDecision,
+  disconnectAction,
+  gateMessage,
+  parseMessage,
+  validAuthorityId,
+} from "./logic";
 
 export interface Env {
   AUTHORITY_ROOMS: DurableObjectNamespace;
   MAX_CLIENTS_PER_AUTHORITY?: string;
   MAX_MESSAGE_SIZE?: string;
   MAX_MESSAGES_PER_MINUTE?: string;
-}
-
-type Role = "authority" | "consumer";
-type SocketState = { role: Role; authed?: boolean; sessionId?: string; challenge?: string; authorityId?: string; windowStart: number; messagesInWindow: number };
-
-function b64urlDecode(value: string): Uint8Array {
-  const normalized = value.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (value.length % 4)) % 4);
-  const binary = atob(normalized);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-  return bytes;
-}
-
-function b64urlEncode(bytes: Uint8Array): string {
-  let binary = "";
-  bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
 function randomId(bytes = 16): string {
@@ -67,14 +61,15 @@ export class AuthorityRoom implements DurableObject {
   }
 
   private acceptAuthority(authorityId: string): Response {
-    if (!this.validAuthorityId(authorityId)) return new Response("Invalid authority id", { status: 400 });
+    if (!validAuthorityId(authorityId)) return new Response("Invalid authority id", { status: 400 });
     const pair = new WebSocketPair();
     const client = pair[0];
     const server = pair[1];
     this.state.acceptWebSocket(server, ["authority"]);
-    if (this.findAuthority()) {
-      server.send(JSON.stringify({ type: "duplicate_identity" }));
-      server.close(4409, "Duplicate authority");
+    const decision = authorityConnectDecision(this.findAuthority() !== null);
+    if (decision.kind === "reject") {
+      if (decision.notice !== undefined) server.send(JSON.stringify(decision.notice));
+      server.close(decision.code, decision.reason);
       return websocketResponse(client);
     }
     const challenge = randomId(32);
@@ -89,28 +84,27 @@ export class AuthorityRoom implements DurableObject {
     const client = pair[0];
     const server = pair[1];
     this.state.acceptWebSocket(server, ["consumer"]);
-    if (!authority) {
-      server.send(JSON.stringify({ type: "offline" }));
-      server.close(4404, "Authority offline");
-      return websocketResponse(client);
-    }
-    if (this.state.getWebSockets("consumer").length > limit(this.env, "MAX_CLIENTS_PER_AUTHORITY", 64)) {
-      server.close(4429, "Too many clients");
+    const decision = consumerConnectDecision(authority !== null, this.state.getWebSockets("consumer").length, limit(this.env, "MAX_CLIENTS_PER_AUTHORITY", 64));
+    if (decision.kind === "reject") {
+      if (decision.notice !== undefined) server.send(JSON.stringify(decision.notice));
+      server.close(decision.code, decision.reason);
       return websocketResponse(client);
     }
     const sessionId = randomId(16);
     this.setState(server, this.newState("consumer", { sessionId }));
-    authority.send(JSON.stringify({ type: "client_connected", sessionId }));
+    authority!.send(JSON.stringify({ type: "client_connected", sessionId }));
     return websocketResponse(client);
   }
 
   webSocketMessage(ws: WebSocket, data: string | ArrayBuffer): void {
     const session = this.getState(ws);
-    if (!session || !this.allowMessage(ws, session, data)) return;
-    let message: any;
-    try { message = JSON.parse(typeof data === "string" ? data : new TextDecoder().decode(data)); } catch { ws.close(4400, "Invalid JSON"); return; }
-    if (session.role === "authority") this.handleAuthorityMessage(ws, session, message);
-    else this.handleConsumerMessage(session, message);
+    if (!session) return;
+    const gate = gateMessage(session, data, limit(this.env, "MAX_MESSAGE_SIZE", 2 * 1024 * 1024), limit(this.env, "MAX_MESSAGES_PER_MINUTE", 240), Date.now());
+    if (!gate.ok) { ws.close(gate.code, gate.reason); return; }
+    const parsed = parseMessage(data);
+    if (!parsed.ok) { ws.close(4400, "Invalid JSON"); return; }
+    if (session.role === "authority") this.handleAuthorityMessage(ws, session, parsed.message);
+    else this.handleConsumerMessage(session, parsed.message);
     this.setState(ws, session);
   }
 
@@ -118,18 +112,14 @@ export class AuthorityRoom implements DurableObject {
   webSocketError(ws: WebSocket): void { this.closeSocket(ws); }
 
   private handleAuthorityMessage(ws: WebSocket, session: SocketState, message: any): void {
-    if (!session.authed) {
-      if (message.type !== "auth" || !session.challenge || !session.authorityId || typeof message.signature !== "string") { ws.close(4401, "Auth required"); return; }
-      if (!ed25519.verify(b64urlDecode(message.signature), b64urlDecode(session.challenge), b64urlDecode(session.authorityId))) { ws.close(4403, "Bad signature"); return; }
-      session.authed = true;
-      ws.send(JSON.stringify({ type: "ready" }));
-      return;
-    }
-    if (message.type === "authority_message" && typeof message.sessionId === "string") {
-      const client = this.findConsumer(message.sessionId);
-      if (client) client.send(JSON.stringify({ type: "authority_message", payload: message.payload }));
-    } else if (message.type === "close_client" && typeof message.sessionId === "string") {
-      this.findConsumer(message.sessionId)?.close(4400, message.reason || "Closed by authority");
+    const action = authorityMessageAction(session, message);
+    if (action.kind === "close") { ws.close(action.code, action.reason); return; }
+    if (action.kind === "ready") { ws.send(JSON.stringify({ type: "ready" })); return; }
+    if (action.kind === "send_to_consumer") {
+      const client = this.findConsumer(action.sessionId);
+      if (client) client.send(JSON.stringify({ type: "authority_message", payload: action.payload }));
+    } else if (action.kind === "close_consumer") {
+      this.findConsumer(action.sessionId)?.close(4400, action.reason);
     }
   }
 
@@ -141,18 +131,9 @@ export class AuthorityRoom implements DurableObject {
   private closeSocket(ws: WebSocket): void {
     const session = this.getState(ws);
     if (!session) return;
-    if (session.role === "authority") for (const client of this.state.getWebSockets("consumer")) client.close(4404, "Authority offline");
-    if (session.role === "consumer" && session.sessionId) this.findAuthority()?.send(JSON.stringify({ type: "client_disconnected", sessionId: session.sessionId }));
-  }
-
-  private allowMessage(ws: WebSocket, session: SocketState, data: string | ArrayBuffer): boolean {
-    const size = typeof data === "string" ? new TextEncoder().encode(data).length : data.byteLength;
-    if (size > limit(this.env, "MAX_MESSAGE_SIZE", 2 * 1024 * 1024)) { ws.close(4400, "Message too large"); return false; }
-    const now = Date.now();
-    if (now - session.windowStart >= 60_000) { session.windowStart = now; session.messagesInWindow = 0; }
-    session.messagesInWindow += 1;
-    if (session.messagesInWindow > limit(this.env, "MAX_MESSAGES_PER_MINUTE", 240)) { ws.close(4429, "Rate limit"); return false; }
-    return true;
+    const action = disconnectAction(session);
+    if (action.kind === "evict_consumers") for (const client of this.state.getWebSockets("consumer")) client.close(4404, "Authority offline");
+    if (action.kind === "notify_authority") this.findAuthority()?.send(JSON.stringify({ type: "client_disconnected", sessionId: action.sessionId }));
   }
 
   private getState(ws: WebSocket): SocketState | null { return (ws.deserializeAttachment() as SocketState | null) ?? null; }
@@ -160,5 +141,4 @@ export class AuthorityRoom implements DurableObject {
   private newState(role: Role, values: Partial<SocketState>): SocketState { return { role, windowStart: Date.now(), messagesInWindow: 0, ...values }; }
   private findAuthority(): WebSocket | null { return this.state.getWebSockets("authority").find((ws) => this.getState(ws)?.authed) ?? null; }
   private findConsumer(sessionId: string): WebSocket | null { return this.state.getWebSockets("consumer").find((ws) => this.getState(ws)?.sessionId === sessionId) ?? null; }
-  private validAuthorityId(value: string): boolean { try { return b64urlDecode(value).length === 32; } catch { return false; } }
 }
