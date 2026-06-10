@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ed25519 } from '@noble/curves/ed25519';
 import {
-  authorityConnectDecision,
   challengePayload,
   authorityMessageAction,
   b64urlEncode,
@@ -65,9 +64,13 @@ test('relay messages are only acted on after auth', () => {
   assert.deepEqual(authorityMessageAction(session, { type: 'unknown' }), { kind: 'none' });
 });
 
-test('duplicate authority connection is rejected with 4409', () => {
-  assert.deepEqual(authorityConnectDecision(true), { kind: 'reject', notice: { type: 'duplicate_identity' }, code: 4409, reason: 'Duplicate authority' });
-  assert.deepEqual(authorityConnectDecision(false), { kind: 'accept' });
+test('second authority connection is challenged, and auth succeeds so it can replace the old socket', () => {
+  // Duplicate connections are no longer rejected at connect time: the new
+  // socket goes through the normal challenge/auth flow and replaces the
+  // previous one on success (handled by AuthorityRoom.handleAuthorityMessage).
+  const { secretKey, session } = makeAuthoritySession();
+  const action = authorityMessageAction(session, { type: 'auth', signature: signChallenge(secretKey, session) });
+  assert.deepEqual(action, { kind: 'ready' });
 });
 
 test('consumer is rejected 4404 when authority offline and 4429 over the cap', () => {

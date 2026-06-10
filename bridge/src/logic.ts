@@ -42,10 +42,11 @@ export function isAuthedAuthority(state: SocketState | null): boolean { return s
 
 export type ConnectDecision = { kind: "reject"; notice?: unknown; code: number; reason: string } | { kind: "accept" };
 
-export function authorityConnectDecision(authorityAlreadyConnected: boolean): ConnectDecision {
-  if (authorityAlreadyConnected) return { kind: "reject", notice: { type: "duplicate_identity" }, code: 4409, reason: "Duplicate authority" };
-  return { kind: "accept" };
-}
+// Note: there is deliberately no authorityConnectDecision/duplicate rejection.
+// A new connection for an already-connected authority is challenged normally;
+// once it authenticates, AuthorityRoom replaces the previous socket. Rejecting
+// duplicates caused an endless reconnect loop when a hibernated socket's peer
+// died without a close frame (the zombie was never detected).
 
 export function consumerConnectDecision(authorityOnline: boolean, consumerCount: number, maxClients: number): ConnectDecision {
   if (!authorityOnline) return { kind: "reject", notice: { type: "offline" }, code: 4404, reason: "Authority offline" };

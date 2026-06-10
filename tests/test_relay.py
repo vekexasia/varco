@@ -331,3 +331,72 @@ def test_push_state_changed_queues_bounded_when_session_has_no_secure_channel():
         assert len(outbox) == 1
         assert outbox[0]["states"]["sensor.temp"]["state"] == "23"
     asyncio.run(run())
+
+
+def test_run_backs_off_after_clean_close(monkeypatch):
+    """Clean WebSocket closes (e.g. bridge replacing the connection) must not
+    cause an immediate reconnect loop. Regression test for the tight loop that
+    exhausted the Durable Objects free-tier request volume."""
+    async def run():
+        relay, _, _ = make_relay()
+        relay._reconnect_initial_delay = 5.0
+        monkeypatch.setattr(relay_module, "async_get_clientsession", lambda hass: None)
+        connects = []
+
+        async def fake_connect(session):
+            connects.append(1)
+            if len(connects) >= 3:
+                relay._stop_event.set()
+
+        relay._connect = fake_connect
+        waits = []
+        real_wait_for = asyncio.wait_for
+
+        async def fake_wait_for(awaitable, timeout):
+            waits.append(timeout)
+            awaitable.close()
+            raise TimeoutError
+
+        monkeypatch.setattr(asyncio, "wait_for", fake_wait_for)
+        try:
+            await relay._run()
+        finally:
+            monkeypatch.setattr(asyncio, "wait_for", real_wait_for)
+        assert len(connects) == 3
+        # A wait happens after every clean close, with exponential backoff.
+        assert waits == [5.0, 10.0]
+    asyncio.run(run())
+
+
+def test_run_resets_backoff_after_long_lived_connection(monkeypatch):
+    async def run():
+        relay, _, _ = make_relay()
+        relay._reconnect_initial_delay = 5.0
+        monkeypatch.setattr(relay_module, "async_get_clientsession", lambda hass: None)
+        fake_now = [0.0]
+        monkeypatch.setattr(relay_module.time, "monotonic", lambda: fake_now[0])
+        connects = []
+
+        async def fake_connect(session):
+            connects.append(1)
+            if len(connects) == 2:
+                fake_now[0] += 120.0  # second connection stays up for 2 minutes
+            if len(connects) >= 3:
+                relay._stop_event.set()
+
+        relay._connect = fake_connect
+        waits = []
+        real_wait_for = asyncio.wait_for
+
+        async def fake_wait_for(awaitable, timeout):
+            waits.append(timeout)
+            awaitable.close()
+            raise TimeoutError
+
+        monkeypatch.setattr(asyncio, "wait_for", fake_wait_for)
+        try:
+            await relay._run()
+        finally:
+            monkeypatch.setattr(asyncio, "wait_for", real_wait_for)
+        assert waits == [5.0, 5.0]
+    asyncio.run(run())

@@ -13,7 +13,7 @@ description: Common Varco installation, relay, pairing, and WebRTC issues.
 
 - Confirm Home Assistant can make outbound WebSocket connections.
 - Confirm the configured bridge URL starts with `wss://`.
-- Confirm no second Home Assistant instance is using the same Authority ID. The bridge rejects duplicate active authorities for the same ID.
+- Confirm no second Home Assistant instance is using the same Authority ID. The bridge keeps only the most recently authenticated Authority connection for an ID, so two instances will keep replacing each other.
 - Check Home Assistant logs for `Varco relay disconnected`.
 
 ## Consumer says the Authority is offline

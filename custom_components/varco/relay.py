@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 import json
 import logging
 from dataclasses import dataclass
@@ -39,6 +40,8 @@ class VarcoRelay:
         self.sessions: dict[str, BridgeSession] = {}
         self.status: dict[str, Any] = {"connected": False, "last_error": None}
         self._task: asyncio.Task | None = None
+        # Base reconnect delay in seconds; exposed for tests.
+        self._reconnect_initial_delay = 1.0
         self._stop_event = asyncio.Event()
         self._ws: Any = None
         self._state_unsub: Any = None
@@ -67,22 +70,30 @@ class VarcoRelay:
                 pass
 
     async def _run(self) -> None:
-        delay = 1
+        delay = self._reconnect_initial_delay
         session = async_get_clientsession(self.hass)
         while not self._stop_event.is_set():
+            started = time.monotonic()
             try:
                 await self._connect(session)
-                delay = 1
             except asyncio.CancelledError:
                 raise
             except Exception as err:
                 self.status.update({"connected": False, "last_error": str(err)})
                 _LOGGER.warning("Varco relay disconnected: %s", err)
-                try:
-                    await asyncio.wait_for(self._stop_event.wait(), timeout=delay)
-                except TimeoutError:
-                    pass
-                delay = min(delay * 2, 60)
+            if self._stop_event.is_set():
+                break
+            # Always wait before reconnecting, including after clean WebSocket
+            # closes (e.g. the bridge replacing this connection with 4409).
+            # Reconnecting immediately on clean closes caused a tight loop that
+            # exhausted the Cloudflare Durable Objects free-tier request volume.
+            if time.monotonic() - started >= 60:
+                delay = self._reconnect_initial_delay
+            try:
+                await asyncio.wait_for(self._stop_event.wait(), timeout=delay)
+            except TimeoutError:
+                pass
+            delay = min(delay * 2, 60)
 
     async def _connect(self, session) -> None:
         url = f"{self.bridge_ws_url}/authority/{self.authority_id}"

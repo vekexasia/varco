@@ -1,7 +1,6 @@
 import {
   type Role,
   type SocketState,
-  authorityConnectDecision,
   authorityMessageAction,
   b64urlEncode,
   consumerConnectDecision,
@@ -83,12 +82,11 @@ export class AuthorityRoom implements DurableObject {
     const client = pair[0];
     const server = pair[1];
     this.state.acceptWebSocket(server, ["authority"]);
-    const decision = authorityConnectDecision(this.findAuthority() !== null);
-    if (decision.kind === "reject") {
-      if (decision.notice !== undefined) server.send(JSON.stringify(decision.notice));
-      server.close(decision.code, decision.reason);
-      return websocketResponse(client);
-    }
+    // A connection attempt while another authority is connected is accepted and
+    // challenged instead of rejected: a successful auth replaces the previous
+    // socket (see handleAuthorityMessage). This recovers from zombie hibernated
+    // sockets whose peer died without a close frame, which previously caused an
+    // endless 4409 reject/reconnect loop against the Durable Object.
     const pending = this.state.getWebSockets("authority").filter((ws) => this.getState(ws)?.authed === false);
     if (pending.length >= limit(this.env, "MAX_PENDING_AUTHORITIES", 4)) {
       server.close(4429, "Too many pending authorities");
@@ -150,7 +148,18 @@ export class AuthorityRoom implements DurableObject {
   private handleAuthorityMessage(ws: WebSocket, session: SocketState, message: any): void {
     const action = authorityMessageAction(session, message);
     if (action.kind === "close") { ws.close(action.code, action.reason); return; }
-    if (action.kind === "ready") { ws.send(JSON.stringify({ type: "ready" })); return; }
+    if (action.kind === "ready") {
+      // Auth-then-replace: only a caller that proved ownership of the authority
+      // key displaces the previous connection, so an attacker cannot evict the
+      // real authority by just connecting.
+      const stale = this.state.getWebSockets("authority").filter((other) => other !== ws && this.getState(other)?.authed);
+      if (stale.length > 0) {
+        for (const other of stale) other.close(4409, "Replaced by newer authority connection");
+        for (const consumer of this.state.getWebSockets("consumer")) consumer.close(4404, "Authority offline");
+      }
+      ws.send(JSON.stringify({ type: "ready" }));
+      return;
+    }
     if (action.kind === "send_to_consumer") {
       const client = this.findConsumer(action.sessionId);
       if (client) client.send(JSON.stringify({ type: "authority_message", payload: action.payload }));

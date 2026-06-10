@@ -19,7 +19,7 @@ Implemented endpoints:
 | `WebSocket /authority/{authorityId}` | Home Assistant Authority outbound relay connection. |
 | `WebSocket /consumer/{authorityId}` | Consumer relay connection. |
 
-The bridge accepts one active Authority socket per Authority ID. Duplicate Authority connections are closed.
+The bridge keeps one active Authority socket per Authority ID. A new connection that completes the challenge for the same Authority key replaces the previous socket (close code 4409), and connected consumers are evicted with close code 4404 so they reconnect to the new Authority socket.
 
 ## Origin allowlist
 
