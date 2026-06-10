@@ -397,7 +397,7 @@ class VarcoAuthority:
 
     def _template_result_truthy(self, result: Any) -> bool:
         if isinstance(result, str):
-            return result.strip().lower() in {"1", "true", "yes", "on", "enable", "enabled"}
+            return result.strip().lower() in {"1", "true", "yes", "on"}
         return bool(result)
 
     async def _audit_restriction_denied(self, grant: Grant, operation: str, restriction_id: str | None, reason: str | None) -> None:

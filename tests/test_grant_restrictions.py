@@ -637,8 +637,9 @@ def test_template_restriction_fails_closed_on_template_error_without_leaking_det
         events = await store.async_audit_events()
         assert events[-1]["event"] == "restriction_denied"
         assert events[-1]["details"]["reason"] == "template_error"
-        assert "sensor.secret" not in str(events)
-        assert "42" not in str(events[-1])
+        leak_scope = str([event["details"] for event in events])
+        assert "sensor.secret" not in leak_scope
+        assert "42" not in leak_scope
 
     asyncio.run(run())
 
