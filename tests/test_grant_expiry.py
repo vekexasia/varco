@@ -44,7 +44,7 @@ def test_expired_grant_rejected_at_authenticate():
         consumer = generate_consumer_keypair()
         pending = await request_access(authority, consumer)
         expires_at = (now["value"] + timedelta(hours=1)).isoformat()
-        await authority.approve_request(pending["request_id"], expires_at=expires_at)
+        await authority.approve_request(pending["access_request_id"], expires_at=expires_at)
         now["value"] += timedelta(hours=2)
         denied = await authority.handle_plaintext("s2", authenticate_message(consumer), channel_binding=TEST_BINDING)
         assert denied["type"] == "error"
@@ -60,7 +60,7 @@ def test_expired_grant_rejected_mid_session_at_require_grant():
         consumer = generate_consumer_keypair()
         pending = await request_access(authority, consumer)
         expires_at = (now["value"] + timedelta(hours=1)).isoformat()
-        await authority.approve_request(pending["request_id"], expires_at=expires_at)
+        await authority.approve_request(pending["access_request_id"], expires_at=expires_at)
         auth = await authority.handle_plaintext("s1", authenticate_message(consumer), channel_binding=TEST_BINDING)
         assert auth["type"] == "authenticated"
         ok = await authority.handle_plaintext("s1", {"type": "get_states", "request_id": "r1", "entity_ids": ["sensor.temp"]})
@@ -79,7 +79,7 @@ def test_non_expiring_grant_unaffected():
         authority = VarcoAuthority(store=store, hass=FakeHass(), now_provider=lambda: now["value"])
         consumer = generate_consumer_keypair()
         pending = await request_access(authority, consumer)
-        grant = await authority.approve_request(pending["request_id"])
+        grant = await authority.approve_request(pending["access_request_id"])
         assert grant.expires_at is None
         now["value"] += timedelta(days=365)
         auth = await authority.handle_plaintext("s1", authenticate_message(consumer), channel_binding=TEST_BINDING)
@@ -107,7 +107,7 @@ def test_purge_expired_grants_removes_only_expired():
                 "nonce": nonce,
                 "signature": sign_access_request(consumer["private_key"], nonce, MANIFEST),
             })
-            return await authority.approve_request(pending["request_id"], expires_at=expires_at)
+            return await authority.approve_request(pending["access_request_id"], expires_at=expires_at)
 
         expired_grant = await approve(expired_consumer, (now - timedelta(hours=1)).isoformat())
         active_grant = await approve(active_consumer, (now + timedelta(hours=1)).isoformat())

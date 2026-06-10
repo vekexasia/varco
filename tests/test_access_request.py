@@ -65,7 +65,7 @@ def test_repeated_access_request_from_same_consumer_coalesces_into_one_pending_r
         second = await authority.handle_plaintext("session-1", _request_message(consumer, "nonce-2"))
 
         assert second["type"] == "access_request_pending"
-        assert second["request_id"] == first["request_id"]
+        assert second["access_request_id"] == first["access_request_id"]
         requests = await store.async_list_access_requests()
         assert len(requests) == 1
         assert requests[0].nonce == "nonce-2"

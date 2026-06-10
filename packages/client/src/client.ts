@@ -35,7 +35,7 @@ export function createVarcoClient(options: VarcoClientOptions): VarcoClient {
         nonce,
         signature: await signAccessRequest(id, nonce, options.manifest),
       });
-      return { request_id: response.request_id, pairing_code: response.pairing_code, status: response.status };
+      return { request_id: response.access_request_id, pairing_code: response.pairing_code, status: response.status };
     },
 
     async connect() {

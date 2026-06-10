@@ -59,7 +59,7 @@ async def paired_authority(manifest, *, now=None):
             "signature": sign_access_request(consumer["private_key"], nonce, manifest),
         },
     )
-    grant = await authority.approve_request(pending["request_id"])
+    grant = await authority.approve_request(pending["access_request_id"])
     auth_nonce = "auth-nonce"
     authenticated = await authority.handle_plaintext(
         "s1",

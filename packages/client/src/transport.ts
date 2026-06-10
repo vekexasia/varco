@@ -165,11 +165,9 @@ export class RelayTransport implements VarcoTransport {
     const outer = JSON.parse(data);
     const payload = await this.decrypt(outer.payload ?? outer);
     const requestId = payload.request_id;
-    let pendingKey = requestId && this.pending.has(requestId) ? requestId : undefined;
-    if (!pendingKey && this.pending.size === 1 && payload.type !== "state_delta") pendingKey = this.pending.keys().next().value;
-    if (pendingKey) {
-      const pending = this.pending.get(pendingKey)!;
-      this.pending.delete(pendingKey);
+    if (requestId && this.pending.has(requestId)) {
+      const pending = this.pending.get(requestId)!;
+      this.pending.delete(requestId);
       clearTimeout(pending.timer);
       if (payload.type === "error") pending.reject(Object.assign(new Error(payload.message), { code: payload.code }));
       else pending.resolve(payload);
