@@ -12,6 +12,17 @@ MAX_PENDING_ACCESS_REQUESTS = 50
 class MemoryVarcoStore:
     def __init__(self) -> None:
         self._data: dict[str, Any] = {"access_requests": {}, "grants": {}, "audit": []}
+        # In-memory index: grant_id -> consumer_pk. Not persisted; rebuilt from
+        # the stored grants mapping, which stays keyed by consumer_pk for
+        # backward compatibility with existing installs.
+        self._grant_index: dict[str, str] = {}
+
+    def _rebuild_grant_index(self) -> None:
+        self._grant_index = {
+            raw["grant_id"]: consumer_pk
+            for consumer_pk, raw in self._data.get("grants", {}).items()
+            if raw.get("grant_id")
+        }
 
     async def async_load_data(self) -> dict[str, Any]:
         self._data.setdefault("access_requests", {})
@@ -22,6 +33,7 @@ class MemoryVarcoStore:
     async def async_save_data(self, data: dict[str, Any] | None = None) -> None:
         if data is not None:
             self._data = data
+            self._rebuild_grant_index()
 
     async def async_upsert_access_request(self, request: AccessRequest) -> None:
         data = await self.async_load_data()
@@ -50,7 +62,11 @@ class MemoryVarcoStore:
 
     async def async_upsert_grant(self, grant: Grant) -> None:
         data = await self.async_load_data()
+        previous = data["grants"].get(grant.consumer_pk)
+        if previous and previous.get("grant_id") != grant.grant_id:
+            self._grant_index.pop(previous["grant_id"], None)
         data["grants"][grant.consumer_pk] = grant.as_dict()
+        self._grant_index[grant.grant_id] = grant.consumer_pk
         await self.async_save_data(data)
 
     async def async_get_grant_by_consumer(self, consumer_pk: str) -> Grant | None:
@@ -58,10 +74,15 @@ class MemoryVarcoStore:
         return Grant.from_dict(raw) if raw else None
 
     async def async_get_grant(self, grant_id: str) -> Grant | None:
-        for raw in (await self.async_load_data())["grants"].values():
-            if raw.get("grant_id") == grant_id:
-                return Grant.from_dict(raw)
-        return None
+        data = await self.async_load_data()
+        consumer_pk = self._grant_index.get(grant_id)
+        if consumer_pk is None:
+            return None
+        raw = data["grants"].get(consumer_pk)
+        if raw is None or raw.get("grant_id") != grant_id:
+            self._grant_index.pop(grant_id, None)
+            return None
+        return Grant.from_dict(raw)
 
     async def async_list_grants(self) -> list[Grant]:
         return [Grant.from_dict(item) for item in (await self.async_load_data())["grants"].values()]
@@ -94,6 +115,7 @@ class MemoryVarcoStore:
             if now >= expires:
                 deleted.append(raw.get("grant_id"))
                 data["grants"].pop(consumer_pk, None)
+                self._grant_index.pop(raw.get("grant_id"), None)
         if deleted:
             await self.async_save_data(data)
         return deleted
@@ -121,6 +143,7 @@ class MemoryVarcoStore:
             raise KeyError(grant_id)
         data = await self.async_load_data()
         data["grants"].pop(grant.consumer_pk, None)
+        self._grant_index.pop(grant_id, None)
         await self.async_save_data(data)
         return grant
 
@@ -144,6 +167,7 @@ class HomeAssistantVarcoStore(MemoryVarcoStore):
     async def async_load_data(self) -> dict[str, Any]:
         if not self._loaded:
             self._data = await self._store.async_load() or {"access_requests": {}, "grants": {}, "audit": []}
+            self._rebuild_grant_index()
             self._loaded = True
         return await super().async_load_data()
 
