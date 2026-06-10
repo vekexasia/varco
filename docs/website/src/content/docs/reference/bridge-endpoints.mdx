@@ -20,3 +20,7 @@ Implemented endpoints:
 | `WebSocket /consumer/{authorityId}` | Consumer relay connection. |
 
 The bridge accepts one active Authority socket per Authority ID. Duplicate Authority connections are closed.
+
+## Origin allowlist
+
+The optional `ALLOWED_ORIGINS` environment variable restricts browser access to `/presence/{authorityId}` and the WebSocket endpoints. Set it to a comma-separated list of exact origins, for example `https://varco-demo.andreabaccega.com,http://localhost:5173`. When it is unset, empty, or `*`, every origin is allowed. Requests without an `Origin` header, such as the Home Assistant Authority connection, are always allowed.

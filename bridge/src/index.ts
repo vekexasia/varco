@@ -7,6 +7,7 @@ import {
   consumerConnectDecision,
   disconnectAction,
   gateMessage,
+  originAllowed,
   parseLimit,
   parseMessage,
   validAuthorityId,
@@ -18,6 +19,7 @@ export interface Env {
   MAX_MESSAGE_SIZE?: string;
   MAX_MESSAGES_PER_MINUTE?: string;
   MAX_PENDING_AUTHORITIES?: string;
+  ALLOWED_ORIGINS?: string;
 }
 
 const AUTH_DEADLINE_MS = 30_000;
@@ -33,18 +35,30 @@ function limit(env: Env, key: keyof Env, fallback: number): number {
 }
 
 function websocketResponse(server: WebSocket): Response { return new Response(null, { status: 101, webSocket: server }); }
-function corsHeaders(): HeadersInit { return { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET, OPTIONS", "Access-Control-Allow-Headers": "Content-Type" }; }
-function jsonResponse(body: unknown): Response { return Response.json(body, { headers: corsHeaders() }); }
+function corsHeaders(env: Env, origin: string | null): HeadersInit {
+  // Reflect the request Origin only when it passes the allowlist; with the
+  // default (unset) allowlist this reflects any origin, matching the previous
+  // wildcard behaviour so the deployed demo and local dev keep working.
+  const headers: Record<string, string> = { "Access-Control-Allow-Methods": "GET, OPTIONS", "Access-Control-Allow-Headers": "Content-Type" };
+  if (origin !== null && originAllowed(env.ALLOWED_ORIGINS, origin)) { headers["Access-Control-Allow-Origin"] = origin; headers["Vary"] = "Origin"; }
+  return headers;
+}
+function jsonResponse(body: unknown, env: Env, origin: string | null): Response { return Response.json(body, { headers: corsHeaders(env, origin) }); }
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     const parts = url.pathname.split("/").filter(Boolean);
-    if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders() });
-    if (parts[0] === "health" || parts[0] === "healthz") return jsonResponse({ ok: true });
-    if (parts[0] === "presence" && parts[1]) return env.AUTHORITY_ROOMS.get(env.AUTHORITY_ROOMS.idFromName(parts[1])).fetch(request);
+    const origin = request.headers.get("Origin");
+    if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(env, origin) });
+    if (parts[0] === "health" || parts[0] === "healthz") return jsonResponse({ ok: true }, env, origin);
+    if (parts[0] === "presence" && parts[1]) {
+      if (!originAllowed(env.ALLOWED_ORIGINS, origin)) return new Response("Forbidden origin", { status: 403 });
+      return env.AUTHORITY_ROOMS.get(env.AUTHORITY_ROOMS.idFromName(parts[1])).fetch(request);
+    }
     if ((parts[0] === "authority" || parts[0] === "consumer") && parts[1]) {
       if (request.headers.get("Upgrade") !== "websocket") return new Response("Expected WebSocket", { status: 426 });
+      if (!originAllowed(env.ALLOWED_ORIGINS, origin)) return new Response("Forbidden origin", { status: 403 });
       return env.AUTHORITY_ROOMS.get(env.AUTHORITY_ROOMS.idFromName(parts[1])).fetch(request);
     }
     return new Response("Varco opaque bridge", { status: 200 });
@@ -57,7 +71,7 @@ export class AuthorityRoom implements DurableObject {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const parts = url.pathname.split("/").filter(Boolean);
-    if (parts[0] === "presence") return jsonResponse({ online: this.findAuthority() !== null });
+    if (parts[0] === "presence") return jsonResponse({ online: this.findAuthority() !== null }, this.env, request.headers.get("Origin"));
     if (parts[0] === "authority") return this.acceptAuthority(parts[1]);
     if (parts[0] === "consumer") return this.acceptConsumer();
     return new Response("Not found", { status: 404 });
