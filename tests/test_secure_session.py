@@ -8,6 +8,7 @@ from custom_components.varco.crypto import (
     SecureServerSession,
     b64url_decode,
     b64url_encode,
+    canonical_json,
     challenge_payload,
     generate_authority_keypair,
     sign_authenticate,
@@ -88,6 +89,75 @@ def test_challenge_signature_is_domain_separated():
         signature,
         b"varco-server-hello-v1\0" + b64url_decode(nonce),
     )
+
+
+def test_server_hello_signature_covers_handshake_transcript():
+    authority = generate_authority_keypair()
+    client_private = ec.generate_private_key(ec.SECP256R1())
+    client_pub_der = client_private.public_key().public_bytes(
+        serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
+    )
+    _, hello = SecureServerSession.from_client_hello(
+        authority["private_key"], authority["authority_id"], b64url_encode(client_pub_der)
+    )
+    assert hello["type"] == "server_hello"
+    transcript = b"varco-server-hello-v1\0" + client_pub_der + b"\0" + b64url_decode(hello["server_pub"])
+    assert verify_signature(authority["public_key"], hello["signature"], transcript)
+    other_client = ec.generate_private_key(ec.SECP256R1()).public_key().public_bytes(
+        serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
+    )
+    swapped = b"varco-server-hello-v1\0" + other_client + b"\0" + b64url_decode(hello["server_pub"])
+    assert not verify_signature(authority["public_key"], hello["signature"], swapped)
+
+
+def test_decrypt_rejects_tampered_ciphertext():
+    authority = generate_authority_keypair()
+    session, _, client_keys = _client_hello(authority)
+    nonce = (0).to_bytes(12, "big")
+    body = bytearray(AESGCM(client_keys["send"]).encrypt(nonce, b'{"a":1}', None))
+    body[0] ^= 0xFF
+    envelope = {
+        "type": "ciphertext",
+        "nonce": b64url_encode(nonce),
+        "body": b64url_encode(bytes(body)),
+    }
+    with pytest.raises(Exception):
+        session.decrypt(envelope)
+
+
+def test_decrypt_rejects_replayed_envelope():
+    authority = generate_authority_keypair()
+    session, _, client_keys = _client_hello(authority)
+    nonce = (0).to_bytes(12, "big")
+    envelope = {
+        "type": "ciphertext",
+        "nonce": b64url_encode(nonce),
+        "body": b64url_encode(AESGCM(client_keys["send"]).encrypt(nonce, b'{"a":1}', None)),
+    }
+    assert session.decrypt(envelope) == {"a": 1}
+    with pytest.raises(ValueError):
+        session.decrypt(envelope)
+
+
+def test_roundtrip_large_payloads_advance_counters():
+    authority = generate_authority_keypair()
+    session, _, client_keys = _client_hello(authority)
+    aes = AESGCM(client_keys["send"])
+    for counter in range(2):
+        payload = {"data": "x" * 200_000, "seq": counter}
+        nonce = counter.to_bytes(12, "big")
+        envelope = {
+            "type": "ciphertext",
+            "nonce": b64url_encode(nonce),
+            "body": b64url_encode(aes.encrypt(nonce, canonical_json(payload), None)),
+        }
+        assert session.decrypt(envelope) == payload
+        reply = session.encrypt(payload)
+        assert b64url_decode(reply["nonce"]) == nonce
+        decrypted = AESGCM(client_keys["recv"]).decrypt(
+            b64url_decode(reply["nonce"]), b64url_decode(reply["body"]), None
+        )
+        assert decrypted == canonical_json(payload)
 
 
 def test_decrypt_rejects_out_of_order_nonce():
