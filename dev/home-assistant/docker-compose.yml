@@ -1,6 +1,7 @@
 services:
   homeassistant:
-    image: ghcr.io/home-assistant/home-assistant:${HOME_ASSISTANT_VERSION:-2026.6.1}
+    # Default pinned to Home Assistant 2026.6.1 by multi-arch index digest for reproducible deploys.
+    image: ghcr.io/home-assistant/home-assistant:${HOME_ASSISTANT_VERSION:-2026.6.1@sha256:59aa8824955c9db491b75d2eebe42bd68494f80c2ec69ec0d66d9dae37d37514}
     container_name: varco-ha-showcase
     restart: unless-stopped
     ports:
