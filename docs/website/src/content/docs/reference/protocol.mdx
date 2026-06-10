@@ -31,6 +31,10 @@ Errors use:
 }
 ```
 
+## Data-plane rate limits
+
+The Authority enforces an in-memory per-consumer rate budget on all authenticated data-plane operations (default 240 weight units per 60 seconds). Each operation costs 1 unit, except `history_query` and `camera_snapshot` (5 units) and `call_service` (2 units). Requests over budget return an error with `code: "rate_limited"` and are audited as `rate_limited` without sensitive payloads.
+
 ## Restriction-aware requests
 
 Approved grants may include owner-managed restrictions. These are evaluated only by the Home Assistant Authority, after the normal grant scope check, in declaration order (fail-fast).
