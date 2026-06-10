@@ -537,3 +537,150 @@ def test_two_restrictions_both_pass_allows_the_action():
         assert len(hass.services.calls) == 1
 
     asyncio.run(run())
+
+
+# Template restriction tests
+
+
+class TemplateHass(FakeHass):
+    def __init__(self):
+        super().__init__()
+        self.template_result = "True"
+        self.rendered = []
+
+    async def varco_render_template(self, value_template):
+        self.rendered.append(value_template)
+        if isinstance(self.template_result, Exception):
+            raise self.template_result
+        return self.template_result
+
+
+async def paired_template_authority(manifest):
+    authority, store, _, grant = await paired_authority(manifest)
+    hass = TemplateHass()
+    authority.hass = hass
+    return authority, store, hass, grant
+
+
+def test_template_restriction_allows_when_template_is_truthy():
+    async def run():
+        authority, store, hass, grant = await paired_template_authority(
+            {"name": "Demo", "version": "1", "actions": ["light.turn_on@light.cucina"]}
+        )
+        await set_restrictions(store, grant, [
+            {
+                "id": "alarm-disarmed",
+                "type": "template",
+                "enabled": True,
+                "applies_to": "light.turn_on@light.cucina",
+                "params": {"value_template": "{{ is_state('alarm_control_panel.home_alarm', 'disarmed') }}"},
+            },
+        ])
+        result = await authority.handle_plaintext("s1", {
+            "type": "call_service", "domain": "light", "service": "turn_on",
+            "target": {"entity_id": "light.cucina"},
+        })
+        assert result["type"] == "service_called"
+        assert hass.rendered == ["{{ is_state('alarm_control_panel.home_alarm', 'disarmed') }}"]
+
+    asyncio.run(run())
+
+
+def test_template_restriction_denies_when_template_is_falsy():
+    async def run():
+        authority, store, hass, grant = await paired_template_authority(
+            {"name": "Demo", "version": "1", "actions": ["light.turn_on@light.cucina"]}
+        )
+        hass.template_result = "False"
+        await set_restrictions(store, grant, [
+            {
+                "id": "alarm-disarmed",
+                "type": "template",
+                "enabled": True,
+                "applies_to": "light.turn_on@light.cucina",
+                "params": {"value_template": "{{ is_state('alarm_control_panel.home_alarm', 'disarmed') }}"},
+            },
+        ])
+        denied = await authority.handle_plaintext("s1", {
+            "type": "call_service", "domain": "light", "service": "turn_on",
+            "target": {"entity_id": "light.cucina"},
+        })
+        assert denied["code"] == "permission_denied"
+        assert "template_denied" in denied["message"]
+        assert len(hass.services.calls) == 0
+        events = await store.async_audit_events()
+        assert events[-1]["event"] == "restriction_denied"
+        assert events[-1]["details"]["restriction_id"] == "alarm-disarmed"
+        assert events[-1]["details"]["reason"] == "template_denied"
+
+    asyncio.run(run())
+
+
+def test_template_restriction_fails_closed_on_template_error_without_leaking_details():
+    async def run():
+        authority, store, hass, grant = await paired_template_authority(
+            {"name": "Demo", "version": "1", "read_entities": ["sensor.temp"]}
+        )
+        hass.template_result = ValueError("state of sensor.secret is 42")
+        await set_restrictions(store, grant, [
+            {
+                "id": "broken-template",
+                "type": "template",
+                "enabled": True,
+                "applies_to": "read",
+                "params": {"value_template": "{{ broken("},
+            },
+        ])
+        denied = await authority.handle_plaintext("s1", {"type": "get_states", "entity_ids": ["sensor.temp"]})
+        assert denied["code"] == "permission_denied"
+        assert "template_error" in denied["message"]
+        events = await store.async_audit_events()
+        assert events[-1]["event"] == "restriction_denied"
+        assert events[-1]["details"]["reason"] == "template_error"
+        leak_scope = str([event["details"] for event in events])
+        assert "sensor.secret" not in leak_scope
+        assert "42" not in leak_scope
+
+    asyncio.run(run())
+
+
+def test_template_restriction_denies_when_template_missing():
+    async def run():
+        authority, store, hass, grant = await paired_template_authority(
+            {"name": "Demo", "version": "1", "read_entities": ["sensor.temp"]}
+        )
+        await set_restrictions(store, grant, [
+            {"id": "empty-template", "type": "template", "enabled": True, "applies_to": "read", "params": {}},
+        ])
+        denied = await authority.handle_plaintext("s1", {"type": "get_states", "entity_ids": ["sensor.temp"]})
+        assert denied["code"] == "permission_denied"
+        assert "template_not_configured" in denied["message"]
+        assert hass.rendered == []
+
+    asyncio.run(run())
+
+
+def test_template_restriction_only_applies_to_matching_operations():
+    async def run():
+        authority, store, hass, grant = await paired_template_authority(
+            {"name": "Demo", "version": "1", "read_entities": ["sensor.temp"], "actions": ["light.turn_on@light.cucina"]}
+        )
+        hass.template_result = "False"
+        await set_restrictions(store, grant, [
+            {
+                "id": "actions-only",
+                "type": "template",
+                "enabled": True,
+                "applies_to": "actions",
+                "params": {"value_template": "{{ false }}"},
+            },
+        ])
+        read = await authority.handle_plaintext("s1", {"type": "get_states", "entity_ids": ["sensor.temp"]})
+        denied = await authority.handle_plaintext("s1", {
+            "type": "call_service", "domain": "light", "service": "turn_on",
+            "target": {"entity_id": "light.cucina"},
+        })
+        assert read["type"] == "states"
+        assert denied["code"] == "permission_denied"
+
+    asyncio.run(run())

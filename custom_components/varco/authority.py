@@ -18,6 +18,7 @@ from .policy import (
     history_entities,
     rate_limit_restrictions,
     read_entities,
+    template_restrictions,
     subscription_entities,
 )
 from .storage import MemoryVarcoStore
@@ -425,6 +426,11 @@ class VarcoAuthority:
         if not decision.allowed:
             await self._audit_restriction_denied(grant, operation, decision.restriction_id, decision.reason)
             return self._error(message.get("request_id"), "permission_denied", f"Restriction denied: {decision.reason}")
+        template_decision = await self._check_template_restrictions(grant, operation, context)
+        if template_decision is not None:
+            restriction_id, reason = template_decision
+            await self._audit_restriction_denied(grant, operation, restriction_id, reason)
+            return self._error(message.get("request_id"), "permission_denied", f"Restriction denied: {reason}")
         rate_decision = self._check_and_record_rate_limits(grant, operation, context)
         if rate_decision is not None:
             restriction_id, reason = rate_decision
@@ -453,6 +459,37 @@ class VarcoAuthority:
         for _, hits in to_record:
             hits.append(now)
         return None
+
+    async def _check_template_restrictions(self, grant: Grant, operation: str, context: dict[str, Any]) -> tuple[str, str] | None:
+        for restriction in template_restrictions(grant, operation, context):
+            restriction_id = str(restriction.get("id") or "template")
+            params = restriction.get("params") if isinstance(restriction.get("params"), dict) else {}
+            value_template = params.get("value_template") or restriction.get("value_template")
+            if not isinstance(value_template, str) or not value_template.strip():
+                return restriction_id, "template_not_configured"
+            try:
+                result = await self._render_template(value_template)
+            except Exception:
+                # Fail closed; never log the template result or exception details,
+                # which may contain entity states.
+                return restriction_id, "template_error"
+            if not self._template_result_truthy(result):
+                return restriction_id, "template_denied"
+        return None
+
+    async def _render_template(self, value_template: str) -> Any:
+        if self.hass is not None and hasattr(self.hass, "varco_render_template"):
+            return await self.hass.varco_render_template(value_template)
+        if self.hass is None:
+            raise RuntimeError("template_evaluation_unavailable")
+        from homeassistant.helpers.template import Template
+
+        return Template(value_template, self.hass).async_render(parse_result=False)
+
+    def _template_result_truthy(self, result: Any) -> bool:
+        if isinstance(result, str):
+            return result.strip().lower() in {"1", "true", "yes", "on"}
+        return bool(result)
 
     async def _audit_restriction_denied(self, grant: Grant, operation: str, restriction_id: str | None, reason: str | None) -> None:
         await audit.async_log(

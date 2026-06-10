@@ -200,8 +200,9 @@ def _evaluate_restriction(restriction: dict[str, Any], context: dict[str, Any], 
             return RestrictionDecision(False, restriction_id, "invalid_pin")
         return RestrictionDecision(True)
 
-    # Stateful rate limits are evaluated by VarcoAuthority after stateless checks.
-    if typ in {"rate_limit", "cooldown"}:
+    # Stateful rate limits and hass-bound template conditions are evaluated by
+    # VarcoAuthority after stateless checks.
+    if typ in {"rate_limit", "cooldown", "template"}:
         return RestrictionDecision(True)
 
     return RestrictionDecision(False, restriction_id, "unknown_restriction_type")
@@ -220,6 +221,18 @@ def rate_limit_restrictions(grant: Grant, operation: str, context: dict[str, Any
         if not restriction.get("enabled", True):
             continue
         if str(restriction.get("type") or "").lower() not in {"rate_limit", "cooldown"}:
+            continue
+        if restriction_matches(restriction, operation, context):
+            matches.append(restriction)
+    return matches
+
+
+def template_restrictions(grant: Grant, operation: str, context: dict[str, Any]) -> list[dict[str, Any]]:
+    matches = []
+    for restriction in grant.restrictions:
+        if not restriction.get("enabled", True):
+            continue
+        if str(restriction.get("type") or "").lower() != "template":
             continue
         if restriction_matches(restriction, operation, context):
             matches.append(restriction)

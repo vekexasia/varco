@@ -100,6 +100,21 @@ Implemented restriction types:
 - `schedule`: allow only on configured `days` (lowercase three-letter abbreviations: `mon`–`sun`), `start_time`, and `end_time` (both `HH:MM`).
 - `pin`: require a matching request PIN. PINs are stored hashed with pbkdf2_sha256; owners can change or remove them but not retrieve the plaintext.
 - `rate_limit`: limit matching operations with `limit` and `window_seconds`. An optional `cooldown_seconds` enforces a minimum gap between consecutive operations.
+- `template` (advanced): allow only when `params.value_template`, a Home Assistant Jinja2 template, renders truthy (`true`, `1`, `yes`, `on`). The template is evaluated only inside the Home Assistant Authority via `homeassistant.helpers.template`; the consumer and bridge never see it. A missing template, a render error, or a falsy result denies the operation (fail closed), audited as `template_not_configured`, `template_error`, or `template_denied` without the template result.
+
+Example template restriction that allows unlocking the front door only while the alarm is disarmed:
+
+```json
+{
+  "id": "alarm-disarmed",
+  "enabled": true,
+  "type": "template",
+  "applies_to": "lock.unlock@lock.front_door",
+  "params": {
+    "value_template": "{{ is_state('alarm_control_panel.home_alarm', 'disarmed') }}"
+  }
+}
+```
 
 For service calls protected by a PIN, the consumer sends either a top-level `pin` for the matching restriction or a `pins` object keyed by restriction id:
 
