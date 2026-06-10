@@ -5,6 +5,8 @@ from typing import Any
 from .const import STORAGE_KEY, STORAGE_VERSION
 from .models import AccessRequest, AccessStatus, Grant, utcnow
 
+MAX_PENDING_ACCESS_REQUESTS = 50
+
 
 class MemoryVarcoStore:
     def __init__(self) -> None:
@@ -23,7 +25,19 @@ class MemoryVarcoStore:
     async def async_upsert_access_request(self, request: AccessRequest) -> None:
         data = await self.async_load_data()
         data["access_requests"][request.request_id] = request.as_dict()
+        pending = [rid for rid, raw in data["access_requests"].items() if raw.get("status") == AccessStatus.PENDING]
+        if len(pending) > MAX_PENDING_ACCESS_REQUESTS:
+            pending.sort(key=lambda rid: data["access_requests"][rid].get("created_at") or "")
+            for rid in pending[: len(pending) - MAX_PENDING_ACCESS_REQUESTS]:
+                data["access_requests"].pop(rid, None)
         await self.async_save_data(data)
+
+    async def async_get_pending_request_by_consumer(self, consumer_pk: str) -> AccessRequest | None:
+        data = await self.async_load_data()
+        for raw in data["access_requests"].values():
+            if raw.get("consumer_pk") == consumer_pk and raw.get("status") == AccessStatus.PENDING:
+                return AccessRequest.from_dict(raw)
+        return None
 
     async def async_get_access_request(self, request_id: str) -> AccessRequest | None:
         raw = (await self.async_load_data())["access_requests"].get(request_id)
