@@ -98,6 +98,26 @@ def test_call_service_supports_three_action_scope_granularities_and_rejects_othe
     asyncio.run(run())
 
 
+def test_domain_wildcard_scope_rejects_cross_domain_entities_and_defines_entity_less_calls():
+    async def run():
+        authority, _, hass, _ = await paired_authority({
+            "name": "Demo",
+            "version": "1",
+            "actions": ["switch.*", "light.turn_on@light.cucina"],
+        })
+        denied = await authority.handle_plaintext("s1", {"type": "call_service", "domain": "switch", "service": "turn_off", "target": {"entity_id": "lock.porta"}})
+        assert denied["code"] == "permission_denied"
+        mixed = await authority.handle_plaintext("s1", {"type": "call_service", "domain": "switch", "service": "turn_off", "target": {"entity_id": ["switch.pc", "lock.porta"]}})
+        assert mixed["code"] == "permission_denied"
+        assert len(hass.services.calls) == 0
+        entity_less = await authority.handle_plaintext("s1", {"type": "call_service", "domain": "switch", "service": "turn_off"})
+        assert entity_less["type"] == "service_called"
+        entity_less_denied = await authority.handle_plaintext("s1", {"type": "call_service", "domain": "light", "service": "turn_on"})
+        assert entity_less_denied["code"] == "permission_denied"
+        assert len(hass.services.calls) == 1
+    asyncio.run(run())
+
+
 def test_history_camera_and_revocation_are_enforced_per_message():
     async def run():
         authority, _, _, grant = await paired_authority({
