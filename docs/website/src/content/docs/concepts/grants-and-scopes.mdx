@@ -47,6 +47,8 @@ Meaning:
 - `light.*`: allow any service in the `light` domain, but only when the targeted entities also belong to the `light` domain, or when the call has no entity target. An entity-less call may affect every entity in the domain, depending on the service.
 - `*@cover.awning`: allow any service targeting one entity, including services from other domains.
 
+Service calls may also target `area_id`, `device_id`, or `label_id`. The Authority resolves those targets to entity IDs through the Home Assistant area, device, entity, and label registries, then checks every resolved entity against the action scopes. The call is denied if any resolved entity is not authorized, or if a target cannot be resolved (unknown ID, registries unavailable). When all resolved entities pass, the original target is forwarded unchanged so Home Assistant performs its own resolution.
+
 ## Runtime subscriptions
 
 A grant defines the maximum allowed scope. A runtime subscription defines the current subset of entities the consumer wants to observe.

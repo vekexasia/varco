@@ -1,5 +1,8 @@
 import asyncio
+import types
+from contextlib import contextmanager
 
+import custom_components.varco.authority as authority_module
 from custom_components.varco.authority import VarcoAuthority
 from custom_components.varco.crypto import b64url_encode, generate_consumer_keypair, sign_access_request, sign_authenticate
 from custom_components.varco.storage import MemoryVarcoStore
@@ -408,4 +411,79 @@ def test_data_plane_rate_limit_is_per_consumer():
         assert auth["type"] == "authenticated"
         ok2 = await authority_a.handle_plaintext("s2", {"type": "get_states", "request_id": "b1", "entity_ids": ["sensor.temp"]})
         assert ok2["type"] == "states"
+    asyncio.run(run())
+
+
+@contextmanager
+def fake_registries(areas=(), devices=(), labels=(), area_entities=None, device_entities=None, label_entities=None, area_devices=None, label_devices=None):
+    area_entities = area_entities or {}
+    device_entities = device_entities or {}
+    label_entities = label_entities or {}
+    area_devices = area_devices or {}
+    label_devices = label_devices or {}
+
+    def entries(ids):
+        return [types.SimpleNamespace(entity_id=i, id=i) for i in ids]
+
+    area_reg = types.SimpleNamespace(async_get_area=lambda area_id: area_id if area_id in areas else None)
+    dev_reg = types.SimpleNamespace(async_get=lambda device_id: device_id if device_id in devices else None)
+    label_reg = types.SimpleNamespace(async_get_label=lambda label_id: label_id if label_id in labels else None)
+    ent_reg = types.SimpleNamespace()
+
+    area_registry = types.SimpleNamespace(async_get=lambda hass: area_reg)
+    device_registry = types.SimpleNamespace(
+        async_get=lambda hass: dev_reg,
+        async_entries_for_area=lambda reg, area_id: entries(area_devices.get(area_id, [])),
+        async_entries_for_label=lambda reg, label_id: entries(label_devices.get(label_id, [])),
+    )
+    entity_registry = types.SimpleNamespace(
+        async_get=lambda hass: ent_reg,
+        async_entries_for_area=lambda reg, area_id: entries(area_entities.get(area_id, [])),
+        async_entries_for_label=lambda reg, label_id: entries(label_entities.get(label_id, [])),
+        async_entries_for_device=lambda reg, device_id, include_disabled_entities=False: entries(device_entities.get(device_id, [])),
+    )
+    label_registry = types.SimpleNamespace(async_get=lambda hass: label_reg)
+
+    original = authority_module._registry_modules
+    authority_module._registry_modules = lambda: (area_registry, device_registry, entity_registry, label_registry)
+    try:
+        yield
+    finally:
+        authority_module._registry_modules = original
+
+
+def test_call_service_resolves_area_device_and_label_targets_against_entity_scopes():
+    async def run():
+        authority, _, hass, _ = await paired_authority({
+            "name": "Demo",
+            "version": "1",
+            "actions": ["light.turn_on@light.cucina", "light.turn_on@light.salotto"],
+        })
+        with fake_registries(
+            areas={"cucina"},
+            devices={"dev1"},
+            labels={"mood"},
+            area_entities={"cucina": ["light.cucina"]},
+            area_devices={"cucina": ["dev1"]},
+            device_entities={"dev1": ["light.salotto"]},
+            label_entities={"mood": ["light.cucina", "lock.porta"]},
+        ):
+            # Area resolving (directly and via its device) to authorized entities: allowed.
+            ok = await authority.handle_plaintext("s1", {"type": "call_service", "domain": "light", "service": "turn_on", "target": {"area_id": "cucina"}})
+            assert ok["type"] == "service_called"
+            # Original target is forwarded untouched so HA does its own resolution.
+            assert hass.services.calls[-1][3] == {"area_id": "cucina"}
+            # Device target resolving to an authorized entity: allowed.
+            ok = await authority.handle_plaintext("s1", {"type": "call_service", "domain": "light", "service": "turn_on", "target": {"device_id": "dev1"}})
+            assert ok["type"] == "service_called"
+            # Label resolving to a mix with one unauthorized entity: denied.
+            denied = await authority.handle_plaintext("s1", {"type": "call_service", "domain": "light", "service": "turn_on", "target": {"label_id": "mood"}})
+            assert denied["code"] == "permission_denied"
+            # Unknown area id is unresolvable: denied.
+            denied = await authority.handle_plaintext("s1", {"type": "call_service", "domain": "light", "service": "turn_on", "target": {"area_id": "sconosciuta"}})
+            assert denied["code"] == "permission_denied"
+            # Mixed entity + area target checks the union: denied when the entity part fails.
+            denied = await authority.handle_plaintext("s1", {"type": "call_service", "domain": "light", "service": "turn_on", "target": {"entity_id": "lock.porta", "area_id": "cucina"}})
+            assert denied["code"] == "permission_denied"
+            assert len(hass.services.calls) == 2
     asyncio.run(run())
