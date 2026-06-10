@@ -96,6 +96,7 @@ class Grant:
     revoked_at: str | None = None
     expires_at: str | None = None
     renewed_at: str | None = None
+    last_used_at: str | None = None
     restrictions: list[dict[str, Any]] = field(default_factory=list)
 
     @classmethod
@@ -110,6 +111,7 @@ class Grant:
             revoked_at=data.get("revoked_at"),
             expires_at=data.get("expires_at"),
             renewed_at=data.get("renewed_at"),
+            last_used_at=data.get("last_used_at"),
             restrictions=[dict(item) for item in data.get("restrictions") or [] if isinstance(item, dict)],
         )
 

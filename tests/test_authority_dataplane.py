@@ -487,3 +487,61 @@ def test_call_service_resolves_area_device_and_label_targets_against_entity_scop
             assert denied["code"] == "permission_denied"
             assert len(hass.services.calls) == 2
     asyncio.run(run())
+
+
+def test_authenticate_records_last_used_at_on_grant():
+    async def run():
+        authority, store, _, grant = await paired_authority({"name": "Demo", "version": "1", "read_entities": ["sensor.temp"]})
+        stored = await store.async_get_grant(grant.grant_id)
+        assert stored.last_used_at is not None
+        # A grant that has never authenticated stays at last_used_at None
+        fresh = generate_consumer_keypair()
+        manifest = {"name": "Orphan", "version": "1", "read_entities": ["sensor.temp"]}
+        pending = await authority.handle_plaintext("s2", {
+            "type": "access_request",
+            "consumer_pk": fresh["public_key"],
+            "manifest": manifest,
+            "nonce": "fresh-nonce",
+            "signature": sign_access_request(fresh["private_key"], "fresh-nonce", manifest),
+        })
+        orphan_grant = await authority.approve_request(pending["access_request_id"])
+        assert (await store.async_get_grant(orphan_grant.grant_id)).last_used_at is None
+    asyncio.run(run())
+
+
+def test_lost_identity_can_repair_with_new_key_and_owner_deletes_orphan():
+    async def run():
+        # Consumer pairs, then loses browser storage: a new keypair is generated.
+        authority, store, _, old_grant = await paired_authority({"name": "Demo", "version": "1", "read_entities": ["sensor.temp"]})
+        new_consumer = generate_consumer_keypair()
+        manifest = {"name": "Demo", "version": "1", "read_entities": ["sensor.temp"]}
+        # Old grant does not authenticate the new key.
+        denied = await authority.handle_plaintext("s2", channel_binding=TEST_BINDING, message={
+            "type": "authenticate",
+            "consumer_pk": new_consumer["public_key"],
+            "nonce": "n2",
+            "signature": sign_authenticate(new_consumer["private_key"], "n2", TEST_BINDING),
+        })
+        assert denied["code"] == "not_authorized"
+        # Re-pair: new access_request with the new key, owner approves.
+        pending = await authority.handle_plaintext("s2", {
+            "type": "access_request",
+            "consumer_pk": new_consumer["public_key"],
+            "manifest": manifest,
+            "nonce": "n3",
+            "signature": sign_access_request(new_consumer["private_key"], "n3", manifest),
+        })
+        new_grant = await authority.approve_request(pending["access_request_id"])
+        auth = await authority.handle_plaintext("s2", channel_binding=TEST_BINDING, message={
+            "type": "authenticate",
+            "consumer_pk": new_consumer["public_key"],
+            "nonce": "n4",
+            "signature": sign_authenticate(new_consumer["private_key"], "n4", TEST_BINDING),
+        })
+        assert auth["type"] == "authenticated"
+        assert auth["grant_id"] == new_grant.grant_id
+        # Owner spots the orphaned grant (stale last_used_at) and deletes it.
+        await authority.delete_grant(old_grant.grant_id)
+        grants = await store.async_list_grants()
+        assert [g.grant_id for g in grants] == [new_grant.grant_id]
+    asyncio.run(run())
