@@ -19,6 +19,12 @@ export function b64urlEncode(bytes: Uint8Array): string {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
+export function parseLimit(raw: string | undefined, fallback: number): number {
+  if (typeof raw !== "string") return fallback;
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
 export function validAuthorityId(value: string): boolean { try { return b64urlDecode(value).length === 32; } catch { return false; } }
 
 export function isAuthedAuthority(state: SocketState | null): boolean { return state?.role === "authority" && state.authed === true; }
