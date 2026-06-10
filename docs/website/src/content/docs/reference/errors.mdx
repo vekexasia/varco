@@ -8,6 +8,7 @@ Known error codes include:
 | Code | Meaning |
 | --- | --- |
 | `bad_signature` | The request signature did not verify. |
+| `invalid_manifest` | The access request manifest failed strict validation, for example missing `name`, non-string scope entries, or conflicting `read_entities`/`readEntities` aliases. |
 | `not_authorized` | No active authorization allowed the operation. |
 | `not_authenticated` | The session has not authenticated yet. |
 | `grant_revoked` | The matching grant was revoked. |

@@ -5,10 +5,12 @@ export type VarcoManifest = {
   icon?: string;
   version: string;
   read_entities?: string[];
+  /** @deprecated Use `read_entities`. Do not set both: the Authority rejects conflicting aliases. */
   readEntities?: string[];
   subscriptions?: string[];
   history?: string[];
   camera_snapshots?: string[];
+  /** @deprecated Use `camera_snapshots`. Do not set both: the Authority rejects conflicting aliases. */
   cameraSnapshots?: string[];
   actions?: string[];
 };

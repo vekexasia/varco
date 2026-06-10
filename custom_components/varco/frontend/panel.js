@@ -175,17 +175,18 @@ class VarcoPanel extends HTMLElement {
     return item?.manifest?.version || 'not declared';
   }
 
-  readScopes(manifest, snakeName, camelName) {
-    const value = manifest?.[snakeName] || (camelName ? manifest?.[camelName] : undefined) || [];
+  readScopes(manifest, name) {
+    // The Authority normalizes manifests to canonical snake_case before storage.
+    const value = manifest?.[name] || [];
     return Array.isArray(value) ? value.map((item) => String(item)) : [];
   }
 
   scopes(manifest) {
     return {
-      read: this.readScopes(manifest, 'read_entities', 'readEntities'),
+      read: this.readScopes(manifest, 'read_entities'),
       subscriptions: this.readScopes(manifest, 'subscriptions'),
       history: this.readScopes(manifest, 'history'),
-      cameras: this.readScopes(manifest, 'camera_snapshots', 'cameraSnapshots'),
+      cameras: this.readScopes(manifest, 'camera_snapshots'),
       actions: this.readScopes(manifest, 'actions'),
     };
   }

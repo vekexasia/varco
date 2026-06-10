@@ -4,7 +4,14 @@ import { attachDomainHelpers } from "./domain-helpers.js";
 import { RelayTransport } from "./transport.js";
 import type { HassState, VarcoClient, VarcoClientOptions, VarcoTransport, VarcoTransportStatus } from "./types.js";
 
+function assertManifest(manifest: VarcoClientOptions["manifest"]): void {
+  if (!manifest || typeof manifest.name !== "string" || !manifest.name) throw new Error("Varco manifest requires a non-empty name");
+  if (manifest.read_entities && manifest.readEntities) throw new Error("Varco manifest must not set both read_entities and readEntities");
+  if (manifest.camera_snapshots && manifest.cameraSnapshots) throw new Error("Varco manifest must not set both camera_snapshots and cameraSnapshots");
+}
+
 export function createVarcoClient(options: VarcoClientOptions): VarcoClient {
+  assertManifest(options.manifest);
   let identity: ConsumerIdentity | null = loadIdentitySync(options.storage);
   const identityPromise = identity ? Promise.resolve(identity) : loadOrCreateIdentity(options.storage).then((resolved) => { identity = resolved; return resolved; });
   const relayTransport: VarcoTransport = options.transport ?? new RelayTransport(options.bridgeUrl, options.authorityId);

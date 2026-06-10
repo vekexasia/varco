@@ -11,16 +11,14 @@ type VarcoManifest = {
   icon?: string;
   version: string;
   read_entities?: string[];
-  readEntities?: string[];
   subscriptions?: string[];
   history?: string[];
   camera_snapshots?: string[];
-  cameraSnapshots?: string[];
   actions?: string[];
 };
 ```
 
-Use snake_case fields unless you need compatibility with camelCase callers. The current client and Authority accept both `read_entities`/`readEntities` and `camera_snapshots`/`cameraSnapshots`.
+The canonical schema is snake_case. For compatibility with existing consumers, the Authority also accepts the camelCase aliases `readEntities` and `cameraSnapshots` on the wire, then normalizes the stored manifest to snake_case (`custom_components/varco/manifest.py`, `validate_manifest`). A manifest that sets both spellings of the same field (for example `read_entities` and `readEntities`) is rejected with the `invalid_manifest` error code; neither value is silently dropped. The Authority also requires a non-empty string `name` and rejects scope fields that are not arrays of non-empty strings.
 
 ## Read-only dashboard example
 

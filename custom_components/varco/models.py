@@ -9,6 +9,8 @@ from datetime import datetime, timezone
 from enum import StrEnum
 from typing import Any
 
+from .manifest import coerce_manifest
+
 
 def utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -71,7 +73,7 @@ class AccessRequest:
         return cls(
             request_id=data["request_id"],
             consumer_pk=data["consumer_pk"],
-            manifest=dict(data.get("manifest") or {}),
+            manifest=coerce_manifest(dict(data.get("manifest") or {})),
             nonce=data["nonce"],
             pairing_code=data["pairing_code"],
             status=AccessStatus(data.get("status", AccessStatus.PENDING)),
@@ -101,7 +103,7 @@ class Grant:
         return cls(
             grant_id=data["grant_id"],
             consumer_pk=data["consumer_pk"],
-            manifest=dict(data.get("manifest") or {}),
+            manifest=coerce_manifest(dict(data.get("manifest") or {})),
             request_id=data.get("request_id"),
             revoked=bool(data.get("revoked", False)),
             created_at=data.get("created_at") or utcnow(),
