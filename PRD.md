@@ -327,11 +327,11 @@ Nessun import runtime da `ha-share-actions`.
 ## Topologia (IMPORTANTE)
 
 - **Questo repo** (`~/git/personale/varco`) e il checkout HA
-  (`~/homeassistant/homeassistant`) stanno su `192.168.1.116`. NON sono la HA
+  (`~/homeassistant/homeassistant`) stanno su `192.0.2.116`. NON sono la HA
   che gira.
-- **HA reale**: HAOS separato su **`192.168.1.47:8123`**. Scrivere file nel repo
+- **HA reale**: HAOS separato su **`192.0.2.47:8123`**. Scrivere file nel repo
   NON deploya nulla — vanno copiati sull'host .47.
-- **SSH**: `root@192.168.1.47` (porta 22, chiave esistente; shell Alpine
+- **SSH**: `root@192.0.2.47` (porta 22, chiave esistente; shell Alpine
   dell'add-on SSH HAOS — niente docker/python3/hass in quella shell, ma `ha`
   CLI c'è). Config HA in `/config`, custom components in
   `/config/custom_components/`, file statici serviti da `/config/www` → `/local/...`.
@@ -340,13 +340,13 @@ Nessun import runtime da `ha-share-actions`.
 
 ```bash
 # copiare il component sull'host HA
-scp -r custom_components/varco root@192.168.1.47:/config/custom_components/
+scp -r custom_components/varco root@192.0.2.47:/config/custom_components/
 # riavvio richiesto per caricare codice Python nuovo (i reload YAML non bastano)
 ```
 
 Riavvio HA: via MCP `ha_restart(confirm=True)`, poi attendere con un poll:
 ```bash
-until curl -s -m3 -o /dev/null -w '%{http_code}' http://192.168.1.47:8123/ | grep -q 200; do sleep 5; done
+until curl -s -m3 -o /dev/null -w '%{http_code}' http://192.0.2.47:8123/ | grep -q 200; do sleep 5; done
 ```
 Requirements Python del component (es. PyNaCl, aiortc): dichiarati in
 `manifest.json` → HA li installa in pip al primo load. aiortc è pesante:
@@ -356,8 +356,8 @@ verificare che HAOS lo installi senza problemi (potrebbe servire wheel).
 
 - Client statico demo: deploy su Cloudflare Pages (`wrangler pages deploy dist`),
   oppure per test veloci servirlo da HA:
-  `scp dist/* root@192.168.1.47:/config/www/varco/` ->
-  `http://192.168.1.47:8123/local/varco/...`.
+  `scp dist/* root@192.0.2.47:/config/www/varco/` ->
+  `http://192.0.2.47:8123/local/varco/...`.
 - Bridge: Cloudflare Worker, `wrangler deploy` dalla cartella `bridge/`.
 
 ## Accesso HA via API/MCP
@@ -365,7 +365,7 @@ verificare che HAOS lo installi senza problemi (potrebbe servire wheel).
 - Il **long-lived token** è in `~/.claude.json` →
   `mcpServers["home-assistant"].env.HOMEASSISTANT_TOKEN`.
 - Per script Node/Python che parlano col WS API:
-  `ws://192.168.1.47:8123/api/websocket`, auth con quel token. (Pattern di
+  `ws://192.0.2.47:8123/api/websocket`, auth con quel token. (Pattern di
   riferimento: gli script di test della gazzetta-card.)
 - MCP `home-assistant` disponibile in sessione: `ha_call_service`,
   `ha_get_state`, `ha_get_logs(source="error_log")`, `ha_restart`,
