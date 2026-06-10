@@ -16,7 +16,10 @@ export interface Env {
   MAX_CLIENTS_PER_AUTHORITY?: string;
   MAX_MESSAGE_SIZE?: string;
   MAX_MESSAGES_PER_MINUTE?: string;
+  MAX_PENDING_AUTHORITIES?: string;
 }
+
+const AUTH_DEADLINE_MS = 30_000;
 
 function randomId(bytes = 16): string {
   const data = new Uint8Array(bytes);
@@ -60,7 +63,7 @@ export class AuthorityRoom implements DurableObject {
     return new Response("Not found", { status: 404 });
   }
 
-  private acceptAuthority(authorityId: string): Response {
+  private async acceptAuthority(authorityId: string): Promise<Response> {
     if (!validAuthorityId(authorityId)) return new Response("Invalid authority id", { status: 400 });
     const pair = new WebSocketPair();
     const client = pair[0];
@@ -72,9 +75,15 @@ export class AuthorityRoom implements DurableObject {
       server.close(decision.code, decision.reason);
       return websocketResponse(client);
     }
+    const pending = this.state.getWebSockets("authority").filter((ws) => this.getState(ws)?.authed === false);
+    if (pending.length >= limit(this.env, "MAX_PENDING_AUTHORITIES", 4)) {
+      server.close(4429, "Too many pending authorities");
+      return websocketResponse(client);
+    }
     const challenge = randomId(32);
-    this.setState(server, this.newState("authority", { authorityId, challenge, authed: false }));
+    this.setState(server, this.newState("authority", { authorityId, challenge, authed: false, connectedAt: Date.now() }));
     server.send(JSON.stringify({ type: "challenge", nonce: challenge }));
+    if ((await this.state.storage.getAlarm()) === null) await this.state.storage.setAlarm(Date.now() + AUTH_DEADLINE_MS);
     return websocketResponse(client);
   }
 
@@ -106,6 +115,19 @@ export class AuthorityRoom implements DurableObject {
     if (session.role === "authority") this.handleAuthorityMessage(ws, session, parsed.message);
     else this.handleConsumerMessage(session, parsed.message);
     this.setState(ws, session);
+  }
+
+  async alarm(): Promise<void> {
+    const now = Date.now();
+    let nextDeadline: number | null = null;
+    for (const ws of this.state.getWebSockets("authority")) {
+      const session = this.getState(ws);
+      if (!session || session.authed) continue;
+      const deadline = (session.connectedAt ?? 0) + AUTH_DEADLINE_MS;
+      if (deadline <= now) ws.close(4408, "Auth timeout");
+      else if (nextDeadline === null || deadline < nextDeadline) nextDeadline = deadline;
+    }
+    if (nextDeadline !== null) await this.state.storage.setAlarm(nextDeadline);
   }
 
   webSocketClose(ws: WebSocket): void { this.closeSocket(ws); }

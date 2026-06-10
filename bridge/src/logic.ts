@@ -3,7 +3,7 @@
 import { ed25519 } from "@noble/curves/ed25519";
 
 export type Role = "authority" | "consumer";
-export type SocketState = { role: Role; authed?: boolean; sessionId?: string; challenge?: string; authorityId?: string; windowStart: number; messagesInWindow: number };
+export type SocketState = { role: Role; authed?: boolean; sessionId?: string; challenge?: string; authorityId?: string; connectedAt?: number; windowStart: number; messagesInWindow: number };
 
 export function b64urlDecode(value: string): Uint8Array {
   const normalized = value.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (value.length % 4)) % 4);
