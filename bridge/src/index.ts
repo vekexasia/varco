@@ -7,6 +7,7 @@ import {
   consumerConnectDecision,
   disconnectAction,
   gateMessage,
+  parseLimit,
   parseMessage,
   validAuthorityId,
 } from "./logic";
@@ -28,8 +29,7 @@ function randomId(bytes = 16): string {
 }
 
 function limit(env: Env, key: keyof Env, fallback: number): number {
-  const raw = env[key];
-  return typeof raw === "string" ? Number(raw) : fallback;
+  return parseLimit(env[key] as string | undefined, fallback);
 }
 
 function websocketResponse(server: WebSocket): Response { return new Response(null, { status: 101, webSocket: server }); }
