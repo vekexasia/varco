@@ -41,11 +41,12 @@ export function createVarcoClient(options: VarcoClientOptions): VarcoClient {
     async connect() {
       const id = await identityPromise;
       const nonce = randomId(12);
+      const binding = (await (relayTransport as { channelBinding?: () => Promise<string> }).channelBinding?.()) ?? "";
       await relayTransport.request({
         type: "authenticate",
         consumer_pk: id.publicKey,
         nonce,
-        signature: await signAuthenticate(id, nonce),
+        signature: await signAuthenticate(id, nonce, binding),
       });
       setStatus({ mode: "relay", detail: "relay authenticated" });
       if (options.webrtc !== false) {

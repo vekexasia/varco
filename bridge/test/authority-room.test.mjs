@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { ed25519 } from '@noble/curves/ed25519';
 import {
   authorityConnectDecision,
+  challengePayload,
   authorityMessageAction,
   b64urlEncode,
   consumerConnectDecision,
@@ -21,9 +22,16 @@ function makeAuthoritySession() {
 }
 
 function signChallenge(secretKey, session) {
-  const challengeBytes = Uint8Array.from(atob(session.challenge.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
-  return b64urlEncode(ed25519.sign(challengeBytes, secretKey));
+  return b64urlEncode(ed25519.sign(challengePayload(session.challenge), secretKey));
 }
+
+test('challenge signature is domain-separated from raw nonce bytes', () => {
+  const { secretKey, session } = makeAuthoritySession();
+  const challengeBytes = Uint8Array.from(atob(session.challenge.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
+  const rawSignature = b64urlEncode(ed25519.sign(challengeBytes, secretKey));
+  const action = authorityMessageAction(session, { type: 'auth', signature: rawSignature });
+  assert.deepEqual(action, { kind: 'close', code: 4403, reason: 'Bad signature' });
+});
 
 test('valid Ed25519 challenge response authenticates the authority', () => {
   const { secretKey, session } = makeAuthoritySession();

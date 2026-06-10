@@ -71,12 +71,12 @@ class VarcoAuthority:
             expires = expires.replace(tzinfo=timezone.utc)
         return self.now_provider() >= expires
 
-    async def handle_plaintext(self, session_id: str, message: dict[str, Any]) -> dict[str, Any]:
+    async def handle_plaintext(self, session_id: str, message: dict[str, Any], channel_binding: str | None = None) -> dict[str, Any]:
         typ = message.get("type")
         if typ == "access_request":
             return await self._access_request(session_id, message)
         if typ == "authenticate":
-            return await self._authenticate(session_id, message)
+            return await self._authenticate(session_id, message, channel_binding)
 
         grant = await self._require_grant(session_id, message.get("request_id"))
         if isinstance(grant, dict):
@@ -219,11 +219,14 @@ class VarcoAuthority:
                 await result
         return {"type": "access_request_pending", "request_id": request.request_id, "pairing_code": request.pairing_code, "status": "pending"}
 
-    async def _authenticate(self, session_id: str, message: dict[str, Any]) -> dict[str, Any]:
+    async def _authenticate(self, session_id: str, message: dict[str, Any], channel_binding: str | None) -> dict[str, Any]:
         consumer_pk = str(message.get("consumer_pk") or "")
         nonce = str(message.get("nonce") or "")
         signature = str(message.get("signature") or "")
-        if not verify_authenticate(consumer_pk, nonce, signature):
+        if channel_binding is None:
+            await audit.async_log(self.store, "session_error", details={"reason": "authenticate_without_channel_binding"})
+            return self._error(message.get("request_id"), "bad_signature", "Authentication requires a secure channel")
+        if not verify_authenticate(consumer_pk, nonce, signature, channel_binding):
             await audit.async_log(self.store, "session_error", details={"reason": "bad_authenticate_signature"})
             return self._error(message.get("request_id"), "bad_signature", "Invalid authentication signature")
         grant = await self.store.async_get_grant_by_consumer(consumer_pk)

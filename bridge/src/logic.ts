@@ -58,10 +58,19 @@ export type AuthorityAction =
   | { kind: "close_consumer"; sessionId: string; reason: string }
   | { kind: "none" };
 
+export function challengePayload(challenge: string): Uint8Array {
+  const prefix = new TextEncoder().encode("varco-bridge-challenge-v1\0");
+  const nonce = b64urlDecode(challenge);
+  const out = new Uint8Array(prefix.length + nonce.length);
+  out.set(prefix);
+  out.set(nonce, prefix.length);
+  return out;
+}
+
 export function authorityMessageAction(session: SocketState, message: any): AuthorityAction {
   if (!session.authed) {
     if (message.type !== "auth" || !session.challenge || !session.authorityId || typeof message.signature !== "string") return { kind: "close", code: 4401, reason: "Auth required" };
-    if (!ed25519.verify(b64urlDecode(message.signature), b64urlDecode(session.challenge), b64urlDecode(session.authorityId))) return { kind: "close", code: 4403, reason: "Bad signature" };
+    if (!ed25519.verify(b64urlDecode(message.signature), challengePayload(session.challenge), b64urlDecode(session.authorityId))) return { kind: "close", code: 4403, reason: "Bad signature" };
     session.authed = true;
     return { kind: "ready" };
   }
