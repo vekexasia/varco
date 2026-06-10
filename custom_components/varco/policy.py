@@ -23,6 +23,33 @@ def _list(manifest: dict[str, Any], key: str) -> list[str]:
     return []
 
 
+SCOPE_KEY_ALIASES: tuple[tuple[str, ...], ...] = (
+    ("read_entities", "readEntities"),
+    ("subscriptions",),
+    ("history",),
+    ("camera_snapshots", "cameraSnapshots"),
+    ("actions",),
+)
+
+
+def trim_manifest(requested: dict[str, Any], approved: dict[str, Any]) -> dict[str, Any]:
+    """Intersect the requested manifest scope lists with an owner-approved subset.
+
+    Non-scope keys (name, version, ...) are kept from the requested manifest.
+    Approved values not present in the request are dropped; scope categories
+    missing from ``approved`` become empty.
+    """
+
+    trimmed = dict(requested)
+    for keys in SCOPE_KEY_ALIASES:
+        requested_values = _list(requested, *keys)
+        approved_values = set(_list(approved, *keys))
+        for key in keys:
+            trimmed.pop(key, None)
+        trimmed[keys[0]] = [value for value in requested_values if value in approved_values]
+    return trimmed
+
+
 def read_entities(manifest: dict[str, Any]) -> set[str]:
     return set(_list(manifest, "read_entities"))
 

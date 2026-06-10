@@ -131,8 +131,8 @@ class VarcoAuthority:
             return await self._webrtc_ice(grant, message)
         return self._error(message.get("request_id"), "unknown_message", "Unknown message type")
 
-    async def approve_request(self, request_id: str, expires_at: str | None = None) -> Grant:
-        grant = await self.store.async_approve_request(request_id, expires_at=expires_at)
+    async def approve_request(self, request_id: str, expires_at: str | None = None, approved_manifest: dict | None = None) -> Grant:
+        grant = await self.store.async_approve_request(request_id, expires_at=expires_at, approved_manifest=approved_manifest)
         await self._dismiss_notification(request_id)
         await audit.async_log(self.store, "access_request_approved", grant.grant_id)
         return grant

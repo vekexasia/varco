@@ -73,7 +73,7 @@ npm run check
 ## Implementation notes
 
 - Home Assistant stores Varco data through `custom_components/varco/storage.py` under the integration storage key.
-- Access approval is currently atomic: approve or reject the full manifest.
+- Access approval supports partial approval: `varco/approve_request` accepts an optional `approved_manifest` that is intersected with the requested manifest (never widened) via `policy.trim_manifest`.
 - Consumer identity is stored by `@varco/client` in browser storage by default.
 - Action scope syntax is `domain.service@entity_id`, `domain.*`, or `*@entity_id`.
 - Entity scope syntax supports exact entity IDs, `domain.*`, and `*` in policy checks.
