@@ -16,6 +16,8 @@ def _install_homeassistant_stubs():
     persistent_notification = types.ModuleType("homeassistant.components.persistent_notification")
     persistent_notification.async_create = lambda hass, message, title=None, notification_id=None: None
     persistent_notification.async_dismiss = lambda hass, notification_id: None
+    core = types.ModuleType("homeassistant.core")
+    core.callback = lambda func: func
     helpers = types.ModuleType("homeassistant.helpers")
     aiohttp_client = types.ModuleType("homeassistant.helpers.aiohttp_client")
     aiohttp_client.async_get_clientsession = lambda hass: None
@@ -26,10 +28,12 @@ def _install_homeassistant_stubs():
     helpers.aiohttp_client = aiohttp_client
     helpers.config_validation = config_validation
     ha.components = components
+    ha.core = core
     ha.helpers = helpers
     sys.modules["homeassistant"] = ha
     sys.modules["homeassistant.components"] = components
     sys.modules["homeassistant.components.persistent_notification"] = persistent_notification
+    sys.modules["homeassistant.core"] = core
     sys.modules["homeassistant.helpers"] = helpers
     sys.modules["homeassistant.helpers.aiohttp_client"] = aiohttp_client
     sys.modules["homeassistant.helpers.config_validation"] = config_validation
