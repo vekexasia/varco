@@ -8,7 +8,7 @@ from typing import Any, Callable
 
 from . import audit
 from .crypto import new_id, pairing_code, verify_access_request, verify_authenticate
-from .models import AccessRequest, Grant, hash_pin
+from .models import AccessRequest, Grant, hash_pin, utcnow
 from .policy import (
     action_allowed,
     camera_entities,
@@ -237,6 +237,8 @@ class VarcoAuthority:
         grant = await self.store.async_get_grant_by_consumer(consumer_pk)
         if grant is None or grant.revoked or self._is_grant_expired(grant):
             return self._error(message.get("request_id"), "not_authorized", "No active grant")
+        grant.last_used_at = utcnow()
+        await self.store.async_upsert_grant(grant)
         self._session(session_id).consumer_pk = consumer_pk
         await audit.async_log(self.store, "consumer_connected", grant.grant_id, {"consumer_pk": consumer_pk})
         return {"type": "authenticated", "request_id": message.get("request_id"), "grant_id": grant.grant_id, "manifest": grant.manifest}

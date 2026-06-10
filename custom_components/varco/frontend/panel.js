@@ -283,6 +283,7 @@ class VarcoPanel extends HTMLElement {
           <div><span>Name</span><strong>${this.escape(name)}</strong></div>
           <div><span>Version</span><strong>${this.escape(this.manifestVersion(grant))}</strong></div>
           <div><span>Created</span><strong>${this.escape(this.formatDate(grant.created_at))}</strong></div>
+          <div><span>Last used</span><strong>${grant.last_used_at ? this.escape(this.formatDate(grant.last_used_at)) : 'never'}</strong></div>
           ${revoked ? `<div><span>Revoked</span><strong>${this.escape(this.formatDate(grant.revoked_at))}</strong></div>` : ''}
           <div><span>Consumer key</span><code title="${this.escape(grant.consumer_pk)}">${this.escape(this.shortKey(grant.consumer_pk))}</code></div>
           <div><span>Grant ID</span><code>${this.escape(grant.grant_id)}</code></div>

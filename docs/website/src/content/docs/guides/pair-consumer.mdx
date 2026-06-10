@@ -24,3 +24,16 @@ Revocation marks the grant as revoked inside Home Assistant. Active sessions for
 ## Delete a grant record
 
 Use **Delete grant record** to remove the stored grant from the panel. Deleting an active grant also closes active sessions and future authentication fails because no grant exists.
+
+## Recover from a lost consumer identity
+
+The consumer keypair lives in browser storage. If the consumer clears storage or moves to a new device, a new keypair is generated and the old grant no longer matches. The old grant becomes orphaned: still stored, never used again.
+
+To recover:
+
+1. Have the consumer send a new access request. It uses the new key automatically.
+2. Approve the new request in the Varco panel as in normal pairing.
+3. Find the orphaned grant card. Each grant card shows a **Last used** timestamp (`never` if the grant has never authenticated), so a stale grant is easy to spot.
+4. Use **Delete grant record** on the orphaned grant.
+
+The Authority updates `last_used_at` on every successful `authenticate`, so an orphaned grant keeps its last timestamp from before the identity was lost.
