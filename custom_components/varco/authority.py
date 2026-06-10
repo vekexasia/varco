@@ -23,6 +23,8 @@ from .storage import MemoryVarcoStore
 
 _LOGGER = logging.getLogger(__name__)
 
+OUTBOX_MAX_EVENTS = 100
+
 
 @dataclass
 class RuntimeSubscription:
@@ -120,7 +122,7 @@ class VarcoAuthority:
         for session in self.sessions.values():
             if session.consumer_pk == grant.consumer_pk:
                 session.closed = True
-                session.outbox.append({"type": "error", "code": "grant_revoked", "message": "Grant revoked"})
+                self.queue_event(session.session_id, {"type": "error", "code": "grant_revoked", "message": "Grant revoked"})
         await audit.async_log(self.store, "grant_revoked", grant.grant_id)
         return grant
 
@@ -129,7 +131,7 @@ class VarcoAuthority:
         for session in self.sessions.values():
             if session.consumer_pk == grant.consumer_pk:
                 session.closed = True
-                session.outbox.append({"type": "error", "code": "grant_revoked", "message": "Grant deleted"})
+                self.queue_event(session.session_id, {"type": "error", "code": "grant_revoked", "message": "Grant deleted"})
         await audit.async_log(self.store, "grant_deleted", grant.grant_id)
         return grant
 
@@ -177,15 +179,38 @@ class VarcoAuthority:
             for sub in session.subscriptions.values():
                 if entity_id in sub.entity_ids:
                     event = {"type": "state_delta", "subscription_id": sub.subscription_id, "states": {entity_id: payload}}
-                    session.outbox.append(event)
                     events.append((session_id, event))
         return events
 
+    def queue_event(self, session_id: str, event: dict[str, Any]) -> None:
+        """Queue an event for later flush via pop_outbox.
+
+        Bounded per session: state deltas coalesce per subscription (latest
+        state per entity wins) and the oldest event is dropped at the cap so a
+        slow or idle consumer cannot grow memory without bound.
+        """
+        session = self.sessions.get(session_id)
+        if session is None:
+            return
+        if event.get("type") == "state_delta":
+            for pending in session.outbox:
+                if pending.get("type") == "state_delta" and pending.get("subscription_id") == event.get("subscription_id"):
+                    pending["states"].update(event.get("states") or {})
+                    return
+        if len(session.outbox) >= OUTBOX_MAX_EVENTS:
+            del session.outbox[0]
+        session.outbox.append(event)
+
     async def pop_outbox(self, session_id: str) -> list[dict[str, Any]]:
-        session = self._session(session_id)
+        session = self.sessions.get(session_id)
+        if session is None:
+            return []
         outbox = session.outbox
         session.outbox = []
         return outbox
+
+    def discard_session(self, session_id: str) -> None:
+        self.sessions.pop(session_id, None)
 
     async def _access_request(self, session_id: str, message: dict[str, Any]) -> dict[str, Any]:
         consumer_pk = str(message.get("consumer_pk") or "")

@@ -250,3 +250,50 @@ def test_call_service_cannot_smuggle_extra_or_non_entity_targets_past_action_sco
         assert ok["type"] == "service_called"
         assert len(hass.services.calls) == 1
     asyncio.run(run())
+
+
+def test_state_changed_does_not_queue_outbox_copies_for_live_delivery():
+    async def run():
+        authority, _, _, _ = await paired_authority({"name": "Demo", "version": "1", "subscriptions": ["sensor.temp"]})
+        await authority.handle_plaintext("s1", {"type": "subscribe_states", "entity_ids": ["sensor.temp"]})
+        for value in ("22", "23", "24"):
+            events = await authority.state_changed("sensor.temp", {"entity_id": "sensor.temp", "state": value, "attributes": {}})
+            assert len(events) == 1
+        assert await authority.pop_outbox("s1") == []
+    asyncio.run(run())
+
+
+def test_queue_event_coalesces_state_deltas_latest_state_wins():
+    async def run():
+        authority, _, _, _ = await paired_authority({"name": "Demo", "version": "1", "subscriptions": ["sensor.temp"]})
+        snap = await authority.handle_plaintext("s1", {"type": "subscribe_states", "entity_ids": ["sensor.temp"]})
+        sub_id = snap["subscription_id"]
+        for value in ("22", "23", "24"):
+            authority.queue_event("s1", {"type": "state_delta", "subscription_id": sub_id, "states": {"sensor.temp": {"entity_id": "sensor.temp", "state": value, "attributes": {}}}})
+        outbox = await authority.pop_outbox("s1")
+        assert len(outbox) == 1
+        assert outbox[0]["states"]["sensor.temp"]["state"] == "24"
+        assert await authority.pop_outbox("s1") == []
+    asyncio.run(run())
+
+
+def test_queue_event_bounds_outbox_and_drops_oldest():
+    async def run():
+        from custom_components.varco.authority import OUTBOX_MAX_EVENTS
+
+        authority, _, _, _ = await paired_authority({"name": "Demo", "version": "1", "subscriptions": ["sensor.temp"]})
+        for index in range(OUTBOX_MAX_EVENTS + 10):
+            authority.queue_event("s1", {"type": "state_delta", "subscription_id": f"sub-{index}", "states": {"sensor.temp": {"state": str(index)}}})
+        outbox = await authority.pop_outbox("s1")
+        assert len(outbox) == OUTBOX_MAX_EVENTS
+        assert outbox[0]["subscription_id"] == "sub-10"
+        assert outbox[-1]["subscription_id"] == f"sub-{OUTBOX_MAX_EVENTS + 9}"
+    asyncio.run(run())
+
+
+def test_queue_event_for_unknown_session_is_dropped():
+    async def run():
+        authority, _, _, _ = await paired_authority({"name": "Demo", "version": "1", "subscriptions": ["sensor.temp"]})
+        authority.queue_event("ghost", {"type": "state_delta", "subscription_id": "x", "states": {}})
+        assert "ghost" not in authority.sessions
+    asyncio.run(run())

@@ -109,6 +109,8 @@ class VarcoRelay:
         elif typ == "client_disconnected":
             session_id = message.get("sessionId")
             self.sessions.pop(session_id, None)
+            if session_id:
+                self.authority.discard_session(session_id)
             if self.peer_stack is not None and session_id:
                 await self.peer_stack.close(session_id)
 
@@ -149,6 +151,8 @@ class VarcoRelay:
             session = self.sessions.get(session_id)
             if session is not None and session.secure is not None:
                 await self._send_to_client(session_id, session.secure.encrypt(event))
+            else:
+                self.authority.queue_event(session_id, event)
 
     async def _send(self, message: dict[str, Any]) -> None:
         if self._ws is not None and not self._ws.closed:

@@ -281,3 +281,53 @@ def test_notify_owner_includes_pairing_code_truncated_key_and_scopes(monkeypatch
         assert "Camera snapshots: `camera.porta`" in message
         assert "Home Assistant actions: `light.turn_on@light.cucina`" in message
     asyncio.run(run())
+
+
+def test_client_disconnected_discards_authority_session_state():
+    async def run():
+        relay, _, _ = make_relay()
+        await relay._handle_bridge_message({"type": "client_connected", "sessionId": "s1"})
+        relay.authority._session("s1")
+        relay.authority.queue_event("s1", {"type": "state_delta", "subscription_id": "sub", "states": {}})
+        await relay._handle_bridge_message({"type": "client_disconnected", "sessionId": "s1"})
+        assert "s1" not in relay.sessions
+        assert "s1" not in relay.authority.sessions
+    asyncio.run(run())
+
+
+def test_push_state_changed_sends_live_without_retaining_outbox_copy():
+    async def run():
+        relay, keys, sent = make_relay()
+        client = await _handshake(relay, keys, sent)
+        relay.authority._session("s1")
+        event = {"type": "state_delta", "subscription_id": "sub", "states": {"sensor.temp": {"state": "22"}}}
+
+        async def fake_state_changed(entity_id, state):
+            return [("s1", event)]
+
+        relay.authority.state_changed = fake_state_changed
+        await relay._push_state_changed("sensor.temp", None)
+        assert len(sent) == 1
+        assert client.decrypt(sent[0]["payload"]) == event
+        assert await relay.authority.pop_outbox("s1") == []
+    asyncio.run(run())
+
+
+def test_push_state_changed_queues_bounded_when_session_has_no_secure_channel():
+    async def run():
+        relay, _, sent = make_relay()
+        relay.authority._session("s1")
+
+        def make_fake(value):
+            async def fake_state_changed(entity_id, state):
+                return [("s1", {"type": "state_delta", "subscription_id": "sub", "states": {entity_id: {"state": value}}})]
+            return fake_state_changed
+
+        for value in ("22", "23"):
+            relay.authority.state_changed = make_fake(value)
+            await relay._push_state_changed("sensor.temp", None)
+        assert sent == []
+        outbox = await relay.authority.pop_outbox("s1")
+        assert len(outbox) == 1
+        assert outbox[0]["states"]["sensor.temp"]["state"] == "23"
+    asyncio.run(run())
