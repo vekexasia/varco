@@ -315,6 +315,7 @@ class VarcoPanel extends HTMLElement {
               <option value="schedule">Schedule — allow only in time window</option>
               <option value="pin">PIN — require a code to act</option>
               <option value="rate_limit">Rate limit — max N calls per window</option>
+              <option value="template">Template — allow only when a HA template is true</option>
             </select>
           </div>
           <div data-rf-fields="${this.escape(grantId)}"></div>
@@ -348,6 +349,9 @@ class VarcoPanel extends HTMLElement {
         <label class="field-label">Max calls <input type="number" data-rf-limit min="1" value="10" style="margin-left:6px;width:70px;padding:5px;border:1px solid var(--divider-color);border-radius:6px;background:var(--card-background-color);color:var(--primary-text-color)"></label>
         <label class="field-label">per <input type="number" data-rf-window min="1" value="3600" style="margin-left:6px;width:80px;padding:5px;border:1px solid var(--divider-color);border-radius:6px;background:var(--card-background-color);color:var(--primary-text-color)"> seconds</label>
       </div>`;
+    if (type === 'template') return appliesToField + `
+      <label class="field-label">Condition template <small style="font-weight:400;color:var(--secondary-text-color)">(Jinja2; falsy or error denies)</small></label>
+      <textarea data-rf-template rows="3" placeholder="{{ is_state('alarm_control_panel.home_alarm', 'disarmed') }}" style="display:block;width:100%;max-width:420px;padding:7px;border:1px solid var(--divider-color);border-radius:6px;background:var(--card-background-color);color:var(--primary-text-color);margin-bottom:10px;font-family:monospace"></textarea>`;
     return '';
   }
 
@@ -360,6 +364,7 @@ class VarcoPanel extends HTMLElement {
     if (type === 'schedule')  detail = `${this.escape((params.days || []).join(', '))} ${this.escape(params.start_time || '')}–${this.escape(params.end_time || '')}`;
     if (type === 'pin')       detail = 'PIN set';
     if (type === 'rate_limit') detail = `max ${this.escape(String(params.limit || '?'))} per ${this.escape(String(params.window_seconds || '?'))} s`;
+    if (type === 'template')  detail = this.escape(String(params.value_template || ''));
     return `
       <div class="restriction-row">
         <div>
@@ -399,6 +404,11 @@ class VarcoPanel extends HTMLElement {
       const limit   = Number(container.querySelector('[data-rf-limit]')?.value  || 10);
       const window_ = Number(container.querySelector('[data-rf-window]')?.value || 3600);
       return { id, type, enabled: true, applies_to: appliesTo, params: { limit, window_seconds: window_ } };
+    }
+    if (type === 'template') {
+      const valueTemplate = (container.querySelector('[data-rf-template]')?.value || '').trim();
+      if (!valueTemplate) { alert('Please enter a condition template.'); return null; }
+      return { id, type, enabled: true, applies_to: appliesTo, params: { value_template: valueTemplate } };
     }
     return null;
   }
