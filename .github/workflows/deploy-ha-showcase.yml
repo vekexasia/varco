@@ -59,6 +59,7 @@ jobs:
           HA_SHOWCASE_HOST: ${{ secrets.HA_SHOWCASE_HOST }}
           HA_SHOWCASE_PORT: ${{ secrets.HA_SHOWCASE_PORT }}
           HA_SHOWCASE_SSH_KEY: ${{ secrets.HA_SHOWCASE_SSH_KEY }}
+          HA_SHOWCASE_SSH_HOST_KEY: ${{ secrets.HA_SHOWCASE_SSH_HOST_KEY }}
         run: |
           set -euo pipefail
           test -n "$HA_SHOWCASE_HOST"
@@ -67,7 +68,16 @@ jobs:
           chmod 700 ~/.ssh
           printf '%s\n' "$HA_SHOWCASE_SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -p "${HA_SHOWCASE_PORT:-22}" "$HA_SHOWCASE_HOST" >> ~/.ssh/known_hosts
+          if [ -n "${HA_SHOWCASE_SSH_HOST_KEY:-}" ]; then
+            # Pinned host key: one or more known_hosts lines stored in the
+            # HA_SHOWCASE_SSH_HOST_KEY secret (e.g. "[host]:port ssh-ed25519 AAAA...").
+            # Rotate the secret when the host is rebuilt.
+            printf '%s\n' "$HA_SHOWCASE_SSH_HOST_KEY" >> ~/.ssh/known_hosts
+          else
+            echo "::warning::HA_SHOWCASE_SSH_HOST_KEY secret is not set; falling back to unverified ssh-keyscan (TOFU on every run). Pin the host key to protect against MITM."
+            ssh-keyscan -p "${HA_SHOWCASE_PORT:-22}" "$HA_SHOWCASE_HOST" >> ~/.ssh/known_hosts
+          fi
+          chmod 600 ~/.ssh/known_hosts
 
       - name: Deploy Home Assistant showcase
         env:
