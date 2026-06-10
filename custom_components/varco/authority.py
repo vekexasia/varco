@@ -23,6 +23,10 @@ from .storage import MemoryVarcoStore
 
 _LOGGER = logging.getLogger(__name__)
 
+MAX_HISTORY_ENTITIES = 10
+MAX_HISTORY_DAYS = 30
+MAX_HISTORY_POINTS_PER_ENTITY = 5000
+
 
 @dataclass
 class RuntimeSubscription:
@@ -284,13 +288,32 @@ class VarcoAuthority:
 
     async def _history_query(self, grant: Grant, message: dict[str, Any]) -> dict[str, Any]:
         entity_ids = [str(entity) for entity in message.get("entity_ids") or []]
+        if len(entity_ids) > MAX_HISTORY_ENTITIES:
+            await audit.async_log(self.store, "history_query_limited", grant.grant_id, {"reason": "too_many_entities", "entity_count": len(entity_ids)})
+            return self._error(message.get("request_id"), "history_limit_exceeded", f"Too many entities (max {MAX_HISTORY_ENTITIES})")
         if any(not entity_allowed(entity, history_entities(grant.manifest)) for entity in entity_ids):
             await audit.async_log(self.store, "permission_error", grant.grant_id, {"operation": "history_query", "denied_count": 1})
             return self._error(message.get("request_id"), "permission_denied", "History not allowed")
         restriction_error = await self._enforce_restrictions(grant, "history", {"entity_ids": entity_ids}, message)
         if restriction_error:
             return restriction_error
-        return {"type": "history_result", "request_id": message.get("request_id"), "history": await self._history_payload(entity_ids, message)}
+        end = self._parse_history_time(message.get("end_time")) or self.now_provider()
+        start = self._parse_history_time(message.get("start_time")) or end - timedelta(hours=24)
+        min_start = end - timedelta(days=MAX_HISTORY_DAYS)
+        range_clamped = start < min_start
+        if range_clamped:
+            start = min_start
+        query = dict(message, start_time=start.isoformat(), end_time=end.isoformat())
+        history = await self._history_payload(entity_ids, query)
+        truncated = False
+        if isinstance(history, dict):
+            for entity_id, points in history.items():
+                if isinstance(points, list) and len(points) > MAX_HISTORY_POINTS_PER_ENTITY:
+                    history[entity_id] = points[:MAX_HISTORY_POINTS_PER_ENTITY]
+                    truncated = True
+        if truncated or range_clamped:
+            await audit.async_log(self.store, "history_query_limited", grant.grant_id, {"reason": "clamped", "truncated": truncated, "range_clamped": range_clamped, "entity_count": len(entity_ids)})
+        return {"type": "history_result", "request_id": message.get("request_id"), "history": history, "truncated": truncated, "range_clamped": range_clamped}
 
     async def _camera_snapshot(self, grant: Grant, message: dict[str, Any]) -> dict[str, Any]:
         entity_id = str(message.get("entity_id") or "")
@@ -453,7 +476,7 @@ class VarcoAuthority:
             return await self.hass.varco_history(entity_ids, message)
         if self.hass is None:
             return {entity_id: [] for entity_id in entity_ids}
-        end = self._parse_history_time(message.get("end_time")) or datetime.now(timezone.utc)
+        end = self._parse_history_time(message.get("end_time")) or self.now_provider()
         start = self._parse_history_time(message.get("start_time")) or end - timedelta(hours=24)
         try:
             from homeassistant.components.recorder.history import get_significant_states

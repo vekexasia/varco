@@ -202,6 +202,10 @@ test('client exposes Varco-native data-plane API and duplicate subscription warn
   assert.equal(warnings.length, 1);
   await client.unsubscribe('sub1');
   assert.deepEqual(await client.queryHistory(['sensor.temp']), { 'sensor.temp': [] });
+  await client.queryHistory(Array.from({ length: 11 }, (_, i) => `sensor.t${i}`));
+  assert.ok(warnings.at(-1).includes('limit of 10'));
+  await client.queryHistory(['sensor.temp'], { start_time: '2020-01-01T00:00:00.000Z', end_time: '2020-03-01T00:00:00.000Z' });
+  assert.ok(warnings.at(-1).includes('30 days'));
   assert.equal((await client.cameraSnapshot('camera.porta')).contentType, 'image/jpeg');
   await client.callService('light', 'turn_on', { entity_id: 'light.cucina', brightness: 100 });
   assert.equal(transport.messages.at(-1).target.entity_id, 'light.cucina');

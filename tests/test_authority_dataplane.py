@@ -227,8 +227,54 @@ def test_history_query_is_read_only_and_requires_history_scope():
         authority, _, _, _ = await paired_authority({"name": "Demo", "version": "1", "history": ["sensor.temp"]})
         ok = await authority.handle_plaintext("s1", {"type": "history_query", "entity_ids": ["sensor.temp"]})
         assert ok["type"] == "history_result"
+        assert ok["truncated"] is False
+        assert ok["range_clamped"] is False
         denied = await authority.handle_plaintext("s1", {"type": "call_service", "domain": "light", "service": "turn_on", "target": {"entity_id": "light.cucina"}})
         assert denied["code"] == "permission_denied"
+    asyncio.run(run())
+
+
+def test_history_query_rejects_too_many_entities():
+    async def run():
+        authority, store, _, _ = await paired_authority({"name": "Demo", "version": "1", "history": ["sensor.*"]})
+        entity_ids = [f"sensor.temp_{i}" for i in range(11)]
+        rejected = await authority.handle_plaintext("s1", {"type": "history_query", "entity_ids": entity_ids})
+        assert rejected["code"] == "history_limit_exceeded"
+        events = await store.async_audit_events()
+        assert events[-1]["event"] == "history_query_limited"
+        assert events[-1]["details"]["reason"] == "too_many_entities"
+    asyncio.run(run())
+
+
+def test_history_query_clamps_time_range_and_truncates_results():
+    async def run():
+        from custom_components.varco.authority import MAX_HISTORY_DAYS, MAX_HISTORY_POINTS_PER_ENTITY
+
+        authority, store, hass, _ = await paired_authority({"name": "Demo", "version": "1", "history": ["sensor.temp"]})
+        seen = {}
+
+        async def varco_history(entity_ids, message):
+            seen["message"] = message
+            return {entity_id: [{"t": "x", "state": "1", "v": 1.0}] * (MAX_HISTORY_POINTS_PER_ENTITY + 100) for entity_id in entity_ids}
+
+        hass.varco_history = varco_history
+        result = await authority.handle_plaintext("s1", {
+            "type": "history_query",
+            "entity_ids": ["sensor.temp"],
+            "start_time": "2000-01-01T00:00:00+00:00",
+        })
+        assert result["type"] == "history_result"
+        assert result["range_clamped"] is True
+        assert result["truncated"] is True
+        assert len(result["history"]["sensor.temp"]) == MAX_HISTORY_POINTS_PER_ENTITY
+        from datetime import datetime, timedelta, timezone
+        start = datetime.fromisoformat(seen["message"]["start_time"])
+        end = datetime.fromisoformat(seen["message"]["end_time"])
+        assert end - start <= timedelta(days=MAX_HISTORY_DAYS)
+        events = await store.async_audit_events()
+        assert events[-1]["event"] == "history_query_limited"
+        assert events[-1]["details"]["truncated"] is True
+        assert events[-1]["details"]["range_clamped"] is True
     asyncio.run(run())
 
 
