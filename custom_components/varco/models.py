@@ -92,6 +92,8 @@ class Grant:
     revoked: bool = False
     created_at: str = field(default_factory=utcnow)
     revoked_at: str | None = None
+    expires_at: str | None = None
+    renewed_at: str | None = None
     restrictions: list[dict[str, Any]] = field(default_factory=list)
 
     @classmethod
@@ -104,6 +106,8 @@ class Grant:
             revoked=bool(data.get("revoked", False)),
             created_at=data.get("created_at") or utcnow(),
             revoked_at=data.get("revoked_at"),
+            expires_at=data.get("expires_at"),
+            renewed_at=data.get("renewed_at"),
             restrictions=[dict(item) for item in data.get("restrictions") or [] if isinstance(item, dict)],
         )
 

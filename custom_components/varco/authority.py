@@ -58,6 +58,17 @@ class VarcoAuthority:
     def _session(self, session_id: str) -> RuntimeSession:
         return self.sessions.setdefault(session_id, RuntimeSession(session_id=session_id))
 
+    def _is_grant_expired(self, grant: Grant) -> bool:
+        if not grant.expires_at:
+            return False
+        try:
+            expires = datetime.fromisoformat(grant.expires_at)
+        except (TypeError, ValueError):
+            return False
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        return self.now_provider() >= expires
+
     async def handle_plaintext(self, session_id: str, message: dict[str, Any]) -> dict[str, Any]:
         typ = message.get("type")
         if typ == "access_request":
@@ -87,8 +98,8 @@ class VarcoAuthority:
             return await self._webrtc_ice(grant, message)
         return self._error(message.get("request_id"), "unknown_message", "Unknown message type")
 
-    async def approve_request(self, request_id: str) -> Grant:
-        grant = await self.store.async_approve_request(request_id)
+    async def approve_request(self, request_id: str, expires_at: str | None = None) -> Grant:
+        grant = await self.store.async_approve_request(request_id, expires_at=expires_at)
         await self._dismiss_notification(request_id)
         await audit.async_log(self.store, "access_request_approved", grant.grant_id)
         return grant
@@ -201,7 +212,7 @@ class VarcoAuthority:
             await audit.async_log(self.store, "session_error", details={"reason": "bad_authenticate_signature"})
             return self._error(message.get("request_id"), "bad_signature", "Invalid authentication signature")
         grant = await self.store.async_get_grant_by_consumer(consumer_pk)
-        if grant is None or grant.revoked:
+        if grant is None or grant.revoked or self._is_grant_expired(grant):
             return self._error(message.get("request_id"), "not_authorized", "No active grant")
         self._session(session_id).consumer_pk = consumer_pk
         await audit.async_log(self.store, "consumer_connected", grant.grant_id, {"consumer_pk": consumer_pk})
@@ -214,7 +225,7 @@ class VarcoAuthority:
         if not session.consumer_pk:
             return self._error(request_id, "not_authenticated", "Session is not authenticated")
         grant = await self.store.async_get_grant_by_consumer(session.consumer_pk)
-        if grant is None or grant.revoked:
+        if grant is None or grant.revoked or self._is_grant_expired(grant):
             session.closed = True
             return self._error(request_id, "grant_revoked", "Grant revoked")
         return grant

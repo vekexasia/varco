@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 from .const import STORAGE_KEY, STORAGE_VERSION
@@ -51,16 +52,37 @@ class MemoryVarcoStore:
     async def async_list_grants(self) -> list[Grant]:
         return [Grant.from_dict(item) for item in (await self.async_load_data())["grants"].values()]
 
-    async def async_approve_request(self, request_id: str) -> Grant:
+    async def async_approve_request(self, request_id: str, expires_at: str | None = None) -> Grant:
         request = await self.async_get_access_request(request_id)
         if request is None:
             raise KeyError(request_id)
         request.status = AccessStatus.APPROVED
         request.decided_at = utcnow()
-        grant = Grant(grant_id=request.request_id, consumer_pk=request.consumer_pk, manifest=request.manifest, request_id=request.request_id)
+        grant = Grant(grant_id=request.request_id, consumer_pk=request.consumer_pk, manifest=request.manifest, request_id=request.request_id, expires_at=expires_at)
         await self.async_upsert_access_request(request)
         await self.async_upsert_grant(grant)
         return grant
+
+    async def async_purge_expired_grants(self, now: datetime | None = None) -> list[str]:
+        now = now or datetime.now(timezone.utc)
+        data = await self.async_load_data()
+        deleted: list[str] = []
+        for consumer_pk, raw in list(data["grants"].items()):
+            expires_at = raw.get("expires_at")
+            if not expires_at:
+                continue
+            try:
+                expires = datetime.fromisoformat(expires_at)
+            except (TypeError, ValueError):
+                continue
+            if expires.tzinfo is None:
+                expires = expires.replace(tzinfo=timezone.utc)
+            if now >= expires:
+                deleted.append(raw.get("grant_id"))
+                data["grants"].pop(consumer_pk, None)
+        if deleted:
+            await self.async_save_data(data)
+        return deleted
 
     async def async_reject_request(self, request_id: str) -> None:
         request = await self.async_get_access_request(request_id)
