@@ -56,11 +56,12 @@ export class RelayTransport implements VarcoTransport {
   private keys: SessionKeys | null = null;
   private sendNonce = 0;
   private recvNonce = 0;
-  private pending = new Map<string, { resolve: (value: any) => void; reject: (err: Error) => void }>();
+  private pending = new Map<string, { resolve: (value: any) => void; reject: (err: Error) => void; timer: ReturnType<typeof setTimeout> }>();
   private eventHandler: ((event: any) => void) | null = null;
   private ready: Promise<void> | null = null;
+  private closed = false;
 
-  constructor(private bridgeUrl: string, private authorityId: string) {}
+  constructor(private bridgeUrl: string, private authorityId: string, private requestTimeoutMs = 30_000) {}
 
   onEvent(handler: (event: any) => void): void { this.eventHandler = handler; }
 
@@ -75,12 +76,31 @@ export class RelayTransport implements VarcoTransport {
     const withId = { ...message, request_id: requestId };
     const encrypted = await this.encrypt(withId);
     this.ws?.send(JSON.stringify(encrypted));
-    return new Promise((resolve, reject) => this.pending.set(requestId, { resolve, reject }));
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(requestId);
+        reject(new Error(`Varco request timed out: ${String(message.type)}`));
+      }, this.requestTimeoutMs);
+      this.pending.set(requestId, { resolve, reject, timer });
+    });
   }
 
-  async close(): Promise<void> { this.ws?.close(); }
+  async close(): Promise<void> {
+    this.closed = true;
+    this.ws?.close();
+    this.failPending(new Error("Varco transport closed"));
+  }
+
+  private failPending(err: Error): void {
+    for (const entry of this.pending.values()) {
+      clearTimeout(entry.timer);
+      entry.reject(err);
+    }
+    this.pending.clear();
+  }
 
   private async ensureConnected(): Promise<void> {
+    if (this.closed) throw new Error("Varco transport closed");
     if (!this.ready) this.ready = this.connect();
     await this.ready;
   }
@@ -93,6 +113,7 @@ export class RelayTransport implements VarcoTransport {
     await new Promise<void>((resolve, reject) => {
       ws.onopen = () => ws.send(JSON.stringify({ type: "client_hello", client_pub: clientPub }));
       ws.onerror = () => reject(new Error("Varco WebSocket failed"));
+      ws.onclose = () => reject(new Error("Varco WebSocket closed during handshake"));
       ws.onmessage = async (event) => {
         try {
           const outer = JSON.parse(String(event.data));
@@ -107,7 +128,16 @@ export class RelayTransport implements VarcoTransport {
             transcript.set(serverPubBytes, offset);
             if (!ed25519.verify(b64urlDecode(payload.signature), transcript, b64urlDecode(this.authorityId))) throw new Error("Bad authority signature");
             this.keys = await deriveSessionKeys(ecdh.privateKey, await importServerPublic(payload.server_pub), this.authorityId);
-            ws.onmessage = (messageEvent) => { void this.handleMessage(String(messageEvent.data)); };
+            ws.onmessage = (messageEvent) => {
+              this.handleMessage(String(messageEvent.data)).catch((err) => {
+                this.failPending(err instanceof Error ? err : new Error(String(err)));
+                ws.close();
+              });
+            };
+            ws.onclose = () => {
+              this.closed = true;
+              this.failPending(new Error("Varco transport closed"));
+            };
             resolve();
           }
         } catch (err) { reject(err as Error); }
@@ -140,6 +170,7 @@ export class RelayTransport implements VarcoTransport {
     if (pendingKey) {
       const pending = this.pending.get(pendingKey)!;
       this.pending.delete(pendingKey);
+      clearTimeout(pending.timer);
       if (payload.type === "error") pending.reject(Object.assign(new Error(payload.message), { code: payload.code }));
       else pending.resolve(payload);
       return;

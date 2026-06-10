@@ -111,11 +111,19 @@ export function createVarcoClient(options: VarcoClientOptions): VarcoClient {
 }
 
 class DataChannelTransport implements VarcoTransport {
-  private pending = new Map<string, { resolve: (value: any) => void; reject: (err: Error) => void }>();
+  private pending = new Map<string, { resolve: (value: any) => void; reject: (err: Error) => void; timer: ReturnType<typeof setTimeout> }>();
   private eventHandler: ((event: any) => void) | null = null;
 
-  constructor(private pc: RTCPeerConnection, private channel: RTCDataChannel) {
-    this.channel.addEventListener("message", (event) => this.handleMessage(String(event.data)));
+  constructor(private pc: RTCPeerConnection, private channel: RTCDataChannel, private requestTimeoutMs = 30_000) {
+    this.channel.addEventListener("message", (event) => {
+      try {
+        this.handleMessage(String(event.data));
+      } catch (err) {
+        this.failPending(err instanceof Error ? err : new Error(String(err)));
+      }
+    });
+    this.channel.addEventListener("close", () => this.failPending(new Error("Varco transport closed")));
+    this.channel.addEventListener("error", () => this.failPending(new Error("Varco data channel error")));
   }
 
   onEvent(handler: (event: any) => void): void { this.eventHandler = handler; }
@@ -123,7 +131,13 @@ class DataChannelTransport implements VarcoTransport {
   async request(message: Record<string, unknown>): Promise<any> {
     const requestId = (message.request_id as string | undefined) ?? randomId(8);
     const withId = { ...message, request_id: requestId };
-    const response = new Promise((resolve, reject) => this.pending.set(requestId, { resolve, reject }));
+    const response = new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(requestId);
+        reject(new Error(`Varco request timed out: ${String(message.type)}`));
+      }, this.requestTimeoutMs);
+      this.pending.set(requestId, { resolve, reject, timer });
+    });
     this.channel.send(JSON.stringify(withId));
     return response;
   }
@@ -131,6 +145,15 @@ class DataChannelTransport implements VarcoTransport {
   async close(): Promise<void> {
     this.channel.close();
     this.pc.close();
+    this.failPending(new Error("Varco transport closed"));
+  }
+
+  private failPending(err: Error): void {
+    for (const entry of this.pending.values()) {
+      clearTimeout(entry.timer);
+      entry.reject(err);
+    }
+    this.pending.clear();
   }
 
   private handleMessage(data: string): void {
@@ -139,6 +162,7 @@ class DataChannelTransport implements VarcoTransport {
     if (requestId && this.pending.has(requestId)) {
       const pending = this.pending.get(requestId)!;
       this.pending.delete(requestId);
+      clearTimeout(pending.timer);
       if (payload.type === "error") pending.reject(Object.assign(new Error(payload.message), { code: payload.code }));
       else pending.resolve(payload);
       return;
