@@ -1,6 +1,7 @@
 {
   "name": "@varco/client",
   "version": "0.1.0",
+  "private": true,
   "type": "module",
   "main": "dist/index.js",
   "module": "dist/index.js",

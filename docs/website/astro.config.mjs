@@ -62,6 +62,7 @@ export default defineConfig({
             { label: "Manifest", slug: "reference/manifest" },
             { label: "Protocol messages", slug: "reference/protocol" },
             { label: "Bridge endpoints", slug: "reference/bridge-endpoints" },
+            { label: "Admin WebSocket commands", slug: "reference/admin-websocket" },
             { label: "Home Assistant services", slug: "reference/home-assistant-services" },
             { label: "Errors", slug: "reference/errors" },
           ],

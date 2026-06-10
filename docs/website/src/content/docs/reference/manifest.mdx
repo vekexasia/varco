@@ -29,12 +29,14 @@ Use snake_case fields unless you need compatibility with camelCase callers. The 
   "name": "Kitchen display",
   "version": "0.1.0",
   "read_entities": ["sensor.kitchen_temperature", "sensor.kitchen_humidity"],
-  "subscriptions": ["sensor.kitchen_temperature", "sensor.kitchen_humidity"],
+  "subscriptions": [],
   "history": [],
   "camera_snapshots": [],
   "actions": []
 }
 ```
+
+Entities in `read_entities` are already subscribable: the Authority allows `subscribe_states` for the union of `subscriptions` and `read_entities`, so duplicating read entities into `subscriptions` is unnecessary.
 
 ## Entity scopes
 

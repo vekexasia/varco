@@ -1,0 +1,29 @@
+---
+title: Admin WebSocket commands
+description: Home Assistant admin WebSocket commands registered by the Varco integration.
+---
+
+The Varco integration registers admin commands on the Home Assistant WebSocket API. The `/varco` panel uses them, and they are the only programmatic admin surface. All commands require an admin Home Assistant user.
+
+Source: `custom_components/varco/websocket_api.py`.
+
+| Command | Fields | Result |
+| --- | --- | --- |
+| `varco/info` | none | `{ authority_id, relay }` with relay connection status. |
+| `varco/access_requests` | none | List of pending access requests. |
+| `varco/grants` | none | List of stored grants. |
+| `varco/audit` | none | List of audit events. |
+| `varco/approve_request` | `request_id` (required), `expires_at` (optional ISO timestamp or null) | The created grant. |
+| `varco/reject_request` | `request_id` (required) | `{ ok: true }`. |
+| `varco/revoke_grant` | `grant_id` (required) | The revoked grant. |
+| `varco/delete_grant` | `grant_id` (required) | The deleted grant. |
+| `varco/update_grant_restrictions` | `grant_id` (required), `restrictions` (required list) | The updated grant. |
+| `varco/dashboard_export` | `config` (required dict), `selected_entities`, `dashboard_title`, `dashboard_url_path`, `view_index` (optional) | Dashboard brief export payload. |
+
+Example call over the Home Assistant WebSocket API:
+
+```json
+{ "id": 12, "type": "varco/revoke_grant", "grant_id": "GRANT_ID" }
+```
+
+For automations and scripts, the equivalent fallbacks are documented in [Home Assistant services](../home-assistant-services/).

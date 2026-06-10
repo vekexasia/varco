@@ -15,6 +15,10 @@ The consumer is not trusted. It may request a small manifest, but every later me
 
 The bridge is not trusted. It routes encrypted envelopes and may observe metadata, but it must not see application plaintext or decide whether an entity or service call is allowed.
 
+## Public bridge has no access control
+
+The shared public bridge accepts any Authority that presents a valid ed25519 key pair. There is no allowlist, invite, or admin gating: anyone can register an Authority ID and consume bridge resources. Permission decisions are unaffected, because the bridge never decides access, but the open registration surface exists until access control lands as future work. If this is a concern, the bridge is opaque by design and the protocol does not prevent running your own, though self-hosted bridge support is not yet documented.
+
 ## Encryption boundary
 
 The bridge can observe:

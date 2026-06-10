@@ -115,7 +115,9 @@ Nessun PIN per azioni nel MVP.
 7. Se approvato, HA crea il grant legato a `consumer_pk`.
 8. Ogni sessione successiva si autentica con challenge/firma della consumer key.
 9. Revoca da pannello HA: il grant viene marcato revoked, le sessioni attive
-   vengono chiuse, e ogni messaggio successivo viene rifiutato.
+   vengono marcate chiuse in memoria, e il primo messaggio successivo del
+   consumer riceve un errore `grant_revoked` e viene rifiutato (enforcement
+   lazy: il socket verso il bridge non viene chiuso proattivamente).
 
 ## Enforcement
 
@@ -126,7 +128,7 @@ Regole MVP:
 
 - nessun utente HA creato per i consumer
 - nessun long-lived token HA consegnato ai consumer
-- revoca immediata o quasi immediata
+- revoca effettiva al primo messaggio successivo del consumer (deny-on-next-message)
 - messaggi post-revoca rifiutati
 - errori di permesso auditati
 - stati/payload sensibili non loggati
@@ -192,7 +194,11 @@ Il bridge Cloudflare ufficiale è parte di Varco e vive nel repo.
 MVP iniziale:
 
 - bridge pubblico condiviso come percorso consigliato
-- bridge aperto a qualunque Authority
+- bridge aperto a qualunque Authority: nessuna allowlist, invito o controllo
+  admin; chiunque presenti una chiave ed25519 valida può registrarsi come
+  Authority. La superficie di abuso (registrazioni arbitrarie, consumo di
+  risorse del bridge) è accettata nell'MVP e mitigata solo dai rate-limit;
+  il controllo accessi è in Fase 2 (vedi sotto)
 - Authority configurabile con bridge URL
 - bridge personale/power-user non implementato, ma il protocollo non deve
   impedirlo
@@ -211,7 +217,9 @@ Varco include nel MVP una libreria TypeScript ufficiale.
 
 Distribuzione:
 
-- package npm ufficiale, per esempio `@varco/client`
+- la libreria vive nel repo come workspace `packages/client` (`@varco/client`);
+  non è pubblicata su npm e il package è marcato `"private": true` finché non
+  viene deciso un rilascio reale
 - build ESM standalone importabile via URL/CDN per prototipi
 
 Target:
@@ -249,7 +257,7 @@ Non loggare stati entity, snapshot camera, history payload o contenuti sensibili
 | Pezzo | Uso in Varco |
 |---|---|
 | `bridge/` DO, hibernation, presence, transfer | copiare/adattare nel bridge Varco |
-| crypto/sessione Ed25519/X25519/XChaCha20 | copiare/adattare dentro Varco |
+| crypto/sessione (in Varco: firme Ed25519, ECDH P-256, HKDF-SHA256, AES-256-GCM via libreria `cryptography` bundled in HA) | copiare/adattare dentro Varco |
 | relay outbound HA | base per Authority Varco |
 | storage/models | rimodellare da ShareGrant(action) a Grant(consumer+scopes) |
 | frontend panel/notify | diventa consent/management panel |
@@ -279,12 +287,13 @@ Nessun import runtime da `ha-share-actions`.
 - `camera_snapshot`
 - `call_service` con granularità servizio+entity, dominio servizio, entity
 - enforcement per messaggio
-- revoca immediata
+- revoca effettiva sul messaggio successivo
 - audit minimale strutturato
 
 ### Fase 2 - client TS e demo consumer
 
-- package npm e build ESM standalone
+- libreria TS nel repo e build ESM standalone (pubblicazione npm non ancora
+  effettuata; futura, da decidere)
 - API Varco-native completa
 - adapter HA-like
 - demo consumer-dashboard minimale
@@ -348,8 +357,9 @@ Riavvio HA: via MCP `ha_restart(confirm=True)`, poi attendere con un poll:
 ```bash
 until curl -s -m3 -o /dev/null -w '%{http_code}' http://192.168.1.47:8123/ | grep -q 200; do sleep 5; done
 ```
-Requirements Python del component (es. PyNaCl, aiortc): dichiarati in
-`manifest.json` → HA li installa in pip al primo load. aiortc è pesante:
+Requirements Python del component: `manifest.json` dichiara solo `aiortc`
+(la crypto usa la libreria `cryptography` già bundled in HA; PyNaCl non è
+usato). HA installa i requirements in pip al primo load. aiortc è pesante:
 verificare che HAOS lo installi senza problemi (potrebbe servire wheel).
 
 ## Deploy del client statico / bridge
