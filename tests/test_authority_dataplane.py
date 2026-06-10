@@ -297,3 +297,69 @@ def test_queue_event_for_unknown_session_is_dropped():
         authority.queue_event("ghost", {"type": "state_delta", "subscription_id": "x", "states": {}})
         assert "ghost" not in authority.sessions
     asyncio.run(run())
+
+
+def test_data_plane_rate_limit_rejects_with_rate_limited_and_audits_without_payloads():
+    async def run():
+        authority, store, _, _ = await paired_authority({"name": "Demo", "version": "1", "read_entities": ["sensor.temp"]})
+        clock = {"now": 1000.0}
+        authority.monotonic_provider = lambda: clock["now"]
+        authority.data_plane_rate_limit = 3
+        for i in range(3):
+            ok = await authority.handle_plaintext("s1", {"type": "get_states", "request_id": f"r{i}", "entity_ids": ["sensor.temp"]})
+            assert ok["type"] == "states"
+        limited = await authority.handle_plaintext("s1", {"type": "get_states", "request_id": "r3", "entity_ids": ["sensor.temp"]})
+        assert limited["type"] == "error"
+        assert limited["code"] == "rate_limited"
+        events = await store.async_audit_events()
+        assert events[-1]["event"] == "rate_limited"
+        assert "sensor.temp" not in str(events[-1])
+        # Window expiry restores capacity.
+        clock["now"] += authority.data_plane_rate_window + 1
+        again = await authority.handle_plaintext("s1", {"type": "get_states", "request_id": "r4", "entity_ids": ["sensor.temp"]})
+        assert again["type"] == "states"
+    asyncio.run(run())
+
+
+def test_data_plane_rate_limit_weighs_expensive_operations_more():
+    async def run():
+        authority, _, _, _ = await paired_authority({"name": "Demo", "version": "1", "history": ["sensor.temp"]})
+        clock = {"now": 1000.0}
+        authority.monotonic_provider = lambda: clock["now"]
+        authority.data_plane_rate_limit = 10
+        # history_query weighs 5, so only 2 fit in a budget of 10.
+        for i in range(2):
+            ok = await authority.handle_plaintext("s1", {"type": "history_query", "request_id": f"h{i}", "entity_ids": ["sensor.temp"]})
+            assert ok["type"] == "history_result"
+        limited = await authority.handle_plaintext("s1", {"type": "history_query", "request_id": "h2", "entity_ids": ["sensor.temp"]})
+        assert limited["type"] == "error"
+        assert limited["code"] == "rate_limited"
+    asyncio.run(run())
+
+
+def test_data_plane_rate_limit_is_per_consumer():
+    async def run():
+        authority_a, _, _, _ = await paired_authority({"name": "A", "version": "1", "read_entities": ["sensor.temp"]})
+        authority_a.data_plane_rate_limit = 1
+        ok = await authority_a.handle_plaintext("s1", {"type": "get_states", "request_id": "a1", "entity_ids": ["sensor.temp"]})
+        assert ok["type"] == "states"
+        limited = await authority_a.handle_plaintext("s1", {"type": "get_states", "request_id": "a2", "entity_ids": ["sensor.temp"]})
+        assert limited["code"] == "rate_limited"
+
+        # A second consumer on the same authority keeps its own budget.
+        consumer2 = generate_consumer_keypair()
+        nonce = "nonce-2"
+        manifest = {"name": "B", "version": "1", "read_entities": ["sensor.temp"]}
+        pending = await authority_a.handle_plaintext("s2", {
+            "type": "access_request",
+            "consumer_pk": consumer2["public_key"],
+            "manifest": manifest,
+            "nonce": nonce,
+            "signature": sign_access_request(consumer2["private_key"], nonce, manifest),
+        })
+        await authority_a.approve_request(pending["access_request_id"])
+        auth = await authority_a.handle_plaintext("s2", channel_binding=TEST_BINDING, message={"type": "authenticate", "consumer_pk": consumer2["public_key"], "nonce": "auth-2", "signature": sign_authenticate(consumer2["private_key"], "auth-2", TEST_BINDING)})
+        assert auth["type"] == "authenticated"
+        ok2 = await authority_a.handle_plaintext("s2", {"type": "get_states", "request_id": "b1", "entity_ids": ["sensor.temp"]})
+        assert ok2["type"] == "states"
+    asyncio.run(run())

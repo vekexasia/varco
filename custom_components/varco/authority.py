@@ -25,6 +25,14 @@ _LOGGER = logging.getLogger(__name__)
 
 OUTBOX_MAX_EVENTS = 100
 
+# Weight units consumed per data-plane operation; expensive ops cost more.
+DATA_PLANE_OP_WEIGHTS = {
+    "history_query": 5,
+    "camera_snapshot": 5,
+    "call_service": 2,
+}
+DATA_PLANE_DEFAULT_WEIGHT = 1
+
 
 @dataclass
 class RuntimeSubscription:
@@ -61,6 +69,9 @@ class VarcoAuthority:
         self._rate_hits: dict[tuple[str, str], list[float]] = {}
         self._access_request_last: dict[str, float] = {}
         self.access_request_min_interval = 5.0
+        self.data_plane_rate_limit = 240
+        self.data_plane_rate_window = 60.0
+        self._data_plane_hits: dict[str, list[tuple[float, int]]] = {}
 
     def _session(self, session_id: str) -> RuntimeSession:
         return self.sessions.setdefault(session_id, RuntimeSession(session_id=session_id))
@@ -86,6 +97,10 @@ class VarcoAuthority:
         grant = await self._require_grant(session_id, message.get("request_id"))
         if isinstance(grant, dict):
             return grant
+
+        rate_error = await self._check_data_plane_rate(grant, typ, message.get("request_id"))
+        if rate_error is not None:
+            return rate_error
 
         if typ == "get_states":
             return await self._get_states(grant, message)
@@ -265,6 +280,19 @@ class VarcoAuthority:
         self._session(session_id).consumer_pk = consumer_pk
         await audit.async_log(self.store, "consumer_connected", grant.grant_id, {"consumer_pk": consumer_pk})
         return {"type": "authenticated", "request_id": message.get("request_id"), "grant_id": grant.grant_id, "manifest": grant.manifest}
+
+    async def _check_data_plane_rate(self, grant: Grant, operation: Any, request_id: Any) -> dict[str, Any] | None:
+        weight = DATA_PLANE_OP_WEIGHTS.get(str(operation), DATA_PLANE_DEFAULT_WEIGHT)
+        now = self.monotonic_provider()
+        hits = self._data_plane_hits.setdefault(grant.consumer_pk, [])
+        cutoff = now - self.data_plane_rate_window
+        hits[:] = [hit for hit in hits if hit[0] > cutoff]
+        used = sum(hit_weight for _, hit_weight in hits)
+        if used + weight > self.data_plane_rate_limit:
+            await audit.async_log(self.store, "rate_limited", grant.grant_id, {"operation": str(operation), "request_id": request_id})
+            return self._error(request_id, "rate_limited", "Data-plane rate limit exceeded")
+        hits.append((now, weight))
+        return None
 
     async def _require_grant(self, session_id: str, request_id: Any) -> Grant | dict[str, Any]:
         session = self._session(session_id)
