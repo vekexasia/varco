@@ -1,12 +1,12 @@
-import { loadOrCreateIdentity, randomId, signAccessRequest, signAuthenticate } from "./identity.js";
+import { loadIdentitySync, loadOrCreateIdentity, randomId, signAccessRequest, signAuthenticate } from "./identity.js";
+import type { ConsumerIdentity } from "./identity.js";
 import { attachDomainHelpers } from "./domain-helpers.js";
-import { MemoryStorage } from "./memory-storage.js";
 import { RelayTransport } from "./transport.js";
 import type { HassState, VarcoClient, VarcoClientOptions, VarcoTransport, VarcoTransportStatus } from "./types.js";
 
 export function createVarcoClient(options: VarcoClientOptions): VarcoClient {
-  const storage = options.storage ?? (globalThis.localStorage ?? new MemoryStorage());
-  const identity = loadOrCreateIdentity(storage);
+  let identity: ConsumerIdentity | null = loadIdentitySync(options.storage);
+  const identityPromise = identity ? Promise.resolve(identity) : loadOrCreateIdentity(options.storage).then((resolved) => { identity = resolved; return resolved; });
   const relayTransport: VarcoTransport = options.transport ?? new RelayTransport(options.bridgeUrl, options.authorityId);
   let activeTransport: VarcoTransport = relayTransport;
   let transportStatus: VarcoTransportStatus = { mode: "relay", detail: "connected via relay" };
@@ -22,28 +22,30 @@ export function createVarcoClient(options: VarcoClientOptions): VarcoClient {
   attachEvents(relayTransport);
 
   return attachDomainHelpers({
-    get consumerPublicKey() { return identity.publicKey; },
+    get consumerPublicKey() { return identity?.publicKey ?? ""; },
     get transportStatus() { return transportStatus; },
 
     async requestAccess() {
+      const id = await identityPromise;
       const nonce = randomId(12);
       const response = await relayTransport.request({
         type: "access_request",
-        consumer_pk: identity.publicKey,
+        consumer_pk: id.publicKey,
         manifest: options.manifest,
         nonce,
-        signature: signAccessRequest(identity, nonce, options.manifest),
+        signature: await signAccessRequest(id, nonce, options.manifest),
       });
       return { request_id: response.request_id, pairing_code: response.pairing_code, status: response.status };
     },
 
     async connect() {
+      const id = await identityPromise;
       const nonce = randomId(12);
       await relayTransport.request({
         type: "authenticate",
-        consumer_pk: identity.publicKey,
+        consumer_pk: id.publicKey,
         nonce,
-        signature: signAuthenticate(identity, nonce),
+        signature: await signAuthenticate(id, nonce),
       });
       setStatus({ mode: "relay", detail: "relay authenticated" });
       if (options.webrtc !== false) {
