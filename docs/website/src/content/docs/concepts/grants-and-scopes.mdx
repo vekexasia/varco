@@ -13,8 +13,8 @@ The grant is enforced by the Authority on every data-plane message.
 
 A manifest may request:
 
-- `read_entities`: entity state snapshots.
-- `subscriptions`: live state updates.
+- `read_entities`: entity state snapshots. Read-scoped entities can also be subscribed for live updates.
+- `subscriptions`: live state updates for entities not already in `read_entities`. The Authority computes subscribe access as the union of `subscriptions` and `read_entities`, so listing the same entity in both is redundant.
 - `history`: recorder history queries.
 - `camera_snapshots`: camera snapshot retrieval.
 - `actions`: Home Assistant service calls.
@@ -52,7 +52,7 @@ Meaning:
 A grant defines the maximum allowed scope. A runtime subscription defines the current subset of entities the consumer wants to observe.
 
 1. Consumer sends `subscribe_states` with entity IDs.
-2. Authority validates every entity.
+2. Authority validates every entity against the union of the grant's `subscriptions` and `read_entities` scopes.
 3. Authority stores a runtime subscription for that session.
 4. Authority returns an initial `state_snapshot` with the full current states.
 5. Home Assistant state changes produce `state_delta` events for matching subscriptions; each delta carries only the changed entities and the `subscription_id`.

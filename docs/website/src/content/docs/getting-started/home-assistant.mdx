@@ -22,7 +22,9 @@ This path is for the Home Assistant owner.
    wss://varco-bridge.vekexasia.workers.dev
    ```
 
-Only one Varco Authority can be configured in a Home Assistant instance.
+6. Leave **Enable WebRTC** on unless you want relay-only transport. This Authority-side `webrtc_enabled` switch is distinct from the consumer-side `webrtc: false` client option.
+
+Only one Varco Authority can be configured in a Home Assistant instance. Varco can also be installed through HACS as a custom repository or configured via YAML; see [Install Home Assistant](../../guides/install-home-assistant/).
 
 ## Find the Authority ID
 
@@ -49,7 +51,7 @@ Current approval is atomic: the owner approves or rejects the whole manifest. If
 
 Each active grant appears in the **Grants** section of the Varco panel. From there you can:
 
-- **Revoke access** — suspends the grant immediately. The consumer is disconnected and cannot reconnect.
+- **Revoke access** — marks the grant revoked. Active sessions are marked closed and the consumer's next message is rejected with `grant_revoked`; the consumer cannot re-authenticate.
 - **Delete grant record** — removes the grant permanently, including its audit history.
 - **Add or remove restrictions** — expand the **Restrictions** summary to narrow the grant without revoking it. Supported restriction types: expiry, schedule, PIN, and rate-limit. See [Grants and scopes](../../concepts/grants-and-scopes/) for details.
 
