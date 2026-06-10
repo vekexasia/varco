@@ -12,11 +12,18 @@ export function b64urlDecode(value: string): Uint8Array {
   return out;
 }
 
+// Matches Python json.dumps(..., ensure_ascii=True): escape everything above U+007E.
+function asciiJsonString(value: string): string {
+  return JSON.stringify(value).replace(/[\u007f-\uffff]/g, (ch) => `\\u${ch.charCodeAt(0).toString(16).padStart(4, "0")}`);
+}
+
 export function canonicalJson(value: unknown): string {
+  if (typeof value === "string") return asciiJsonString(value);
   if (value === null || typeof value !== "object") return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b));
-  return `{${entries.map(([key, val]) => `${JSON.stringify(key)}:${canonicalJson(val)}`).join(",")}}`;
+  // Codepoint key ordering, matching Python json.dumps(sort_keys=True). Not localeCompare.
+  const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  return `{${entries.map(([key, val]) => `${asciiJsonString(key)}:${canonicalJson(val)}`).join(",")}}`;
 }
 
 export function utf8(value: string): Uint8Array {
