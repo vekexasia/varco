@@ -7,7 +7,7 @@ class FakeTransport {
   onEvent(handler) { this.handler = handler; }
   async request(message) {
     this.messages.push(message);
-    if (message.type === 'access_request') return { type: 'access_request_pending', request_id: 'req1', pairing_code: '123456', status: 'pending' };
+    if (message.type === 'access_request') return { type: 'access_request_pending', request_id: message.request_id, access_request_id: 'req1', pairing_code: '123456', status: 'pending' };
     if (message.type === 'authenticate') return { type: 'authenticated', grant_id: 'req1' };
     if (message.type === 'get_states') return { type: 'states', states: { 'sensor.temp': { entity_id: 'sensor.temp', state: '21', attributes: {} } } };
     if (message.type === 'subscribe_states') return { type: 'state_snapshot', subscription_id: 'sub1', states: {} };

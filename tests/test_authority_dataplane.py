@@ -46,7 +46,7 @@ async def paired_authority(manifest):
         "nonce": nonce,
         "signature": sign_access_request(consumer["private_key"], nonce, manifest),
     })
-    grant = await authority.approve_request(pending["request_id"])
+    grant = await authority.approve_request(pending["access_request_id"])
     auth_nonce = "auth-nonce"
     auth = await authority.handle_plaintext("s1", channel_binding=TEST_BINDING, message={"type": "authenticate", "consumer_pk": consumer["public_key"], "nonce": auth_nonce, "signature": sign_authenticate(consumer["private_key"], auth_nonce, TEST_BINDING)})
     assert auth["type"] == "authenticated"
@@ -196,7 +196,7 @@ def test_authenticate_requires_consumer_private_key_signature():
             "nonce": "request-nonce",
             "signature": sign_access_request(consumer["private_key"], "request-nonce", manifest),
         })
-        await authority.approve_request(pending["request_id"])
+        await authority.approve_request(pending["access_request_id"])
         denied = await authority.handle_plaintext("s1", {"type": "authenticate", "consumer_pk": consumer["public_key"], "nonce": "auth-nonce", "signature": "bad"})
         assert denied["code"] == "bad_signature"
         assert "s1" not in authority.sessions

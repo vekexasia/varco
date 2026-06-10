@@ -217,7 +217,7 @@ class VarcoAuthority:
             result = self.notify_owner(request)
             if hasattr(result, "__await__"):
                 await result
-        return {"type": "access_request_pending", "request_id": request.request_id, "pairing_code": request.pairing_code, "status": "pending"}
+        return {"type": "access_request_pending", "request_id": message.get("request_id"), "access_request_id": request.request_id, "pairing_code": request.pairing_code, "status": "pending"}
 
     async def _authenticate(self, session_id: str, message: dict[str, Any], channel_binding: str | None) -> dict[str, Any]:
         consumer_pk = str(message.get("consumer_pk") or "")
@@ -234,7 +234,7 @@ class VarcoAuthority:
             return self._error(message.get("request_id"), "not_authorized", "No active grant")
         self._session(session_id).consumer_pk = consumer_pk
         await audit.async_log(self.store, "consumer_connected", grant.grant_id, {"consumer_pk": consumer_pk})
-        return {"type": "authenticated", "grant_id": grant.grant_id, "manifest": grant.manifest}
+        return {"type": "authenticated", "request_id": message.get("request_id"), "grant_id": grant.grant_id, "manifest": grant.manifest}
 
     async def _require_grant(self, session_id: str, request_id: Any) -> Grant | dict[str, Any]:
         session = self._session(session_id)
