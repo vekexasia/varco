@@ -13,7 +13,7 @@ Source: `custom_components/varco/websocket_api.py`.
 | `varco/access_requests` | none | List of pending access requests. |
 | `varco/grants` | none | List of stored grants. |
 | `varco/audit` | none | List of audit events. |
-| `varco/approve_request` | `request_id` (required), `expires_at` (optional ISO timestamp or null) | The created grant. |
+| `varco/approve_request` | `request_id` (required), `expires_at` (optional ISO timestamp or null), `approved_manifest` (optional dict; scope lists are intersected with the requested manifest, never widened) | The created grant. |
 | `varco/reject_request` | `request_id` (required) | `{ ok: true }`. |
 | `varco/revoke_grant` | `grant_id` (required) | The revoked grant. |
 | `varco/delete_grant` | `grant_id` (required) | The deleted grant. |

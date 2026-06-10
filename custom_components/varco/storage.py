@@ -5,6 +5,7 @@ from typing import Any
 
 from .const import STORAGE_KEY, STORAGE_VERSION
 from .models import AccessRequest, AccessStatus, Grant, utcnow
+from .policy import trim_manifest
 
 MAX_PENDING_ACCESS_REQUESTS = 50
 
@@ -66,13 +67,16 @@ class MemoryVarcoStore:
     async def async_list_grants(self) -> list[Grant]:
         return [Grant.from_dict(item) for item in (await self.async_load_data())["grants"].values()]
 
-    async def async_approve_request(self, request_id: str, expires_at: str | None = None) -> Grant:
+    async def async_approve_request(self, request_id: str, expires_at: str | None = None, approved_manifest: dict[str, Any] | None = None) -> Grant:
+        """Approve a pending request. If ``approved_manifest`` is given, the grant
+        manifest is the requested manifest trimmed to that subset (never widened)."""
         request = await self.async_get_access_request(request_id)
         if request is None:
             raise KeyError(request_id)
         request.status = AccessStatus.APPROVED
         request.decided_at = utcnow()
-        grant = Grant(grant_id=request.request_id, consumer_pk=request.consumer_pk, manifest=request.manifest, request_id=request.request_id, expires_at=expires_at)
+        manifest = request.manifest if approved_manifest is None else trim_manifest(request.manifest, approved_manifest)
+        grant = Grant(grant_id=request.request_id, consumer_pk=request.consumer_pk, manifest=manifest, request_id=request.request_id, expires_at=expires_at)
         await self.async_upsert_access_request(request)
         await self.async_upsert_grant(grant)
         return grant

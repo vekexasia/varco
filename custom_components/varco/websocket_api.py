@@ -63,11 +63,11 @@ async def websocket_audit(hass: HomeAssistant, connection, msg) -> None:
     connection.send_result(msg["id"], await _authority(hass).store.async_audit_events())
 
 
-@websocket_api.websocket_command({vol.Required("type"): "varco/approve_request", vol.Required("request_id"): str, vol.Optional("expires_at"): vol.Any(None, str)})
+@websocket_api.websocket_command({vol.Required("type"): "varco/approve_request", vol.Required("request_id"): str, vol.Optional("expires_at"): vol.Any(None, str), vol.Optional("approved_manifest"): vol.Any(None, dict)})
 @websocket_api.require_admin
 @websocket_api.async_response
 async def websocket_approve(hass: HomeAssistant, connection, msg) -> None:
-    grant = await _authority(hass).approve_request(msg["request_id"], expires_at=msg.get("expires_at"))
+    grant = await _authority(hass).approve_request(msg["request_id"], expires_at=msg.get("expires_at"), approved_manifest=msg.get("approved_manifest"))
     connection.send_result(msg["id"], grant.as_dict())
 
 

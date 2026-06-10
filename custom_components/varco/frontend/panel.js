@@ -211,6 +211,33 @@ class VarcoPanel extends HTMLElement {
       </div>`;
   }
 
+  // Editable variant for pending requests: each scope entry gets a checkbox so
+  // the owner can untick entries before approving (partial approval).
+  scopeSectionEditable(title, key, values, requestId) {
+    return `
+      <div class="scope-section">
+        <div class="scope-title">${this.escape(title)}</div>
+        ${values.length
+          ? `<ul>${values.map((value) => `<li><label><input type="checkbox" checked data-scope-request="${this.escape(requestId)}" data-scope-key="${this.escape(key)}" value="${this.escape(value)}"> <code>${this.escape(value)}</code></label></li>`).join('')}</ul>`
+          : '<div class="empty-scope">None requested</div>'}
+      </div>`;
+  }
+
+  scopeDetailsEditable(manifest, requestId) {
+    const scopes = this.scopes(manifest);
+    return `
+      <details class="scope-details" open>
+        <summary>Requested permissions: ${this.escape(this.scopeSummary(manifest))}</summary>
+        <div class="scope-grid">
+          ${this.scopeSectionEditable('Read entity states', 'read_entities', scopes.read, requestId)}
+          ${this.scopeSectionEditable('Subscribe to live updates', 'subscriptions', scopes.subscriptions, requestId)}
+          ${this.scopeSectionEditable('Query history', 'history', scopes.history, requestId)}
+          ${this.scopeSectionEditable('Camera snapshots', 'camera_snapshots', scopes.cameras, requestId)}
+          ${this.scopeSectionEditable('Home Assistant actions', 'actions', scopes.actions, requestId)}
+        </div>
+      </details>`;
+  }
+
   scopeDetails(manifest, open = false) {
     const scopes = this.scopes(manifest);
     return `
@@ -257,10 +284,10 @@ class VarcoPanel extends HTMLElement {
           <div><span>Consumer key</span><code title="${this.escape(request.consumer_pk)}">${this.escape(this.shortKey(request.consumer_pk))}</code></div>
           <div><span>Request ID</span><code>${this.escape(request.request_id)}</code></div>
         </div>
-        <p class="approval-note">Approving grants every permission listed below. Individual actions cannot be trimmed in this MVP.</p>
-        ${this.scopeDetails(request.manifest, true)}
+        <p class="approval-note">Untick any permission you do not want to grant before approving.</p>
+        ${this.scopeDetailsEditable(request.manifest, request.request_id)}
         <div class="button-row">
-          <button class="primary" data-approve="${this.escape(request.request_id)}">Approve all listed permissions</button>
+          <button class="primary" data-approve="${this.escape(request.request_id)}">Approve selected permissions</button>
           <button class="secondary" data-reject="${this.escape(request.request_id)}">Reject</button>
         </div>
       </div>`;
@@ -573,7 +600,20 @@ class VarcoPanel extends HTMLElement {
           ${current.grants.length ? current.grants.map((grant) => this.grantCard(grant)).join('') : '<p>No grants.</p>'}
         </div>
       </ha-card>`;
-    this.querySelectorAll('[data-approve]').forEach((el) => el.onclick = () => this.call('varco/approve_request', { request_id: el.dataset.approve }));
+    this.querySelectorAll('[data-approve]').forEach((el) => el.onclick = () => {
+      const requestId = el.dataset.approve;
+      const boxes = [...this.querySelectorAll(`[data-scope-request="${CSS.escape(requestId)}"]`)];
+      const payload = { request_id: requestId };
+      if (boxes.some((box) => !box.checked)) {
+        const approved = {};
+        boxes.forEach((box) => {
+          (approved[box.dataset.scopeKey] = approved[box.dataset.scopeKey] || []);
+          if (box.checked) approved[box.dataset.scopeKey].push(box.value);
+        });
+        payload.approved_manifest = approved;
+      }
+      this.call('varco/approve_request', payload);
+    });
     this.querySelectorAll('[data-reject]').forEach((el) => el.onclick = () => this.call('varco/reject_request', { request_id: el.dataset.reject }));
     this.querySelectorAll('[data-revoke]').forEach((el) => el.onclick = () => this.call('varco/revoke_grant', { grant_id: el.dataset.revoke }));
     this.querySelectorAll('[data-delete-grant]').forEach((el) => el.onclick = () => {
