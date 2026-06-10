@@ -56,10 +56,13 @@ def action_allowed(manifest: dict[str, Any], domain: str, service: str, entity_i
 
 
 def action_candidates(domain: str, service: str, entity_id: str | None) -> set[str]:
-    candidates = {f"{domain}.*"}
-    if entity_id:
-        candidates.add(f"{domain}.{service}@{entity_id}")
-        candidates.add(f"*@{entity_id}")
+    if not entity_id:
+        # Entity-less calls are domain-wide; only an explicit domain.* scope allows them.
+        return {f"{domain}.*"}
+    candidates = {f"{domain}.{service}@{entity_id}", f"*@{entity_id}"}
+    entity_domain = entity_id.split(".", 1)[0] if "." in entity_id else ""
+    if entity_domain == domain:
+        candidates.add(f"{domain}.*")
     return candidates
 
 
