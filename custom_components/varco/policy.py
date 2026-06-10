@@ -42,8 +42,13 @@ def trim_manifest(requested: dict[str, Any], approved: dict[str, Any]) -> dict[s
 
     trimmed = dict(requested)
     for keys in SCOPE_KEY_ALIASES:
-        requested_values = _list(requested, *keys)
-        approved_values = set(_list(approved, *keys))
+        requested_values: list[str] = []
+        approved_values: set[str] = set()
+        for key in keys:
+            for value in _list(requested, key):
+                if value not in requested_values:
+                    requested_values.append(value)
+            approved_values.update(_list(approved, key))
         for key in keys:
             trimmed.pop(key, None)
         trimmed[keys[0]] = [value for value in requested_values if value in approved_values]
