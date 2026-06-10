@@ -14,7 +14,7 @@ Messages handled by the Authority:
 | `get_states` | `entity_ids` | `states` | `read_entities`. |
 | `subscribe_states` | `entity_ids` | `state_snapshot`, then `state_delta` events | `subscriptions` plus `read_entities`. |
 | `unsubscribe_states` | `subscription_id` | `unsubscribed` | Authenticated session. |
-| `history_query` | `entity_ids`, optional range fields | `history_result` | `history`. |
+| `history_query` | `entity_ids` (max 10), optional `start_time`/`end_time` (range clamped to 30 days) | `history_result` (`history`, `truncated`, `range_clamped`; max 5000 points per entity) | `history`. |
 | `camera_snapshot` | `entity_id` | `camera_snapshot` | `camera_snapshots`. |
 | `call_service` | `domain`, `service`, `service_data`, `target`; optional top-level `pin` or `pins` | `{ type: "service_called", request_id, ok: true }` | `actions`. |
 | `webrtc_offer` | SDP offer | `webrtc_answer` or `webrtc_unavailable` | Active grant. |

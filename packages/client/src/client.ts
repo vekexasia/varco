@@ -81,6 +81,14 @@ export function createVarcoClient(options: VarcoClientOptions): VarcoClient {
     },
 
     async queryHistory(entityIds: string[], range: Record<string, unknown> = {}) {
+      if (entityIds.length > 10) {
+        options.warn?.(`Varco history_query with ${entityIds.length} entities exceeds the Authority limit of 10 and will be rejected`);
+      }
+      const start = typeof range.start_time === "string" ? Date.parse(range.start_time) : NaN;
+      const end = typeof range.end_time === "string" ? Date.parse(range.end_time) : Date.now();
+      if (Number.isFinite(start) && end - start > 30 * 24 * 60 * 60 * 1000) {
+        options.warn?.("Varco history_query range exceeds 30 days; the Authority will clamp it");
+      }
       const response = await activeTransport.request({ type: "history_query", entity_ids: entityIds, ...range });
       return response.history;
     },
