@@ -19,6 +19,17 @@ export function b64urlEncode(bytes: Uint8Array): string {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
+// Allowlist semantics: unset/empty or "*" allows every origin (default keeps the
+// public demo and local dev working without config); otherwise a comma-separated
+// list of exact origins. A missing Origin header is always allowed because
+// non-browser clients (e.g. the Home Assistant authority) do not send one.
+export function originAllowed(allowlist: string | undefined, origin: string | null): boolean {
+  const raw = allowlist?.trim();
+  if (!raw || raw === "*") return true;
+  if (origin === null) return true;
+  return raw.split(",").map((entry) => entry.trim()).filter(Boolean).includes(origin);
+}
+
 export function parseLimit(raw: string | undefined, fallback: number): number {
   if (typeof raw !== "string") return fallback;
   const value = Number(raw);

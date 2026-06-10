@@ -3,6 +3,8 @@
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src",
+    "lib": ["ES2022"],
+    "skipLibCheck": false,
     "types": ["@cloudflare/workers-types"]
   },
   "include": ["src/**/*.ts"]
