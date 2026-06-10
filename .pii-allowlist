@@ -12,3 +12,19 @@ https://vekexasia\.github\.io/varco/
 Varco
 # Home Assistant action scope examples use service@entity syntax, not emails.
 (?:light|switch|climate|cover|fan|button|scene|number|lock|media_player|select)\.[a-z_]+@(?:light|switch|climate|cover|fan|button|scene|number|lock|media_player|select)\.[a-z0-9_]+
+# RFC 5737 documentation IPs used as placeholders in PRD/CI examples.
+http://192\.0\.2\.\d{1,3}:8123
+# Public Home Assistant container image with pinned digest (ci.yml).
+ghcr\.io/home-assistant/home-assistant:[0-9.]+@sha256:[0-9a-f]{64}
+# Public project URLs in install docs.
+https://github\.com/vekexasia/varco
+# Public demo origin examples in bridge-endpoints docs.
+https://varco-demo\.andreabaccega\.com
+http://localhost:5173
+# OPF flags the image reference user@host style span without the registry prefix.
+home-assistant:[0-9][0-9.]*@sha256:[0-9a-f]{64}
+# GitHub Actions pinned to commit SHAs (issue #34) get flagged as user@host.
+@[0-9a-f]{40}\b
+# OPF span variants of the public HA image reference.
+^ghcr\.io/home-assistant/home-assistant$
+^[0-9][0-9.]*@sha256:[0-9a-f]{64}$
