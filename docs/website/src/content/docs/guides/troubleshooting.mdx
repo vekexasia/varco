@@ -16,6 +16,17 @@ description: Common Varco installation, relay, pairing, and WebRTC issues.
 - Confirm no second Home Assistant instance is using the same Authority ID. The bridge keeps only the most recently authenticated Authority connection for an ID, so two instances will keep replacing each other.
 - Check Home Assistant logs for `Varco relay disconnected`.
 
+## Bridge closes the connection with code 4403 (`Authority not allowlisted`)
+
+The bridge runs with `AUTHORITY_ALLOWLIST` set and your Authority ID is not in the list. Ask the bridge operator to add the exact base64url Authority ID shown in the Varco panel, or point the integration at a different bridge.
+
+## Bridge closes the connection with code 4405 (`Relay data disabled`)
+
+The bridge runs with `BRIDGE_MODE=signaling-only`: it relays session setup and WebRTC negotiation but refuses application data. Consumers see `Bridge is signaling-only: P2P required but unavailable` when the WebRTC upgrade fails, and Home Assistant logs `Bridge is signaling-only: relay data disabled`.
+
+- Confirm WebRTC works: do not set `webrtc: false` on the consumer, and check Home Assistant logs for `aiortc` warnings.
+- If WebRTC cannot work in your network, use a bridge running the default `BRIDGE_MODE=relay`.
+
 ## Consumer says the Authority is offline
 
 - Confirm the Varco panel says the relay is connected.

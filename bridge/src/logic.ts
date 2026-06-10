@@ -3,7 +3,7 @@
 import { ed25519 } from "@noble/curves/ed25519";
 
 export type Role = "authority" | "consumer";
-export type SocketState = { role: Role; authed?: boolean; sessionId?: string; challenge?: string; authorityId?: string; connectedAt?: number; windowStart: number; messagesInWindow: number };
+export type SocketState = { role: Role; authed?: boolean; sessionId?: string; challenge?: string; authorityId?: string; connectedAt?: number; windowStart: number; messagesInWindow: number; signalingCount?: number };
 
 export function b64urlDecode(value: string): Uint8Array {
   const normalized = value.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (value.length % 4)) % 4);
@@ -19,15 +19,101 @@ export function b64urlEncode(bytes: Uint8Array): string {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-// Allowlist semantics: unset/empty or "*" allows every origin (default keeps the
-// public demo and local dev working without config); otherwise a comma-separated
-// list of exact origins. A missing Origin header is always allowed because
-// non-browser clients (e.g. the Home Assistant authority) do not send one.
-export function originAllowed(allowlist: string | undefined, origin: string | null): boolean {
-  const raw = allowlist?.trim();
-  if (!raw || raw === "*") return true;
+export type OriginPolicy = "public" | "restricted";
+export type PresenceVisibility = "public" | "restricted" | "disabled";
+export type BridgeMode = "relay" | "signaling-only";
+export type BridgePolicy = {
+  originPolicy: OriginPolicy;
+  allowedOrigins: string[];
+  presence: PresenceVisibility;
+  authorityAllowlist: Set<string> | null;
+  mode: BridgeMode;
+  maxSignalingMessages: number;
+};
+
+export type PolicyEnv = {
+  ORIGIN_POLICY?: string;
+  ALLOWED_ORIGINS?: string;
+  PRESENCE_VISIBILITY?: string;
+  AUTHORITY_ALLOWLIST?: string;
+  BRIDGE_MODE?: string;
+  MAX_SIGNALING_MESSAGES?: string;
+};
+
+function pickValue<T extends string>(raw: string | undefined, values: readonly T[], fallback: T): T {
+  const value = raw?.trim();
+  return value !== undefined && (values as readonly string[]).includes(value) ? (value as T) : fallback;
+}
+
+function splitList(raw: string | undefined): string[] {
+  return (raw ?? "").split(",").map((entry) => entry.trim()).filter(Boolean);
+}
+
+// Every option defaults to the historical public shared-bridge behaviour:
+// any origin, public presence, open authority registration, full relay mode.
+// Invalid values fall back to the defaults rather than failing closed.
+export function parsePolicy(env: PolicyEnv): BridgePolicy {
+  const allowlist = splitList(env.AUTHORITY_ALLOWLIST);
+  return {
+    originPolicy: pickValue(env.ORIGIN_POLICY, ["public", "restricted"], "public"),
+    allowedOrigins: splitList(env.ALLOWED_ORIGINS).filter((entry) => entry !== "*"),
+    presence: pickValue(env.PRESENCE_VISIBILITY, ["public", "restricted", "disabled"], "public"),
+    authorityAllowlist: allowlist.length > 0 ? new Set(allowlist) : null,
+    mode: pickValue(env.BRIDGE_MODE, ["relay", "signaling-only"], "relay"),
+    maxSignalingMessages: parseLimit(env.MAX_SIGNALING_MESSAGES, 64),
+  };
+}
+
+// Origin checks are browser containment, not authentication: a missing Origin
+// header is always allowed because non-browser clients (e.g. the Home
+// Assistant authority) do not send one. ORIGIN_POLICY=public allows every
+// origin; ORIGIN_POLICY=restricted requires an exact ALLOWED_ORIGINS match
+// (an empty list denies all browser origins).
+export function originAllowed(policy: BridgePolicy, origin: string | null): boolean {
+  if (policy.originPolicy === "public") return true;
   if (origin === null) return true;
-  return raw.split(",").map((entry) => entry.trim()).filter(Boolean).includes(origin);
+  return policy.allowedOrigins.includes(origin);
+}
+
+export type PresenceDecision = { kind: "ok" } | { kind: "forbidden" } | { kind: "not_found" };
+
+export function presenceDecision(policy: BridgePolicy, origin: string | null): PresenceDecision {
+  if (policy.presence === "disabled") return { kind: "not_found" };
+  if (policy.presence === "restricted") {
+    if (origin !== null && !policy.allowedOrigins.includes(origin)) return { kind: "forbidden" };
+    return { kind: "ok" };
+  }
+  return originAllowed(policy, origin) ? { kind: "ok" } : { kind: "forbidden" };
+}
+
+export type AuthorityConnectDecision = { kind: "accept" } | { kind: "close"; code: 4403; reason: string };
+
+// Registration control only: an unset allowlist keeps open registration, and
+// allowlisted IDs must still pass the existing signature challenge. This is
+// not a substitute for the challenge (anyone can claim an ID at connect time).
+export function authorityConnectDecision(allowlist: Set<string> | null, authorityId: string): AuthorityConnectDecision {
+  if (allowlist !== null && !allowlist.has(authorityId)) return { kind: "close", code: 4403, reason: "Authority not allowlisted" };
+  return { kind: "accept" };
+}
+
+export type RelayGateResult = { ok: true } | { ok: false; code: 4405; reason: string; notice: { type: "relay_disabled" } };
+
+// In signaling-only mode the bridge relays only the plaintext session
+// handshake and ciphertext tagged lane:"signaling". The lane field is
+// unverifiable by design (the bridge never decrypts and never decides
+// permissions); the per-socket budget caps abuse of the signaling lane as a
+// covert relay. Everything else closes with 4405 so clients fail loudly
+// instead of silently falling back to relay.
+export function relayPayloadGate(mode: BridgeMode, payload: any, session: SocketState, maxSignaling: number): RelayGateResult {
+  if (mode === "relay") return { ok: true };
+  const type = payload?.type;
+  if (type === "client_hello" || type === "server_hello") return { ok: true };
+  if (type === "ciphertext" && payload.lane === "signaling") {
+    session.signalingCount = (session.signalingCount ?? 0) + 1;
+    if (session.signalingCount <= maxSignaling) return { ok: true };
+    return { ok: false, code: 4405, reason: "Signaling budget exhausted", notice: { type: "relay_disabled" } };
+  }
+  return { ok: false, code: 4405, reason: "Relay data disabled", notice: { type: "relay_disabled" } };
 }
 
 export function parseLimit(raw: string | undefined, fallback: number): number {

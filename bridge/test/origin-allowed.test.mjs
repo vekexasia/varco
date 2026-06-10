@@ -1,23 +1,29 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { originAllowed } from '../dist/logic.js';
+import { originAllowed, parsePolicy } from '../dist/logic.js';
 
-test('originAllowed allows everything when allowlist is unset, empty, or *', () => {
-  assert.equal(originAllowed(undefined, 'https://evil.example'), true);
-  assert.equal(originAllowed('', 'https://evil.example'), true);
-  assert.equal(originAllowed('  ', 'https://evil.example'), true);
-  assert.equal(originAllowed('*', 'https://evil.example'), true);
+test('public origin policy allows every origin (default behaviour)', () => {
+  assert.equal(originAllowed(parsePolicy({}), 'https://evil.example'), true);
+  assert.equal(originAllowed(parsePolicy({ ORIGIN_POLICY: 'public' }), 'https://evil.example'), true);
+  // ALLOWED_ORIGINS alone has no effect without ORIGIN_POLICY=restricted.
+  assert.equal(originAllowed(parsePolicy({ ALLOWED_ORIGINS: 'https://a.example' }), 'https://evil.example'), true);
 });
 
-test('originAllowed matches exact origins from a comma-separated list', () => {
-  const list = 'https://varco-demo.andreabaccega.com, http://localhost:5173';
-  assert.equal(originAllowed(list, 'https://varco-demo.andreabaccega.com'), true);
-  assert.equal(originAllowed(list, 'http://localhost:5173'), true);
-  assert.equal(originAllowed(list, 'https://evil.example'), false);
-  assert.equal(originAllowed(list, 'https://varco-demo.andreabaccega.com.evil.example'), false);
+test('restricted origin policy matches exact origins from ALLOWED_ORIGINS', () => {
+  const policy = parsePolicy({ ORIGIN_POLICY: 'restricted', ALLOWED_ORIGINS: 'https://varco-demo.andreabaccega.com, http://localhost:5173' });
+  assert.equal(originAllowed(policy, 'https://varco-demo.andreabaccega.com'), true);
+  assert.equal(originAllowed(policy, 'http://localhost:5173'), true);
+  assert.equal(originAllowed(policy, 'https://evil.example'), false);
+  assert.equal(originAllowed(policy, 'https://varco-demo.andreabaccega.com.evil.example'), false);
 });
 
-test('originAllowed always allows requests without an Origin header', () => {
-  assert.equal(originAllowed('https://varco-demo.andreabaccega.com', null), true);
-  assert.equal(originAllowed(undefined, null), true);
+test('restricted policy with empty ALLOWED_ORIGINS denies all browser origins', () => {
+  const policy = parsePolicy({ ORIGIN_POLICY: 'restricted' });
+  assert.equal(originAllowed(policy, 'https://any.example'), false);
+});
+
+test('requests without an Origin header are always allowed', () => {
+  assert.equal(originAllowed(parsePolicy({ ORIGIN_POLICY: 'restricted', ALLOWED_ORIGINS: 'https://a.example' }), null), true);
+  assert.equal(originAllowed(parsePolicy({ ORIGIN_POLICY: 'restricted' }), null), true);
+  assert.equal(originAllowed(parsePolicy({}), null), true);
 });

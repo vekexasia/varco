@@ -2,6 +2,16 @@ name = "varco-bridge"
 main = "src/index.ts"
 compatibility_date = "2026-06-07"
 
+# Optional deployment policy vars (defaults keep the public shared-bridge
+# behaviour). See docs/website/src/content/docs/reference/bridge-endpoints.mdx.
+# [vars]
+# ORIGIN_POLICY = "public"            # public | restricted (with ALLOWED_ORIGINS)
+# ALLOWED_ORIGINS = ""                # comma-separated exact origins
+# PRESENCE_VISIBILITY = "public"      # public | restricted | disabled
+# AUTHORITY_ALLOWLIST = ""            # comma-separated authority IDs; unset = open
+# BRIDGE_MODE = "relay"               # relay | signaling-only
+# MAX_SIGNALING_MESSAGES = "64"       # per-socket budget in signaling-only mode
+
 [[durable_objects.bindings]]
 name = "AUTHORITY_ROOMS"
 class_name = "AuthorityRoom"

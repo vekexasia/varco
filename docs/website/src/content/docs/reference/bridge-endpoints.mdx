@@ -21,6 +21,30 @@ Implemented endpoints:
 
 The bridge keeps one active Authority socket per Authority ID. A new connection that completes the challenge for the same Authority key replaces the previous socket (close code 4409), and connected consumers are evicted with close code 4404 so they reconnect to the new Authority socket.
 
-## Origin allowlist
+## Deployment policy environment variables
 
-The optional `ALLOWED_ORIGINS` environment variable restricts browser access to `/presence/{authorityId}` and the WebSocket endpoints. Set it to a comma-separated list of exact origins, for example `https://varco-demo.andreabaccega.com,http://localhost:5173`. When it is unset, empty, or `*`, every origin is allowed. Requests without an `Origin` header, such as the Home Assistant Authority connection, are always allowed.
+All variables are optional. The defaults preserve the public shared-bridge behaviour: any origin, public presence, open Authority registration, full relay mode.
+
+| Variable | Values | Default | Effect |
+| --- | --- | --- | --- |
+| `ORIGIN_POLICY` | `public`, `restricted` | `public` | `public` allows every browser origin. `restricted` requires the `Origin` header to match `ALLOWED_ORIGINS` exactly on `/presence/{authorityId}` and on both WebSocket upgrade endpoints. |
+| `ALLOWED_ORIGINS` | comma-separated exact origins | unset | Origin allowlist, for example `https://varco-demo.andreabaccega.com,http://localhost:5173`. Only used when `ORIGIN_POLICY=restricted` or `PRESENCE_VISIBILITY=restricted`; setting it alone has no effect. With `ORIGIN_POLICY=restricted` and an empty list, all browser origins are denied. |
+| `PRESENCE_VISIBILITY` | `public`, `restricted`, `disabled` | `public` | `public` follows `ORIGIN_POLICY`. `restricted` requires an `ALLOWED_ORIGINS` match for `/presence/{authorityId}` even when `ORIGIN_POLICY=public`. `disabled` returns HTTP 404 for every `/presence/{authorityId}` request. |
+| `AUTHORITY_ALLOWLIST` | comma-separated base64url Ed25519 Authority IDs | unset (open registration) | When set, `/authority/{authorityId}` connections for IDs not in the list are closed with code 4403 (`Authority not allowlisted`) before the challenge is sent. Listed IDs still have to complete the normal Ed25519 signature challenge. |
+| `BRIDGE_MODE` | `relay`, `signaling-only` | `relay` | `signaling-only` relays only the session handshake and ciphertext tagged `lane: "signaling"`; all other relayed payloads are rejected with a `{"type":"relay_disabled"}` notice and close code 4405. See [Relay and WebRTC](../../concepts/transports/). |
+| `MAX_SIGNALING_MESSAGES` | positive integer | `64` | Per-socket budget of `lane: "signaling"` ciphertext messages in `signaling-only` mode. Exceeding it closes the socket with code 4405. |
+
+Requests without an `Origin` header, such as the Home Assistant Authority connection, are always allowed by every origin check. Origin checks are browser containment, not authentication.
+
+## WebSocket close codes
+
+| Code | Meaning |
+| --- | --- |
+| 4400 | Invalid message (too large, malformed JSON, or invalid session). |
+| 4401 | Authority authentication required. |
+| 4403 | Bad challenge signature, or the Authority ID is not in `AUTHORITY_ALLOWLIST`. |
+| 4404 | Authority offline. |
+| 4405 | Relay data disabled (`BRIDGE_MODE=signaling-only`) or the signaling budget was exhausted. |
+| 4408 | Authority authentication timeout. |
+| 4409 | Replaced by a newer authenticated Authority connection. |
+| 4429 | Rate limit or connection cap exceeded. |

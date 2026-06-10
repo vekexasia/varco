@@ -20,3 +20,17 @@ WebRTC is opportunistic:
 - Consumers can disable WebRTC with `webrtc: false`.
 
 The Home Assistant integration declares `aiortc>=1.9.0`. If `aiortc` fails to install or import at runtime, Varco logs a warning and keeps relay transport working.
+
+## Signaling-only bridges
+
+A bridge operator can set `BRIDGE_MODE=signaling-only` to relay only what is needed to establish sessions and negotiate WebRTC, while refusing to carry application data. The tradeoff: bridge bandwidth and data exposure drop to near zero, but consumers that cannot establish a WebRTC connection (restrictive NATs, no `aiortc` on the Authority) cannot work at all.
+
+Mechanics:
+
+- The plaintext handshake messages `client_hello` and `server_hello` are always relayed.
+- Encrypted envelopes may carry a `lane: "signaling"` field. The consumer client (`packages/client/src/transport.ts`) tags `access_request`, `authenticate`, `webrtc_offer`, and `webrtc_ice`; the Authority (`custom_components/varco/relay.py`) tags its responses to those messages. A signaling-only bridge relays tagged envelopes up to a per-socket budget (`MAX_SIGNALING_MESSAGES`, default 64).
+- Every other relayed payload is rejected: the bridge sends a `{"type":"relay_disabled"}` notice and closes the socket with code 4405.
+
+The `lane` field is envelope metadata visible to the bridge. It is unverifiable by design: the bridge never decrypts payloads and never makes permission decisions, so a peer could mislabel data-plane traffic as signaling. The message budget caps how far that abuse can go.
+
+Failure is explicit, never silent: on a signaling-only bridge, a consumer whose WebRTC upgrade fails gets an error (`Bridge is signaling-only: P2P required but unavailable`) from `connect()` instead of degrading to relay. This is a deliberate exception to relay fallback, chosen by the bridge operator, not by the consumer or the bridge code path.

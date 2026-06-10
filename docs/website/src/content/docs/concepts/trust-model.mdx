@@ -15,9 +15,15 @@ The consumer is not trusted. It may request a small manifest, but every later me
 
 The bridge is not trusted. It routes encrypted envelopes and may observe metadata, but it must not see application plaintext or decide whether an entity or service call is allowed.
 
-## Public bridge has no access control
+## Public bridge has open registration by default
 
-The shared public bridge accepts any Authority that presents a valid ed25519 key pair. There is no allowlist, invite, or admin gating: anyone can register an Authority ID and consume bridge resources. Permission decisions are unaffected, because the bridge never decides access, but the open registration surface exists until access control lands as future work. If this is a concern, the bridge is opaque by design and the protocol does not prevent running your own, though self-hosted bridge support is not yet documented.
+The shared public bridge accepts any Authority that presents a valid ed25519 key pair. There is no invite or admin gating by default: anyone can register an Authority ID and consume bridge resources. Permission decisions are unaffected, because the bridge never decides access.
+
+A bridge operator can set the `AUTHORITY_ALLOWLIST` environment variable to restrict which Authority IDs may register. This is registration control, not a substitute for the signature challenge: allowlisted IDs still have to prove key ownership through the normal Ed25519 challenge, and the allowlist never influences grant or scope decisions, which stay in Home Assistant. See [Bridge endpoints](../../reference/bridge-endpoints/).
+
+The optional `ORIGIN_POLICY=restricted` setting limits which browser origins can reach the bridge. Origin checks are browser containment, not authentication: non-browser clients do not send an `Origin` header and are always allowed, and any client can forge the header outside a browser.
+
+`GET /presence/{authorityId}` exposes only whether an Authority ID currently has an authenticated bridge connection (`{"online": true|false}`). It reveals no entity data, but it does confirm that a given Authority ID exists and is online. Operators who consider that metadata sensitive can set `PRESENCE_VISIBILITY` to `restricted` or `disabled`.
 
 ## Encryption boundary
 

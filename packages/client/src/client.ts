@@ -64,6 +64,11 @@ export function createVarcoClient(options: VarcoClientOptions): VarcoClient {
           setStatus({ mode: "p2p", detail: "WebRTC data channel connected" });
         }
       }
+      // No silent fallback on a signaling-only bridge: relay data is rejected
+      // there, so surface the failure instead of leaving a dead relay transport.
+      if (activeTransport === relayTransport && transportStatus.detail !== undefined && isSignalingOnlyError(transportStatus.detail)) {
+        throw new Error(transportStatus.detail);
+      }
     },
 
     async getStates(entityIds: string[]) {
@@ -186,6 +191,10 @@ class DataChannelTransport implements VarcoTransport {
   }
 }
 
+function isSignalingOnlyError(message: string): boolean {
+  return message.includes("signaling-only");
+}
+
 async function tryWebRtcUpgrade(relayTransport: VarcoTransport, setStatus: (status: VarcoTransportStatus) => void): Promise<VarcoTransport | null> {
   const Peer = globalThis.RTCPeerConnection;
   if (!Peer) {
@@ -210,7 +219,8 @@ async function tryWebRtcUpgrade(relayTransport: VarcoTransport, setStatus: (stat
     await opened;
     return new DataChannelTransport(pc, channel);
   } catch (err) {
-    setStatus({ mode: "relay", detail: err instanceof Error ? err.message : "WebRTC failed" });
+    const detail = err instanceof Error ? err.message : "WebRTC failed";
+    setStatus({ mode: "relay", detail });
     pc.close();
     return null;
   }

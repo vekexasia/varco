@@ -400,3 +400,34 @@ def test_run_resets_backoff_after_long_lived_connection(monkeypatch):
             monkeypatch.setattr(asyncio, "wait_for", real_wait_for)
         assert waits == [5.0, 5.0]
     asyncio.run(run())
+
+
+def test_signaling_responses_carry_lane_tag_and_data_plane_responses_do_not():
+    async def run():
+        relay, keys, sent = make_relay()
+        client = await _handshake(relay, keys, sent)
+
+        responses = iter([
+            {"type": "authenticated", "grant_id": "g1"},
+            {"type": "webrtc_answer", "sdp": "x"},
+            {"type": "states", "states": {}},
+        ])
+
+        async def fake_handle(session_id, plaintext, channel_binding=None):
+            return next(responses)
+
+        relay.authority.handle_plaintext = fake_handle
+        for typ in ("authenticate", "webrtc_offer", "get_states"):
+            await relay._handle_bridge_message({
+                "type": "client_message",
+                "sessionId": "s1",
+                "payload": client.encrypt({"type": typ}),
+            })
+        assert sent[0]["payload"]["lane"] == "signaling"
+        assert sent[1]["payload"]["lane"] == "signaling"
+        assert "lane" not in sent[2]["payload"]
+        # The lane tag is envelope metadata only; payloads stay encrypted.
+        assert client.decrypt(sent[0]["payload"]) == {"type": "authenticated", "grant_id": "g1"}
+        assert client.decrypt(sent[1]["payload"]) == {"type": "webrtc_answer", "sdp": "x"}
+        assert client.decrypt(sent[2]["payload"]) == {"type": "states", "states": {}}
+    asyncio.run(run())

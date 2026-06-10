@@ -20,6 +20,21 @@ from .webrtc import create_peer_stack_or_none
 
 _LOGGER = logging.getLogger(__name__)
 
+# Response types a signaling-only bridge still relays: pairing, session auth,
+# WebRTC negotiation, and errors (which only arise from signaling messages on
+# such a bridge, since consumer data-plane ciphertext never reaches us there).
+# The lane tag is envelope metadata visible to the bridge; the payload stays
+# encrypted.
+SIGNALING_RESPONSE_TYPES = {
+    "access_request_pending",
+    "authenticated",
+    "webrtc_answer",
+    "webrtc_ice_ack",
+    "webrtc_unavailable",
+    "error",
+}
+SIGNALING_ONLY_ERROR = "Bridge is signaling-only: relay data disabled"
+
 
 @dataclass
 class BridgeSession:
@@ -104,6 +119,9 @@ class VarcoRelay:
                     await self._handle_bridge_message(json.loads(msg.data))
                 elif msg.type in (WSMsgType.CLOSED, WSMsgType.ERROR):
                     break
+            if ws.close_code == 4405:
+                self.status["last_error"] = SIGNALING_ONLY_ERROR
+                _LOGGER.error("Varco bridge rejected relay data: %s", SIGNALING_ONLY_ERROR)
         self._ws = None
         self.status["connected"] = False
 
@@ -140,9 +158,9 @@ class VarcoRelay:
         except Exception:
             _LOGGER.exception("Varco client message failed")
             response = {"type": "error", "code": "session_error", "message": "Internal error"}
-        await self._send_to_client(session_id, session.secure.encrypt(response))
+        await self._send_to_client(session_id, self._encrypt_for_client(session, response))
         for event in await self.authority.pop_outbox(session_id):
-            await self._send_to_client(session_id, session.secure.encrypt(event))
+            await self._send_to_client(session_id, self._encrypt_for_client(session, event))
 
     @callback
     def _on_state_changed(self, event) -> None:
@@ -168,6 +186,12 @@ class VarcoRelay:
     async def _send(self, message: dict[str, Any]) -> None:
         if self._ws is not None and not self._ws.closed:
             await self._ws.send_json(message)
+
+    def _encrypt_for_client(self, session: BridgeSession, payload: dict[str, Any]) -> dict[str, Any]:
+        envelope: dict[str, Any] = session.secure.encrypt(payload)
+        if payload.get("type") in SIGNALING_RESPONSE_TYPES:
+            envelope["lane"] = "signaling"
+        return envelope
 
     async def _send_to_client(self, session_id: str, payload: dict[str, Any]) -> None:
         await self._send({"type": "authority_message", "sessionId": session_id, "payload": payload})

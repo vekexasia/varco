@@ -45,6 +45,20 @@ async function deriveSessionKeys(privateKey: CryptoKey, publicKey: CryptoKey, au
   return { send, recv, channelBinding: b64urlEncode(new Uint8Array(bindingBits)) };
 }
 
+// Message types relayed even by a signaling-only bridge: pairing, session
+// auth, and WebRTC negotiation. The lane tag is envelope metadata the bridge
+// can see; it carries no plaintext and grants no permissions.
+const SIGNALING_TYPES = new Set(["access_request", "authenticate", "webrtc_offer", "webrtc_ice"]);
+const SIGNALING_ONLY_ERROR = "Bridge is signaling-only: P2P required but unavailable";
+
+export function envelopeLane(payloadType: unknown): "signaling" | null {
+  return SIGNALING_TYPES.has(String(payloadType)) ? "signaling" : null;
+}
+
+export function closeError(code: number | undefined): Error {
+  return new Error(code === 4405 ? SIGNALING_ONLY_ERROR : "Varco transport closed");
+}
+
 function nonce(value: number): Uint8Array {
   const out = new Uint8Array(12);
   new DataView(out.buffer).setUint32(8, value, false);
@@ -134,9 +148,9 @@ export class RelayTransport implements VarcoTransport {
                 ws.close();
               });
             };
-            ws.onclose = () => {
+            ws.onclose = (closeEvent) => {
               this.closed = true;
-              this.failPending(new Error("Varco transport closed"));
+              this.failPending(closeError((closeEvent as CloseEvent | undefined)?.code));
             };
             resolve();
           }
@@ -149,7 +163,10 @@ export class RelayTransport implements VarcoTransport {
     if (!this.keys) throw new Error("Varco session is not ready");
     const n = nonce(this.sendNonce++);
     const body = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv: bufferSource(n) }, this.keys.send, bufferSource(utf8(canonicalJson(payload)))));
-    return { type: "ciphertext", nonce: b64urlEncode(n), body: b64urlEncode(body) };
+    const envelope: Record<string, string> = { type: "ciphertext", nonce: b64urlEncode(n), body: b64urlEncode(body) };
+    const lane = envelopeLane(payload.type);
+    if (lane) envelope.lane = lane;
+    return envelope;
   }
 
   private async decrypt(envelope: any): Promise<any> {
@@ -163,6 +180,7 @@ export class RelayTransport implements VarcoTransport {
 
   private async handleMessage(data: string): Promise<void> {
     const outer = JSON.parse(data);
+    if (outer.type === "relay_disabled") throw new Error(SIGNALING_ONLY_ERROR);
     const payload = await this.decrypt(outer.payload ?? outer);
     const requestId = payload.request_id;
     if (requestId && this.pending.has(requestId)) {

@@ -1,6 +1,8 @@
 import {
+  type BridgePolicy,
   type Role,
   type SocketState,
+  authorityConnectDecision,
   authorityMessageAction,
   b64urlEncode,
   consumerConnectDecision,
@@ -9,6 +11,9 @@ import {
   originAllowed,
   parseLimit,
   parseMessage,
+  parsePolicy,
+  presenceDecision,
+  relayPayloadGate,
   validAuthorityId,
 } from "./logic";
 
@@ -18,7 +23,12 @@ export interface Env {
   MAX_MESSAGE_SIZE?: string;
   MAX_MESSAGES_PER_MINUTE?: string;
   MAX_PENDING_AUTHORITIES?: string;
+  ORIGIN_POLICY?: string;
   ALLOWED_ORIGINS?: string;
+  PRESENCE_VISIBILITY?: string;
+  AUTHORITY_ALLOWLIST?: string;
+  BRIDGE_MODE?: string;
+  MAX_SIGNALING_MESSAGES?: string;
 }
 
 const AUTH_DEADLINE_MS = 30_000;
@@ -34,30 +44,38 @@ function limit(env: Env, key: keyof Env, fallback: number): number {
 }
 
 function websocketResponse(server: WebSocket): Response { return new Response(null, { status: 101, webSocket: server }); }
-function corsHeaders(env: Env, origin: string | null): HeadersInit {
-  // Reflect the request Origin only when it passes the allowlist; with the
-  // default (unset) allowlist this reflects any origin, matching the previous
+function corsHeaders(policy: BridgePolicy, origin: string | null): HeadersInit {
+  // Reflect the request Origin only when it passes the origin policy; with the
+  // default (public) policy this reflects any origin, matching the previous
   // wildcard behaviour so the deployed demo and local dev keep working.
   const headers: Record<string, string> = { "Access-Control-Allow-Methods": "GET, OPTIONS", "Access-Control-Allow-Headers": "Content-Type" };
-  if (origin !== null && originAllowed(env.ALLOWED_ORIGINS, origin)) { headers["Access-Control-Allow-Origin"] = origin; headers["Vary"] = "Origin"; }
+  if (origin !== null && originAllowed(policy, origin)) { headers["Access-Control-Allow-Origin"] = origin; headers["Vary"] = "Origin"; }
   return headers;
 }
-function jsonResponse(body: unknown, env: Env, origin: string | null): Response { return Response.json(body, { headers: corsHeaders(env, origin) }); }
+function jsonResponse(body: unknown, policy: BridgePolicy, origin: string | null): Response { return Response.json(body, { headers: corsHeaders(policy, origin) }); }
+function presenceGate(policy: BridgePolicy, origin: string | null): Response | null {
+  const decision = presenceDecision(policy, origin);
+  if (decision.kind === "not_found") return new Response("Not found", { status: 404 });
+  if (decision.kind === "forbidden") return new Response("Forbidden origin", { status: 403 });
+  return null;
+}
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     const parts = url.pathname.split("/").filter(Boolean);
     const origin = request.headers.get("Origin");
-    if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(env, origin) });
-    if (parts[0] === "health" || parts[0] === "healthz") return jsonResponse({ ok: true }, env, origin);
+    const policy = parsePolicy(env);
+    if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(policy, origin) });
+    if (parts[0] === "health" || parts[0] === "healthz") return jsonResponse({ ok: true }, policy, origin);
     if (parts[0] === "presence" && parts[1]) {
-      if (!originAllowed(env.ALLOWED_ORIGINS, origin)) return new Response("Forbidden origin", { status: 403 });
+      const denied = presenceGate(policy, origin);
+      if (denied) return denied;
       return env.AUTHORITY_ROOMS.get(env.AUTHORITY_ROOMS.idFromName(parts[1])).fetch(request);
     }
     if ((parts[0] === "authority" || parts[0] === "consumer") && parts[1]) {
       if (request.headers.get("Upgrade") !== "websocket") return new Response("Expected WebSocket", { status: 426 });
-      if (!originAllowed(env.ALLOWED_ORIGINS, origin)) return new Response("Forbidden origin", { status: 403 });
+      if (!originAllowed(policy, origin)) return new Response("Forbidden origin", { status: 403 });
       return env.AUTHORITY_ROOMS.get(env.AUTHORITY_ROOMS.idFromName(parts[1])).fetch(request);
     }
     return new Response("Varco opaque bridge", { status: 200 });
@@ -70,18 +88,31 @@ export class AuthorityRoom implements DurableObject {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const parts = url.pathname.split("/").filter(Boolean);
-    if (parts[0] === "presence") return jsonResponse({ online: this.findAuthority() !== null }, this.env, request.headers.get("Origin"));
-    if (parts[0] === "authority") return this.acceptAuthority(parts[1]);
+    const policy = parsePolicy(this.env);
+    if (parts[0] === "presence") {
+      const origin = request.headers.get("Origin");
+      // The worker fetch already gates /presence, but the DO applies the same
+      // decision so direct DO access (tests, refactors) stays consistent.
+      const denied = presenceGate(policy, origin);
+      if (denied) return denied;
+      return jsonResponse({ online: this.findAuthority() !== null }, policy, origin);
+    }
+    if (parts[0] === "authority") return this.acceptAuthority(parts[1], policy);
     if (parts[0] === "consumer") return this.acceptConsumer();
     return new Response("Not found", { status: 404 });
   }
 
-  private async acceptAuthority(authorityId: string): Promise<Response> {
+  private async acceptAuthority(authorityId: string, policy: BridgePolicy): Promise<Response> {
     if (!validAuthorityId(authorityId)) return new Response("Invalid authority id", { status: 400 });
     const pair = new WebSocketPair();
     const client = pair[0];
     const server = pair[1];
     this.state.acceptWebSocket(server, ["authority"]);
+    const allowlisted = authorityConnectDecision(policy.authorityAllowlist, authorityId);
+    if (allowlisted.kind === "close") {
+      server.close(allowlisted.code, allowlisted.reason);
+      return websocketResponse(client);
+    }
     // A connection attempt while another authority is connected is accepted and
     // challenged instead of rejected: a successful auth replaces the previous
     // socket (see handleAuthorityMessage). This recovers from zombie hibernated
@@ -124,7 +155,12 @@ export class AuthorityRoom implements DurableObject {
     if (!gate.ok) { ws.close(gate.code, gate.reason); return; }
     const parsed = parseMessage(data);
     if (!parsed.ok) { ws.close(4400, "Invalid JSON"); return; }
-    if (session.role === "authority") this.handleAuthorityMessage(ws, session, parsed.message);
+    const policy = parsePolicy(this.env);
+    if (session.role === "consumer") {
+      const relayGate = relayPayloadGate(policy.mode, parsed.message, session, policy.maxSignalingMessages);
+      if (!relayGate.ok) { this.setState(ws, session); ws.send(JSON.stringify(relayGate.notice)); ws.close(relayGate.code, relayGate.reason); return; }
+    }
+    if (session.role === "authority") this.handleAuthorityMessage(ws, session, parsed.message, policy);
     else this.handleConsumerMessage(session, parsed.message);
     this.setState(ws, session);
   }
@@ -145,7 +181,7 @@ export class AuthorityRoom implements DurableObject {
   webSocketClose(ws: WebSocket): void { this.closeSocket(ws); }
   webSocketError(ws: WebSocket): void { this.closeSocket(ws); }
 
-  private handleAuthorityMessage(ws: WebSocket, session: SocketState, message: any): void {
+  private handleAuthorityMessage(ws: WebSocket, session: SocketState, message: any, policy: BridgePolicy): void {
     const action = authorityMessageAction(session, message);
     if (action.kind === "close") { ws.close(action.code, action.reason); return; }
     if (action.kind === "ready") {
@@ -161,6 +197,8 @@ export class AuthorityRoom implements DurableObject {
       return;
     }
     if (action.kind === "send_to_consumer") {
+      const relayGate = relayPayloadGate(policy.mode, action.payload, session, policy.maxSignalingMessages);
+      if (!relayGate.ok) { ws.send(JSON.stringify(relayGate.notice)); ws.close(relayGate.code, relayGate.reason); return; }
       const client = this.findConsumer(action.sessionId);
       if (client) client.send(JSON.stringify({ type: "authority_message", payload: action.payload }));
     } else if (action.kind === "close_consumer") {
