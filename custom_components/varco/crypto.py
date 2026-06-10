@@ -44,8 +44,12 @@ def generate_consumer_keypair() -> dict[str, str]:
     return generate_authority_keypair()
 
 
+def challenge_payload(nonce: str) -> bytes:
+    return b"varco-bridge-challenge-v1\0" + b64url_decode(nonce)
+
+
 def sign_challenge(private_key: str, nonce: str) -> str:
-    return b64url_encode(_ed_private_from_b64(private_key).sign(b64url_decode(nonce)))
+    return b64url_encode(_ed_private_from_b64(private_key).sign(challenge_payload(nonce)))
 
 
 def sign_bytes(private_key: str, payload: bytes) -> str:
@@ -73,16 +77,16 @@ def verify_access_request(public_key: str, nonce: str, manifest: dict[str, Any],
     return verify_signature(public_key, signature, access_request_payload(nonce, manifest))
 
 
-def authenticate_payload(nonce: str) -> bytes:
-    return b"varco-authenticate-v1\0" + nonce.encode()
+def authenticate_payload(nonce: str, channel_binding: str) -> bytes:
+    return b"varco-authenticate-v1\0" + nonce.encode() + b"\0" + b64url_decode(channel_binding)
 
 
-def sign_authenticate(private_key: str, nonce: str) -> str:
-    return sign_bytes(private_key, authenticate_payload(nonce))
+def sign_authenticate(private_key: str, nonce: str, channel_binding: str) -> str:
+    return sign_bytes(private_key, authenticate_payload(nonce, channel_binding))
 
 
-def verify_authenticate(public_key: str, nonce: str, signature: str) -> bool:
-    return verify_signature(public_key, signature, authenticate_payload(nonce))
+def verify_authenticate(public_key: str, nonce: str, signature: str, channel_binding: str) -> bool:
+    return verify_signature(public_key, signature, authenticate_payload(nonce, channel_binding))
 
 
 def new_id(length: int = 16) -> str:
@@ -94,9 +98,15 @@ def pairing_code(consumer_pk: str, nonce: str) -> str:
     return f"{int.from_bytes(digest[:4], 'big') % 1_000_000:06d}"
 
 
+def _hkdf(shared: bytes, salt: bytes, info: bytes) -> bytes:
+    return HKDF(algorithm=hashes.SHA256(), length=32, salt=salt, info=info).derive(shared)
+
+
 class SecureServerSession:
-    def __init__(self, key: bytes) -> None:
-        self._key = AESGCM(key)
+    def __init__(self, send_key: bytes, recv_key: bytes, channel_binding: bytes) -> None:
+        self._send_key = AESGCM(send_key)
+        self._recv_key = AESGCM(recv_key)
+        self.channel_binding = b64url_encode(channel_binding)
         self._send_nonce = 0
         self._recv_nonce = 0
 
@@ -109,16 +119,19 @@ class SecureServerSession:
         server_private = ec.generate_private_key(ec.SECP256R1())
         client_public = serialization.load_der_public_key(b64url_decode(client_pub_spki))
         shared = server_private.exchange(ec.ECDH(), client_public)
-        key = HKDF(algorithm=hashes.SHA256(), length=32, salt=b64url_decode(authority_id), info=b"varco-session-v1").derive(shared)
+        salt = b64url_decode(authority_id)
+        send_key = _hkdf(shared, salt, b"varco-session-s2c-v1")
+        recv_key = _hkdf(shared, salt, b"varco-session-c2s-v1")
+        binding = _hkdf(shared, salt, b"varco-channel-binding-v1")
         server_pub_der = server_private.public_key().public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
         transcript = b"varco-server-hello-v1\0" + b64url_decode(client_pub_spki) + b"\0" + server_pub_der
         hello = {"type": "server_hello", "server_pub": b64url_encode(server_pub_der), "signature": sign_bytes(authority_private_key, transcript)}
-        return cls(key), hello
+        return cls(send_key, recv_key, binding), hello
 
     def encrypt(self, payload: dict[str, Any]) -> dict[str, str]:
         nonce = self._nonce(self._send_nonce)
         self._send_nonce += 1
-        body = self._key.encrypt(nonce, canonical_json(payload), None)
+        body = self._send_key.encrypt(nonce, canonical_json(payload), None)
         return {"type": "ciphertext", "nonce": b64url_encode(nonce), "body": b64url_encode(body)}
 
     def decrypt(self, envelope: dict[str, Any]) -> dict[str, Any]:
@@ -127,4 +140,4 @@ class SecureServerSession:
             raise ValueError("unexpected nonce")
         body = b64url_decode(envelope["body"])
         self._recv_nonce += 1
-        return json.loads(self._key.decrypt(nonce, body, None).decode())
+        return json.loads(self._recv_key.decrypt(nonce, body, None).decode())

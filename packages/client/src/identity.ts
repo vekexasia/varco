@@ -91,8 +91,13 @@ export function signAccessRequest(identity: ConsumerIdentity, nonce: string, man
   return identity.sign(accessRequestBytes(nonce, manifest));
 }
 
-export function signAuthenticate(identity: ConsumerIdentity, nonce: string): Promise<string> {
-  return identity.sign(utf8("varco-authenticate-v1\0" + nonce));
+export function signAuthenticate(identity: ConsumerIdentity, nonce: string, channelBinding: string): Promise<string> {
+  const prefix = utf8("varco-authenticate-v1\0" + nonce + "\0");
+  const binding = b64urlDecode(channelBinding);
+  const out = new Uint8Array(prefix.length + binding.length);
+  out.set(prefix);
+  out.set(binding, prefix.length);
+  return identity.sign(out);
 }
 
 export function randomId(bytes = 16): string {

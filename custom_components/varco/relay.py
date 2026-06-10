@@ -122,7 +122,7 @@ class VarcoRelay:
             return
         try:
             plaintext = session.secure.decrypt(payload)
-            response = await self.authority.handle_plaintext(session_id, plaintext)
+            response = await self.authority.handle_plaintext(session_id, plaintext, channel_binding=session.secure.channel_binding)
         except Exception:
             _LOGGER.exception("Varco client message failed")
             response = {"type": "error", "code": "session_error", "message": "Internal error"}

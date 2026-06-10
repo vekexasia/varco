@@ -2,8 +2,10 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 
 from custom_components.varco.authority import VarcoAuthority
-from custom_components.varco.crypto import generate_consumer_keypair, sign_access_request, sign_authenticate
+from custom_components.varco.crypto import b64url_encode, generate_consumer_keypair, sign_access_request, sign_authenticate
 from custom_components.varco.storage import MemoryVarcoStore
+
+TEST_BINDING = b64url_encode(b"\x01" * 32)
 
 MANIFEST = {"name": "Demo", "version": "1", "read_entities": ["sensor.temp"]}
 
@@ -31,7 +33,7 @@ async def request_access(authority, consumer):
 
 def authenticate_message(consumer):
     auth_nonce = "auth-nonce"
-    return {"type": "authenticate", "consumer_pk": consumer["public_key"], "nonce": auth_nonce, "signature": sign_authenticate(consumer["private_key"], auth_nonce)}
+    return {"type": "authenticate", "consumer_pk": consumer["public_key"], "nonce": auth_nonce, "signature": sign_authenticate(consumer["private_key"], auth_nonce, TEST_BINDING)}
 
 
 def test_expired_grant_rejected_at_authenticate():
@@ -44,7 +46,7 @@ def test_expired_grant_rejected_at_authenticate():
         expires_at = (now["value"] + timedelta(hours=1)).isoformat()
         await authority.approve_request(pending["request_id"], expires_at=expires_at)
         now["value"] += timedelta(hours=2)
-        denied = await authority.handle_plaintext("s2", authenticate_message(consumer))
+        denied = await authority.handle_plaintext("s2", authenticate_message(consumer), channel_binding=TEST_BINDING)
         assert denied["type"] == "error"
         assert denied["code"] == "not_authorized"
     asyncio.run(run())
@@ -59,7 +61,7 @@ def test_expired_grant_rejected_mid_session_at_require_grant():
         pending = await request_access(authority, consumer)
         expires_at = (now["value"] + timedelta(hours=1)).isoformat()
         await authority.approve_request(pending["request_id"], expires_at=expires_at)
-        auth = await authority.handle_plaintext("s1", authenticate_message(consumer))
+        auth = await authority.handle_plaintext("s1", authenticate_message(consumer), channel_binding=TEST_BINDING)
         assert auth["type"] == "authenticated"
         ok = await authority.handle_plaintext("s1", {"type": "get_states", "request_id": "r1", "entity_ids": ["sensor.temp"]})
         assert ok["type"] == "states"
@@ -80,7 +82,7 @@ def test_non_expiring_grant_unaffected():
         grant = await authority.approve_request(pending["request_id"])
         assert grant.expires_at is None
         now["value"] += timedelta(days=365)
-        auth = await authority.handle_plaintext("s1", authenticate_message(consumer))
+        auth = await authority.handle_plaintext("s1", authenticate_message(consumer), channel_binding=TEST_BINDING)
         assert auth["type"] == "authenticated"
         ok = await authority.handle_plaintext("s1", {"type": "get_states", "request_id": "r1", "entity_ids": ["sensor.temp"]})
         assert ok["type"] == "states"

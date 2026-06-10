@@ -20,16 +20,29 @@ async function exportPublic(key: CryptoKey): Promise<string> {
   return b64urlEncode(new Uint8Array(await crypto.subtle.exportKey("spki", key)));
 }
 
-async function deriveAes(privateKey: CryptoKey, publicKey: CryptoKey, authorityId: string): Promise<CryptoKey> {
-  const bits = await crypto.subtle.deriveBits({ name: "ECDH", public: publicKey }, privateKey, 256);
-  const material = await crypto.subtle.importKey("raw", bits, "HKDF", false, ["deriveKey"]);
+async function deriveHkdf(material: CryptoKey, authorityId: string, info: string, usage: KeyUsage[]): Promise<CryptoKey> {
   return crypto.subtle.deriveKey(
-    { name: "HKDF", hash: "SHA-256", salt: bufferSource(b64urlDecode(authorityId)), info: bufferSource(utf8("varco-session-v1")) },
+    { name: "HKDF", hash: "SHA-256", salt: bufferSource(b64urlDecode(authorityId)), info: bufferSource(utf8(info)) },
     material,
     { name: "AES-GCM", length: 256 },
     false,
-    ["encrypt", "decrypt"],
+    usage,
   );
+}
+
+type SessionKeys = { send: CryptoKey; recv: CryptoKey; channelBinding: string };
+
+async function deriveSessionKeys(privateKey: CryptoKey, publicKey: CryptoKey, authorityId: string): Promise<SessionKeys> {
+  const bits = await crypto.subtle.deriveBits({ name: "ECDH", public: publicKey }, privateKey, 256);
+  const material = await crypto.subtle.importKey("raw", bits, "HKDF", false, ["deriveKey", "deriveBits"]);
+  const send = await deriveHkdf(material, authorityId, "varco-session-c2s-v1", ["encrypt"]);
+  const recv = await deriveHkdf(material, authorityId, "varco-session-s2c-v1", ["decrypt"]);
+  const bindingBits = await crypto.subtle.deriveBits(
+    { name: "HKDF", hash: "SHA-256", salt: bufferSource(b64urlDecode(authorityId)), info: bufferSource(utf8("varco-channel-binding-v1")) },
+    material,
+    256,
+  );
+  return { send, recv, channelBinding: b64urlEncode(new Uint8Array(bindingBits)) };
 }
 
 function nonce(value: number): Uint8Array {
@@ -40,7 +53,7 @@ function nonce(value: number): Uint8Array {
 
 export class RelayTransport implements VarcoTransport {
   private ws: WebSocket | null = null;
-  private aes: CryptoKey | null = null;
+  private keys: SessionKeys | null = null;
   private sendNonce = 0;
   private recvNonce = 0;
   private pending = new Map<string, { resolve: (value: any) => void; reject: (err: Error) => void }>();
@@ -50,6 +63,11 @@ export class RelayTransport implements VarcoTransport {
   constructor(private bridgeUrl: string, private authorityId: string) {}
 
   onEvent(handler: (event: any) => void): void { this.eventHandler = handler; }
+
+  async channelBinding(): Promise<string> {
+    await this.ensureConnected();
+    return this.keys!.channelBinding;
+  }
 
   async request(message: Record<string, unknown>): Promise<any> {
     await this.ensureConnected();
@@ -88,7 +106,7 @@ export class RelayTransport implements VarcoTransport {
             transcript[offset] = 0; offset += 1;
             transcript.set(serverPubBytes, offset);
             if (!ed25519.verify(b64urlDecode(payload.signature), transcript, b64urlDecode(this.authorityId))) throw new Error("Bad authority signature");
-            this.aes = await deriveAes(ecdh.privateKey, await importServerPublic(payload.server_pub), this.authorityId);
+            this.keys = await deriveSessionKeys(ecdh.privateKey, await importServerPublic(payload.server_pub), this.authorityId);
             ws.onmessage = (messageEvent) => { void this.handleMessage(String(messageEvent.data)); };
             resolve();
           }
@@ -98,18 +116,18 @@ export class RelayTransport implements VarcoTransport {
   }
 
   private async encrypt(payload: Record<string, unknown>): Promise<Record<string, string>> {
-    if (!this.aes) throw new Error("Varco session is not ready");
+    if (!this.keys) throw new Error("Varco session is not ready");
     const n = nonce(this.sendNonce++);
-    const body = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv: bufferSource(n) }, this.aes, bufferSource(utf8(canonicalJson(payload)))));
+    const body = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv: bufferSource(n) }, this.keys.send, bufferSource(utf8(canonicalJson(payload)))));
     return { type: "ciphertext", nonce: b64urlEncode(n), body: b64urlEncode(body) };
   }
 
   private async decrypt(envelope: any): Promise<any> {
-    if (!this.aes) throw new Error("Varco session is not ready");
+    if (!this.keys) throw new Error("Varco session is not ready");
     const n = b64urlDecode(envelope.nonce);
     const expected = nonce(this.recvNonce++);
     if (n.some((value, index) => value !== expected[index])) throw new Error("Unexpected nonce");
-    const plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv: bufferSource(n) }, this.aes, bufferSource(b64urlDecode(envelope.body)));
+    const plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv: bufferSource(n) }, this.keys.recv, bufferSource(b64urlDecode(envelope.body)));
     return JSON.parse(new TextDecoder().decode(plaintext));
   }
 

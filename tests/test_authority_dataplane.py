@@ -1,8 +1,10 @@
 import asyncio
 
 from custom_components.varco.authority import VarcoAuthority
-from custom_components.varco.crypto import generate_consumer_keypair, sign_access_request, sign_authenticate
+from custom_components.varco.crypto import b64url_encode, generate_consumer_keypair, sign_access_request, sign_authenticate
 from custom_components.varco.storage import MemoryVarcoStore
+
+TEST_BINDING = b64url_encode(b"\x01" * 32)
 
 
 class FakeStates:
@@ -46,7 +48,7 @@ async def paired_authority(manifest):
     })
     grant = await authority.approve_request(pending["request_id"])
     auth_nonce = "auth-nonce"
-    auth = await authority.handle_plaintext("s1", {"type": "authenticate", "consumer_pk": consumer["public_key"], "nonce": auth_nonce, "signature": sign_authenticate(consumer["private_key"], auth_nonce)})
+    auth = await authority.handle_plaintext("s1", channel_binding=TEST_BINDING, message={"type": "authenticate", "consumer_pk": consumer["public_key"], "nonce": auth_nonce, "signature": sign_authenticate(consumer["private_key"], auth_nonce, TEST_BINDING)})
     assert auth["type"] == "authenticated"
     return authority, store, hass, grant
 
