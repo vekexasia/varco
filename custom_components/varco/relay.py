@@ -8,6 +8,7 @@ from typing import Any
 
 from aiohttp import WSMsgType
 from homeassistant.components import persistent_notification
+from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .authority import VarcoAuthority
@@ -130,12 +131,13 @@ class VarcoRelay:
         for event in await self.authority.pop_outbox(session_id):
             await self._send_to_client(session_id, session.secure.encrypt(event))
 
+    @callback
     def _on_state_changed(self, event) -> None:
         entity_id = event.data.get("entity_id")
         if not entity_id:
             return
         new_state = event.data.get("new_state")
-        self.hass.add_job(self._push_state_changed(entity_id, new_state))
+        self.hass.async_create_task(self._push_state_changed(entity_id, new_state))
 
     async def _push_state_changed(self, entity_id: str, new_state: Any) -> None:
         for session_id, event in await self.authority.state_changed(entity_id, new_state):
