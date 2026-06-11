@@ -162,6 +162,11 @@ export type AuthorityAction =
   | { kind: "close_consumer"; sessionId: string; reason: string }
   | { kind: "none" };
 
+// Bridge handshake protocol version, advertised in the challenge message and
+// echoed by the authority in its auth reply. A mismatch closes with 4406 so
+// outdated clients stop retrying instead of looping on 4403 forever.
+export const PROTO_VERSION = 1;
+
 export function challengePayload(challenge: string): Uint8Array {
   const prefix = new TextEncoder().encode("varco-bridge-challenge-v1\0");
   const nonce = b64urlDecode(challenge);
@@ -174,6 +179,7 @@ export function challengePayload(challenge: string): Uint8Array {
 export function authorityMessageAction(session: SocketState, message: any): AuthorityAction {
   if (!session.authed) {
     if (message.type !== "auth" || !session.challenge || !session.authorityId || typeof message.signature !== "string") return { kind: "close", code: 4401, reason: "Auth required" };
+    if (message.proto !== undefined && message.proto !== PROTO_VERSION) return { kind: "close", code: 4406, reason: `Unsupported protocol version (bridge supports ${PROTO_VERSION})` };
     if (!ed25519.verify(b64urlDecode(message.signature), challengePayload(session.challenge), b64urlDecode(session.authorityId))) return { kind: "close", code: 4403, reason: "Bad signature" };
     session.authed = true;
     return { kind: "ready" };

@@ -6,7 +6,7 @@ description: Implemented Varco bridge HTTP and WebSocket endpoints.
 Default bridge origin:
 
 ```text
-https://varco-bridge.vekexasia.workers.dev
+https://varco-bridge.andreabaccega.com
 ```
 
 Implemented endpoints:
@@ -20,6 +20,8 @@ Implemented endpoints:
 | `WebSocket /consumer/{authorityId}` | Consumer relay connection. |
 
 The bridge keeps one active Authority socket per Authority ID. A new connection that completes the challenge for the same Authority key replaces the previous socket (close code 4409), and connected consumers are evicted with close code 4404 so they reconnect to the new Authority socket.
+
+The Authority challenge message includes a `proto` field (currently `1`). The Authority's `auth` reply may include its own `proto`; if it does and the versions differ, the bridge closes with code 4406 so outdated clients stop retrying. Close codes 4401, 4403, and 4406 are deterministic rejections: the Home Assistant integration pauses for an hour and raises a persistent notification after repeated occurrences instead of reconnecting on its normal backoff.
 
 ## Deployment policy environment variables
 
@@ -45,6 +47,7 @@ Requests without an `Origin` header, such as the Home Assistant Authority connec
 | 4403 | Bad challenge signature, or the Authority ID is not in `AUTHORITY_ALLOWLIST`. |
 | 4404 | Authority offline. |
 | 4405 | Relay data disabled (`BRIDGE_MODE=signaling-only`) or the signaling budget was exhausted. |
+| 4406 | Unsupported protocol version. The challenge message carries `proto` and the Authority `auth` reply echoes its own version; a mismatch is terminal and the client must update instead of retrying. |
 | 4408 | Authority authentication timeout. |
 | 4409 | Replaced by a newer authenticated Authority connection. |
 | 4429 | Rate limit or connection cap exceeded. |

@@ -431,3 +431,134 @@ def test_signaling_responses_carry_lane_tag_and_data_plane_responses_do_not():
         assert client.decrypt(sent[1]["payload"]) == {"type": "webrtc_answer", "sdp": "x"}
         assert client.decrypt(sent[2]["payload"]) == {"type": "states", "states": {}}
     asyncio.run(run())
+
+
+def test_challenge_with_matching_proto_replies_with_auth_and_proto():
+    async def run():
+        relay, keys, sent = make_relay()
+        nonce = b64url_encode(b"\x07" * 32)
+        await relay._handle_bridge_message({"type": "challenge", "nonce": nonce, "proto": relay_module.PROTO_VERSION})
+        assert len(sent) == 1
+        assert sent[0]["type"] == "auth"
+        assert sent[0]["proto"] == relay_module.PROTO_VERSION
+    asyncio.run(run())
+
+
+def test_challenge_with_mismatched_proto_is_terminal_and_sends_no_auth():
+    async def run():
+        relay, _, sent = make_relay()
+
+        class FakeWs:
+            closed = False
+
+            def __init__(self):
+                self.close_calls = 0
+
+            async def close(self):
+                self.close_calls += 1
+
+        relay._ws = FakeWs()
+        await relay._handle_bridge_message({"type": "challenge", "nonce": b64url_encode(b"\x07" * 32), "proto": relay_module.PROTO_VERSION + 1})
+        assert sent == []
+        assert relay._ws.close_calls == 1
+        assert "protocol version" in relay._terminal_reason
+    asyncio.run(run())
+
+
+def test_run_pauses_long_after_repeated_terminal_close_codes(monkeypatch):
+    """Deterministic rejections (4401/4403/4406) must not retry on the normal
+    backoff forever: after TERMINAL_AFTER_ATTEMPTS the relay waits the long
+    terminal interval and raises a persistent notification."""
+    async def run():
+        relay, _, _ = make_relay()
+        relay._reconnect_initial_delay = 5.0
+        relay._terminal_retry_delay = 3600.0
+        monkeypatch.setattr(relay_module, "async_get_clientsession", lambda hass: None)
+        notifications = []
+        monkeypatch.setattr(
+            relay_module.persistent_notification,
+            "async_create",
+            lambda hass, message, title=None, notification_id=None: notifications.append(message),
+        )
+        connects = []
+
+        async def fake_connect(session):
+            connects.append(1)
+            if len(connects) >= 4:
+                relay._stop_event.set()
+            return 4403
+
+        relay._connect = fake_connect
+        waits = []
+        real_wait_for = asyncio.wait_for
+
+        async def fake_wait_for(awaitable, timeout):
+            waits.append(timeout)
+            awaitable.close()
+            raise TimeoutError
+
+        monkeypatch.setattr(asyncio, "wait_for", fake_wait_for)
+        try:
+            await relay._run()
+        finally:
+            monkeypatch.setattr(asyncio, "wait_for", real_wait_for)
+        # Two normal backoff waits, then the third 4403 trips the terminal pause.
+        assert waits == [5.0, 10.0, 3600.0]
+        assert len(notifications) == 1
+        assert "4403" in notifications[0]
+    asyncio.run(run())
+
+
+def test_ready_resets_terminal_failures_and_dismisses_notification(monkeypatch):
+    async def run():
+        relay, _, _ = make_relay()
+        relay._terminal_failures = 2
+        dismissed = []
+        monkeypatch.setattr(
+            relay_module.persistent_notification,
+            "async_dismiss",
+            lambda hass, notification_id: dismissed.append(notification_id),
+        )
+        await relay._handle_bridge_message({"type": "ready"})
+        assert relay._terminal_failures == 0
+        assert dismissed == ["varco_relay_paused"]
+    asyncio.run(run())
+
+
+def test_terminal_proto_mismatch_pauses_without_counting_attempts(monkeypatch):
+    """A proto mismatch detected in the challenge pauses on the first attempt."""
+    async def run():
+        relay, _, _ = make_relay()
+        relay._terminal_retry_delay = 3600.0
+        monkeypatch.setattr(relay_module, "async_get_clientsession", lambda hass: None)
+        notifications = []
+        monkeypatch.setattr(
+            relay_module.persistent_notification,
+            "async_create",
+            lambda hass, message, title=None, notification_id=None: notifications.append(message),
+        )
+
+        async def fake_connect(session):
+            relay._terminal_reason = "the bridge requires protocol version 2"
+            relay._stop_event_armed = True
+            return 1000
+
+        relay._connect = fake_connect
+        waits = []
+        real_wait_for = asyncio.wait_for
+
+        async def fake_wait_for(awaitable, timeout):
+            waits.append(timeout)
+            awaitable.close()
+            relay._stop_event.set()
+            raise TimeoutError
+
+        monkeypatch.setattr(asyncio, "wait_for", fake_wait_for)
+        try:
+            await relay._run()
+        finally:
+            monkeypatch.setattr(asyncio, "wait_for", real_wait_for)
+        assert waits == [3600.0]
+        assert len(notifications) == 1
+        assert "protocol version" in notifications[0]
+    asyncio.run(run())

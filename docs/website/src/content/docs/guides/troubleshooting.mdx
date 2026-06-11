@@ -20,6 +20,14 @@ description: Common Varco installation, relay, pairing, and WebRTC issues.
 
 The bridge runs with `AUTHORITY_ALLOWLIST` set and your Authority ID is not in the list. Ask the bridge operator to add the exact base64url Authority ID shown in the Varco panel, or point the integration at a different bridge.
 
+## Notification: "Varco relay paused"
+
+The relay (`custom_components/varco/relay.py`) hit a deterministic rejection: a repeated close code 4401 or 4403, or a protocol version mismatch (close code 4406). Retrying cannot succeed, so the relay pauses and retries once per hour instead of reconnecting on the normal backoff.
+
+- For 4403, check the allowlist case above, or look for a second instance using the same Authority ID.
+- For 4406 or a protocol version message, update the Varco integration to the latest version.
+- After fixing the cause, reload the Varco integration to reconnect immediately. The notification is dismissed automatically on the next successful connection.
+
 ## Bridge closes the connection with code 4405 (`Relay data disabled`)
 
 The bridge runs with `BRIDGE_MODE=signaling-only`: it relays session setup and WebRTC negotiation but refuses application data. Consumers see `Bridge is signaling-only: P2P required but unavailable` when the WebRTC upgrade fails, and Home Assistant logs `Bridge is signaling-only: relay data disabled`.
@@ -34,7 +42,7 @@ The bridge runs with `BRIDGE_MODE=signaling-only`: it relays session setup and W
 - Check bridge presence in a browser:
 
   ```text
-  https://varco-bridge.vekexasia.workers.dev/presence/AUTHORITY_ID
+  https://varco-bridge.andreabaccega.com/presence/AUTHORITY_ID
   ```
 
 ## WebRTC does not connect

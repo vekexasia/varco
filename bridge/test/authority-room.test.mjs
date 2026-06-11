@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ed25519 } from '@noble/curves/ed25519';
 import {
+  PROTO_VERSION,
   challengePayload,
   authorityMessageAction,
   b64urlEncode,
@@ -37,6 +38,19 @@ test('valid Ed25519 challenge response authenticates the authority', () => {
   const action = authorityMessageAction(session, { type: 'auth', signature: signChallenge(secretKey, session) });
   assert.deepEqual(action, { kind: 'ready' });
   assert.equal(session.authed, true);
+});
+
+test('auth with matching proto version authenticates', () => {
+  const { secretKey, session } = makeAuthoritySession();
+  const action = authorityMessageAction(session, { type: 'auth', proto: PROTO_VERSION, signature: signChallenge(secretKey, session) });
+  assert.deepEqual(action, { kind: 'ready' });
+});
+
+test('auth with mismatched proto version closes 4406 before signature check', () => {
+  const { secretKey, session } = makeAuthoritySession();
+  const action = authorityMessageAction(session, { type: 'auth', proto: PROTO_VERSION + 1, signature: signChallenge(secretKey, session) });
+  assert.deepEqual(action, { kind: 'close', code: 4406, reason: `Unsupported protocol version (bridge supports ${PROTO_VERSION})` });
+  assert.equal(session.authed, false);
 });
 
 test('bad signature is rejected with 4403', () => {

@@ -35,6 +35,21 @@ SIGNALING_RESPONSE_TYPES = {
 }
 SIGNALING_ONLY_ERROR = "Bridge is signaling-only: relay data disabled"
 
+# Bridge handshake protocol version. The bridge advertises its version in the
+# challenge message and the auth reply declares ours; a mismatch is terminal.
+PROTO_VERSION = 1
+
+# Close codes that are deterministic rejections: reconnecting with the same
+# key and code can never succeed, so after a few attempts the relay slows to
+# a long retry interval and raises a persistent notification instead of
+# hammering the bridge (and its Cloudflare request quota).
+TERMINAL_CLOSE_CODES = {
+    4401: "the bridge rejected authentication (4401 auth required)",
+    4403: "the bridge rejected this authority (4403: bad signature or not allowlisted)",
+    4406: "the bridge does not support this protocol version (4406); update the Varco integration",
+}
+TERMINAL_AFTER_ATTEMPTS = 3
+
 
 @dataclass
 class BridgeSession:
@@ -57,6 +72,10 @@ class VarcoRelay:
         self._task: asyncio.Task | None = None
         # Base reconnect delay in seconds; exposed for tests.
         self._reconnect_initial_delay = 1.0
+        # Retry interval once a terminal rejection is detected; exposed for tests.
+        self._terminal_retry_delay = 3600.0
+        self._terminal_failures = 0
+        self._terminal_reason: str | None = None
         self._stop_event = asyncio.Event()
         self._ws: Any = None
         self._state_unsub: Any = None
@@ -89,8 +108,9 @@ class VarcoRelay:
         session = async_get_clientsession(self.hass)
         while not self._stop_event.is_set():
             started = time.monotonic()
+            close_code = None
             try:
-                await self._connect(session)
+                close_code = await self._connect(session)
             except asyncio.CancelledError:
                 raise
             except Exception as err:
@@ -98,19 +118,31 @@ class VarcoRelay:
                 _LOGGER.warning("Varco relay disconnected: %s", err)
             if self._stop_event.is_set():
                 break
-            # Always wait before reconnecting, including after clean WebSocket
-            # closes (e.g. the bridge replacing this connection with 4409).
-            # Reconnecting immediately on clean closes caused a tight loop that
-            # exhausted the Cloudflare Durable Objects free-tier request volume.
-            if time.monotonic() - started >= 60:
+            reason = self._terminal_reason
+            self._terminal_reason = None
+            if reason is None and close_code in TERMINAL_CLOSE_CODES:
+                self._terminal_failures += 1
+                if self._terminal_failures >= TERMINAL_AFTER_ATTEMPTS:
+                    reason = TERMINAL_CLOSE_CODES[close_code]
+            if reason is not None:
+                self._notify_terminal(reason)
+                wait = self._terminal_retry_delay
                 delay = self._reconnect_initial_delay
+            else:
+                # Always wait before reconnecting, including after clean WebSocket
+                # closes (e.g. the bridge replacing this connection with 4409).
+                # Reconnecting immediately on clean closes caused a tight loop that
+                # exhausted the Cloudflare Durable Objects free-tier request volume.
+                if time.monotonic() - started >= 60:
+                    delay = self._reconnect_initial_delay
+                wait = delay
+                delay = min(delay * 2, 60)
             try:
-                await asyncio.wait_for(self._stop_event.wait(), timeout=delay)
+                await asyncio.wait_for(self._stop_event.wait(), timeout=wait)
             except TimeoutError:
                 pass
-            delay = min(delay * 2, 60)
 
-    async def _connect(self, session) -> None:
+    async def _connect(self, session) -> int | None:
         url = f"{self.bridge_ws_url}/authority/{self.authority_id}"
         async with session.ws_connect(url, heartbeat=30, max_msg_size=2 * 1024 * 1024) as ws:
             self._ws = ws
@@ -122,15 +154,28 @@ class VarcoRelay:
             if ws.close_code == 4405:
                 self.status["last_error"] = SIGNALING_ONLY_ERROR
                 _LOGGER.error("Varco bridge rejected relay data: %s", SIGNALING_ONLY_ERROR)
+            close_code = ws.close_code
         self._ws = None
         self.status["connected"] = False
+        return close_code
 
     async def _handle_bridge_message(self, message: dict[str, Any]) -> None:
         typ = message.get("type")
         if typ == "challenge":
-            await self._send({"type": "auth", "signature": sign_challenge(self.private_key, message["nonce"])})
+            proto = message.get("proto", PROTO_VERSION)
+            if proto != PROTO_VERSION:
+                self._terminal_reason = (
+                    f"the bridge requires protocol version {proto} but this integration "
+                    f"supports {PROTO_VERSION}; update the Varco integration"
+                )
+                if self._ws is not None:
+                    await self._ws.close()
+                return
+            await self._send({"type": "auth", "proto": PROTO_VERSION, "signature": sign_challenge(self.private_key, message["nonce"])})
         elif typ == "ready":
+            self._terminal_failures = 0
             self.status.update({"connected": True, "last_error": None})
+            persistent_notification.async_dismiss(self.hass, "varco_relay_paused")
         elif typ == "client_connected":
             self.sessions[message["sessionId"]] = BridgeSession(message["sessionId"])
         elif typ == "client_message":
@@ -186,6 +231,18 @@ class VarcoRelay:
     async def _send(self, message: dict[str, Any]) -> None:
         if self._ws is not None and not self._ws.closed:
             await self._ws.send_json(message)
+
+    def _notify_terminal(self, reason: str) -> None:
+        retry_minutes = int(self._terminal_retry_delay // 60)
+        self.status.update({"connected": False, "last_error": reason})
+        _LOGGER.error("Varco relay paused: %s. Retrying in %d minutes.", reason, retry_minutes)
+        persistent_notification.async_create(
+            self.hass,
+            f"Varco paused its bridge connection: {reason}.\n\n"
+            f"It will retry every {retry_minutes} minutes. Reload the Varco integration to retry now.",
+            title="Varco relay paused",
+            notification_id="varco_relay_paused",
+        )
 
     def _encrypt_for_client(self, session: BridgeSession, payload: dict[str, Any]) -> dict[str, Any]:
         envelope: dict[str, Any] = session.secure.encrypt(payload)

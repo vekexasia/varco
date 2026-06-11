@@ -1,5 +1,6 @@
 import {
   type BridgePolicy,
+  PROTO_VERSION,
   type Role,
   type SocketState,
   authorityConnectDecision,
@@ -125,7 +126,7 @@ export class AuthorityRoom implements DurableObject {
     }
     const challenge = randomId(32);
     this.setState(server, this.newState("authority", { authorityId, challenge, authed: false, connectedAt: Date.now() }));
-    server.send(JSON.stringify({ type: "challenge", nonce: challenge }));
+    server.send(JSON.stringify({ type: "challenge", nonce: challenge, proto: PROTO_VERSION }));
     if ((await this.state.storage.getAlarm()) === null) await this.state.storage.setAlarm(Date.now() + AUTH_DEADLINE_MS);
     return websocketResponse(client);
   }
