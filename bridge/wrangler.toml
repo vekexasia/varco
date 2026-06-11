@@ -1,6 +1,8 @@
 name = "varco-bridge"
 main = "src/index.ts"
 compatibility_date = "2026-06-07"
+workers_dev = false
+routes = [{ pattern = "varco-bridge.andreabaccega.com", custom_domain = true }]
 
 # Optional deployment policy vars (defaults keep the public shared-bridge
 # behaviour). See docs/website/src/content/docs/reference/bridge-endpoints.mdx.

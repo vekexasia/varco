@@ -40,7 +40,7 @@ homeassistant:
   packages: !include_dir_named packages
 
 varco:
-  bridge_ws_url: wss://varco-bridge.vekexasia.workers.dev
+  bridge_ws_url: wss://varco-bridge.andreabaccega.com
   webrtc_enabled: true
 
 lovelace:

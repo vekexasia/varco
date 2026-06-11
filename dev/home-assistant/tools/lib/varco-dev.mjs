@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { HomeAssistantAdminClient, haConfig, loginToHomeAssistant } from './ha-admin.mjs';
 
-export const DEFAULT_BRIDGE_URL = 'wss://varco-bridge.vekexasia.workers.dev';
+export const DEFAULT_BRIDGE_URL = 'wss://varco-bridge.andreabaccega.com';
 export const SMOKE_ENTITY_ID = 'sensor.powerwall_load_w';
 export const SMOKE_SWITCH_ID = 'switch.ev_charger';
 

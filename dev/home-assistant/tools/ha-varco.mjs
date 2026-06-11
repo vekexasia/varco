@@ -60,7 +60,7 @@ Defaults for the development Home Assistant instance:
   HA_URL=http://127.0.0.1:8123
   HA_USERNAME=test
   HA_PASSWORD=test
-  VARCO_BRIDGE_URL=wss://varco-bridge.vekexasia.workers.dev
+  VARCO_BRIDGE_URL=wss://varco-bridge.andreabaccega.com
 `);
 }
 

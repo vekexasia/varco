@@ -3,7 +3,7 @@ import { DEMO_GRANT_BUNDLE } from "./generated-demo-grant.js";
 export { DEMO_GRANT_BUNDLE };
 export type { DemoGrantBundle } from "./generated-demo-grant.js";
 
-export const BRIDGE_URL = DEMO_GRANT_BUNDLE?.bridgeUrl || "wss://varco-bridge.vekexasia.workers.dev";
+export const BRIDGE_URL = DEMO_GRANT_BUNDLE?.bridgeUrl || "wss://varco-bridge.andreabaccega.com";
 export const DEFAULT_AUTHORITY_ID = DEMO_GRANT_BUNDLE?.authorityId || "3j3rQeFlaFN1KOphZ2E4b7fFWoZSjF1A6KqgsntDhUg";
 
 export const ENERGY_ENTITIES = {
