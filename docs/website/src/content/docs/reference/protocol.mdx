@@ -3,6 +3,8 @@ title: Protocol messages
 description: Data-plane and control messages exchanged between Varco consumers and the Home Assistant Authority.
 ---
 
+This page covers consumer-to-Authority messages, which travel end-to-end encrypted through the bridge. The plaintext Authority-to-bridge handshake (`challenge`/`auth`/`ready`, including the `proto` version field) is documented in [Bridge endpoints](../bridge-endpoints/).
+
 Messages handled by the Authority:
 
 <img src="/varco/assets/protocol-message-flow.png" alt="Diagram showing Varco protocol flow between consumer app, opaque bridge, and Home Assistant Authority" />

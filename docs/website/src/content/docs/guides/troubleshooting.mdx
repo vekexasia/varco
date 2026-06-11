@@ -15,6 +15,16 @@ description: Common Varco installation, relay, pairing, and WebRTC issues.
 - Confirm the configured bridge URL starts with `wss://`.
 - Confirm no second Home Assistant instance is using the same Authority ID. The bridge keeps only the most recently authenticated Authority connection for an ID, so two instances will keep replacing each other.
 - Check Home Assistant logs for `Varco relay disconnected`.
+- A persistent `404` or `500` in the log usually means the configured bridge URL points at a dead or moved bridge host. These are connection errors, not bridge close codes, so the relay keeps retrying on its normal 1-60s backoff; fix the URL (see below) instead of waiting it out. For repeated close codes 4401/4403/4406 the relay pauses itself; see [Notification: "Varco relay paused"](#notification-varco-relay-paused).
+
+## Changing the bridge URL on an existing install
+
+How the bridge URL is stored depends on how the integration was set up:
+
+- **YAML setup** (`varco:` in `configuration.yaml`): edit `bridge_ws_url` and restart Home Assistant.
+- **UI setup** (Settings -> Devices & services): the URL is pinned in the config entry at setup time. There is currently no options or reconfigure flow to change it. Removing and re-adding the integration changes the URL but generates a new Authority keypair, which invalidates every existing grant and changes your Authority ID, so consumers must re-pair.
+
+If you need to keep the Authority keypair, edit `bridge_ws_url` in the entry data inside `config/.storage/core.config_entries` while Home Assistant is stopped, then start it again. Back up the file first; `.storage` files are not a supported editing surface.
 
 ## Bridge closes the connection with code 4403 (`Authority not allowlisted`)
 
