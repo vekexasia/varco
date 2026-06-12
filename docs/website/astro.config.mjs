@@ -32,6 +32,7 @@ export default defineConfig({
           items: [
             { label: "What is Varco?", slug: "" },
             { label: "Try the demo", slug: "getting-started/demo" },
+            { label: "Showcase: Pebble watchapp", slug: "getting-started/showcase-pebble" },
             { label: "Home Assistant quickstart", slug: "getting-started/home-assistant" },
             { label: "Consumer quickstart", slug: "getting-started/consumer" },
           ],

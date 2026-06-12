@@ -1,0 +1,28 @@
+---
+title: "Showcase: Pebble watchapp"
+description: A Pebble smartwatch app that opens gates and controls a smart lock through Varco.
+---
+
+A real-world Varco consumer running on a Pebble Time 2: a watchapp that opens two gates and controls a Nuki smart lock on a private Home Assistant instance.
+
+<video controls loop muted playsinline width="284" poster="/varco/assets/pebble-casa-poster.png">
+  <source src="/varco/assets/pebble-casa-demo.mp4" type="video/mp4" />
+</video>
+
+## Why it is interesting
+
+The watch itself has no network stack for this. The phone-side JavaScript (PebbleKit JS) runs `@varco/client` unchanged inside the Pebble mobile app's WebView and talks to the Home Assistant Authority through the bridge, upgrading to WebRTC peer-to-peer when possible. The watch and the phone exchange compact AppMessage dictionaries over Bluetooth.
+
+```
+Watch (C UI) ←AppMessage/BLE→ PebbleKit JS (@varco/client) ←→ bridge ←→ Home Assistant
+```
+
+- The consumer never holds a Home Assistant token; it pairs once with a code shown on the watch and approved in the `/varco` panel.
+- The grant covers exactly five entities: two gate switches, one lock (with `unlock` and `open`), one gate state sensor, and the lock battery sensor. Nothing else is readable or callable.
+- Gate and lock state updates arrive live over the existing subscription stream.
+- Destructive actions (gates, door unlatch) require a double-press confirmation on the watch.
+
+## Notes for similar consumers
+
+- The PebbleKit JS runtime in the current Pebble mobile app is an Android WebView with full WebCrypto, so the standard browser client works as-is. Pass `storage: localStorage` so the consumer identity persists.
+- The watch UI stays dumb on purpose: the phone maps entity states to small integers and short strings, and the watch renders them. All Varco logic lives in one place.

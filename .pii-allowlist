@@ -28,3 +28,5 @@ home-assistant:[0-9][0-9.]*@sha256:[0-9a-f]{64}
 # OPF span variants of the public HA image reference.
 ^ghcr\.io/home-assistant/home-assistant$
 ^[0-9][0-9.]*@sha256:[0-9a-f]{64}$
+# x264 encoder metadata inside showcase MP4 binaries (videolan banner URL).
+http://www\.videolan\.org/x264\.html
