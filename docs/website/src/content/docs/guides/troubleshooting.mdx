@@ -19,12 +19,12 @@ description: Common Varco installation, relay, pairing, and WebRTC issues.
 
 ## Changing the bridge URL on an existing install
 
-How the bridge URL is stored depends on how the integration was set up:
+How to change the bridge URL depends on how the integration was set up:
 
+- **UI setup** (Settings -> Devices & services): open the Varco integration, press **Configure** (or use the entry's **Reconfigure** menu action), change the **Bridge WebSocket URL**, and save. The integration reloads and the relay reconnects to the new bridge immediately.
 - **YAML setup** (`varco:` in `configuration.yaml`): edit `bridge_ws_url` and restart Home Assistant.
-- **UI setup** (Settings -> Devices & services): the URL is pinned in the config entry at setup time. There is currently no options or reconfigure flow to change it. Removing and re-adding the integration changes the URL but generates a new Authority keypair, which invalidates every existing grant and changes your Authority ID, so consumers must re-pair.
 
-If you need to keep the Authority keypair, edit `bridge_ws_url` in the entry data inside `config/.storage/core.config_entries` while Home Assistant is stopped, then start it again. Back up the file first; `.storage` files are not a supported editing surface.
+The Authority keypair lives in Varco's own storage (`config/.storage/varco.storage`), not in the config entry, so changing the bridge URL, removing and re-adding the integration, or switching between YAML and UI setup keeps the Authority ID and all existing grants.
 
 ## Bridge closes the connection with code 4403 (`Authority not allowlisted`)
 

@@ -61,7 +61,7 @@ varco:
 
 Both keys are optional and default to the values shown. The YAML block is ignored when a UI config entry already exists.
 
-The YAML path generates a fresh Authority key pair on every Home Assistant start, so the Authority ID changes and existing pairings stop working after a restart. Use the UI flow for any setup that must keep its Authority identity; YAML setup is only suitable for throwaway testing.
+The Authority key pair is stored in Varco's integration storage and is generated only on first start, so the Authority ID and existing pairings survive restarts and reinstalls for both YAML and UI setups.
 
 ## Open the panel
 

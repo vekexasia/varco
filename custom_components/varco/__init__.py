@@ -30,24 +30,39 @@ else:
 PLATFORMS: list[str] = []
 
 
-async def async_setup(hass, config) -> bool:
-    entries = hass.config_entries.async_entries(DOMAIN)
-    if DOMAIN in config and not entries:
-        from .crypto import generate_authority_keypair
+IDENTITY_KEYS = ("private_key", "public_key", "authority_id")
 
-        entry_data = {**dict(config[DOMAIN]), **generate_authority_keypair()}
-        await _async_setup_authority(hass, "yaml", entry_data)
-    else:
-        for entry in entries:
-            await _async_setup_authority(hass, entry.entry_id, entry.data)
+
+async def async_setup(hass, config) -> bool:
+    if DOMAIN in config and not hass.config_entries.async_entries(DOMAIN):
+        await _async_setup_authority(hass, "yaml", dict(config[DOMAIN]))
     return True
 
 
 async def async_setup_entry(hass, entry) -> bool:
-    return await _async_setup_authority(hass, entry.entry_id, entry.data)
+    result = await _async_setup_authority(hass, entry.entry_id, entry.data, entry=entry)
+    entry.async_on_unload(entry.add_update_listener(_async_entry_updated))
+    return result
 
 
-async def _async_setup_authority(hass, entry_id: str, entry_data: dict) -> bool:
+async def _async_entry_updated(hass, entry) -> None:
+    await hass.config_entries.async_reload(entry.entry_id)
+
+
+async def _async_resolve_identity(store, entry_data: dict) -> dict[str, str]:
+    identity = await store.async_get_identity()
+    if identity is None:
+        if entry_data.get("private_key") and entry_data.get("authority_id"):
+            identity = {key: entry_data[key] for key in IDENTITY_KEYS if key in entry_data}
+        else:
+            from .crypto import generate_authority_keypair
+
+            identity = generate_authority_keypair()
+        await store.async_set_identity(identity)
+    return identity
+
+
+async def _async_setup_authority(hass, entry_id: str, entry_data: dict, entry=None) -> bool:
     from .relay import VarcoRelay
     from .services import async_setup_services
     from .websocket_api import async_setup as async_setup_websocket
@@ -57,7 +72,14 @@ async def _async_setup_authority(hass, entry_id: str, entry_data: dict) -> bool:
     if entry_id in hass.data[DOMAIN]:
         return True
     store = HomeAssistantVarcoStore(hass)
-    relay = VarcoRelay(hass, entry_data, store)
+    identity = await _async_resolve_identity(store, entry_data)
+    if entry is not None and any(key in entry.data for key in IDENTITY_KEYS):
+        # Migrate legacy entries: the keypair moves into Varco storage and
+        # leaves entry.data, so the entry only holds editable configuration.
+        hass.config_entries.async_update_entry(
+            entry, data={k: v for k, v in entry.data.items() if k not in IDENTITY_KEYS}
+        )
+    relay = VarcoRelay(hass, {**entry_data, **identity}, store)
     hass.data[DOMAIN][entry_id] = {"store": store, "relay": relay}
     await async_setup_services(hass)
     if not hass.data[DOMAIN].get("websocket_registered"):

@@ -160,6 +160,14 @@ class MemoryVarcoStore:
     async def async_audit_events(self) -> list[dict[str, Any]]:
         return list((await self.async_load_data())["audit"])
 
+    async def async_get_identity(self) -> dict[str, str] | None:
+        return (await self.async_load_data()).get("identity")
+
+    async def async_set_identity(self, identity: dict[str, str]) -> None:
+        data = await self.async_load_data()
+        data["identity"] = identity
+        await self.async_save_data(data)
+
 
 class HomeAssistantVarcoStore(MemoryVarcoStore):
     def __init__(self, hass) -> None:
