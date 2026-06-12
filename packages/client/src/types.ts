@@ -26,6 +26,7 @@ export type VarcoTransport = {
   request(message: Record<string, unknown>): Promise<any>;
   close?(): void | Promise<void>;
   onEvent?(handler: (event: any) => void): void;
+  onClose?(handler: () => void): void;
 };
 
 export type StorageLike = {
@@ -52,6 +53,7 @@ export type VarcoClientOptions = {
   transport?: VarcoTransport;
   warn?: (message: string) => void;
   webrtc?: boolean;
+  reconnect?: boolean;
   onTransportStatus?: (status: VarcoTransportStatus) => void;
 };
 

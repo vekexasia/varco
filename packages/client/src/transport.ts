@@ -72,12 +72,15 @@ export class RelayTransport implements VarcoTransport {
   private recvNonce = 0;
   private pending = new Map<string, { resolve: (value: any) => void; reject: (err: Error) => void; timer: ReturnType<typeof setTimeout> }>();
   private eventHandler: ((event: any) => void) | null = null;
+  private closeHandler: (() => void) | null = null;
   private ready: Promise<void> | null = null;
   private closed = false;
 
   constructor(private bridgeUrl: string, private authorityId: string, private requestTimeoutMs = 30_000) {}
 
   onEvent(handler: (event: any) => void): void { this.eventHandler = handler; }
+
+  onClose(handler: () => void): void { this.closeHandler = handler; }
 
   async channelBinding(): Promise<string> {
     await this.ensureConnected();
@@ -149,8 +152,13 @@ export class RelayTransport implements VarcoTransport {
               });
             };
             ws.onclose = (closeEvent) => {
+              const code = (closeEvent as CloseEvent | undefined)?.code;
+              const wasClosed = this.closed;
               this.closed = true;
-              this.failPending(closeError((closeEvent as CloseEvent | undefined)?.code));
+              this.failPending(closeError(code));
+              // Signaling-only rejection (4405) and explicit close() are final;
+              // anything else is a network drop the owner may want to recover from.
+              if (!wasClosed && code !== 4405) this.closeHandler?.();
             };
             resolve();
           }

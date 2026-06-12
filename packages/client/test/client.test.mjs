@@ -492,3 +492,55 @@ test('createVarcoClient rejects manifest with conflicting alias spellings', () =
     manifest: { name: '', version: '1.0.0' },
   }), /non-empty name/);
 });
+
+test('client reconnects after transport close: re-auth, re-subscribe, remap callbacks', async () => {
+  let closeHandler = null;
+  let subCounter = 0;
+  class ReconnectingFake extends FakeTransport {
+    onClose(handler) { closeHandler = handler; }
+    async request(message) {
+      this.messages.push(message);
+      if (message.type === 'authenticate') return { type: 'authenticated', grant_id: 'g1' };
+      if (message.type === 'subscribe_states') return { type: 'state_snapshot', subscription_id: `sub${++subCounter}`, states: {} };
+      return super.request(message);
+    }
+  }
+  const transport = new ReconnectingFake();
+  const statuses = [];
+  const client = createVarcoClient({
+    authorityId: 'authority', bridgeUrl: 'ws://bridge', manifest: { name: 'Demo', version: '1' },
+    transport, storage: new MemoryStorage(), webrtc: false, reconnect: true,
+    onTransportStatus: (status) => statuses.push(status.detail),
+  });
+  await client.connect();
+  const events = [];
+  const subscriptionId = await client.subscribeEntities(['sensor.temp'], (event) => events.push(event));
+  assert.equal(subscriptionId, 'sub1');
+  assert.equal(events.length, 1);
+  assert.equal(typeof closeHandler, 'function');
+
+  // Simulate a network drop.
+  closeHandler();
+  await new Promise((resolve) => setTimeout(resolve, 50));
+
+  // Re-authenticated and re-subscribed under a new id.
+  const types = transport.messages.map((m) => m.type);
+  assert.equal(types.filter((t) => t === 'authenticate').length, 2);
+  assert.equal(types.filter((t) => t === 'subscribe_states').length, 2);
+  assert.equal(events.length, 2, 'callback re-fired with reconnect snapshot');
+  assert.ok(statuses.some((d) => d && d.startsWith('reconnecting')));
+
+  // Events under the NEW subscription id reach the original callback.
+  transport.handler({ type: 'state_delta', subscription_id: 'sub2', states: { 'sensor.temp': { state: '22' } } });
+  assert.equal(events.length, 3);
+
+  // unsubscribe with the ORIGINAL id targets the current server-side id.
+  await client.unsubscribe(subscriptionId);
+  assert.equal(transport.messages.at(-1).subscription_id, 'sub2');
+
+  // After explicit close, no reconnect loops.
+  await client.close();
+  closeHandler();
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.equal(transport.messages.filter((m) => m.type === 'authenticate').length, 2);
+});

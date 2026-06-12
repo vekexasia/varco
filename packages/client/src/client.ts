@@ -14,10 +14,13 @@ export function createVarcoClient(options: VarcoClientOptions): VarcoClient {
   assertManifest(options.manifest);
   let identity: ConsumerIdentity | null = loadIdentitySync(options.storage);
   const identityPromise = identity ? Promise.resolve(identity) : loadOrCreateIdentity(options.storage).then((resolved) => { identity = resolved; return resolved; });
-  const relayTransport: VarcoTransport = options.transport ?? new RelayTransport(options.bridgeUrl, options.authorityId);
+  const createRelay = (): VarcoTransport => options.transport ?? new RelayTransport(options.bridgeUrl, options.authorityId);
+  let relayTransport: VarcoTransport = createRelay();
   let activeTransport: VarcoTransport = relayTransport;
   let transportStatus: VarcoTransportStatus = { mode: "relay", detail: "connected via relay" };
-  const subscriptionKeys = new Map<string, string>();
+  let closedByUser = false;
+  let reconnecting = false;
+  const subscriptions = new Map<string, { entityIds: string[]; cb: (event: any) => void; currentId: string }>();
   const callbacks = new Map<string, (event: any) => void>();
   const attachEvents = (transport: VarcoTransport) => transport.onEvent?.((event) => {
     if ((event.type === "state_snapshot" || event.type === "state_delta") && event.subscription_id) callbacks.get(event.subscription_id)?.(event);
@@ -26,7 +29,74 @@ export function createVarcoClient(options: VarcoClientOptions): VarcoClient {
     transportStatus = status;
     options.onTransportStatus?.(status);
   };
+
+  const establish = async () => {
+    const id = await identityPromise;
+    const nonce = randomId(12);
+    const binding = (await (relayTransport as { channelBinding?: () => Promise<string> }).channelBinding?.()) ?? "";
+    await relayTransport.request({
+      type: "authenticate",
+      consumer_pk: id.publicKey,
+      nonce,
+      signature: await signAuthenticate(id, nonce, binding),
+    });
+    setStatus({ mode: "relay", detail: "relay authenticated" });
+    if (options.webrtc !== false) {
+      const p2p = await tryWebRtcUpgrade(relayTransport, setStatus);
+      if (p2p) {
+        activeTransport = p2p;
+        attachEvents(activeTransport);
+        activeTransport.onClose?.(scheduleReconnect);
+        setStatus({ mode: "p2p", detail: "WebRTC data channel connected" });
+      }
+    }
+    // No silent fallback on a signaling-only bridge: relay data is rejected
+    // there, so surface the failure instead of leaving a dead relay transport.
+    if (activeTransport === relayTransport && transportStatus.detail !== undefined && isSignalingOnlyError(transportStatus.detail)) {
+      throw new Error(transportStatus.detail);
+    }
+  };
+
+  const scheduleReconnect = () => {
+    if (!options.reconnect || closedByUser || reconnecting) return;
+    reconnecting = true;
+    let attempt = 0;
+    const tryOnce = async () => {
+      if (closedByUser) { reconnecting = false; return; }
+      attempt += 1;
+      setStatus({ mode: "relay", detail: `reconnecting (attempt ${attempt})` });
+      try {
+        await relayTransport.close?.();
+        relayTransport = createRelay();
+        activeTransport = relayTransport;
+        attachEvents(relayTransport);
+        relayTransport.onClose?.(scheduleReconnect);
+        await establish();
+        for (const record of subscriptions.values()) {
+          const response = await activeTransport.request({ type: "subscribe_states", entity_ids: record.entityIds });
+          callbacks.delete(record.currentId);
+          record.currentId = response.subscription_id;
+          callbacks.set(record.currentId, record.cb);
+          record.cb(response);
+        }
+        reconnecting = false;
+        setStatus({ ...transportStatus, detail: transportStatus.detail ?? "reconnected" });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (isSignalingOnlyError(message)) {
+          reconnecting = false;
+          setStatus({ mode: "relay", detail: message });
+          return;
+        }
+        const delay = Math.min(30_000, 1_000 * 2 ** Math.min(attempt, 5)) * (0.5 + Math.random() * 0.5);
+        setTimeout(() => { void tryOnce(); }, delay);
+      }
+    };
+    void tryOnce();
+  };
+
   attachEvents(relayTransport);
+  relayTransport.onClose?.(scheduleReconnect);
 
   return attachDomainHelpers({
     get consumerPublicKey() { return identity?.publicKey ?? ""; },
@@ -46,29 +116,7 @@ export function createVarcoClient(options: VarcoClientOptions): VarcoClient {
     },
 
     async connect() {
-      const id = await identityPromise;
-      const nonce = randomId(12);
-      const binding = (await (relayTransport as { channelBinding?: () => Promise<string> }).channelBinding?.()) ?? "";
-      await relayTransport.request({
-        type: "authenticate",
-        consumer_pk: id.publicKey,
-        nonce,
-        signature: await signAuthenticate(id, nonce, binding),
-      });
-      setStatus({ mode: "relay", detail: "relay authenticated" });
-      if (options.webrtc !== false) {
-        const p2p = await tryWebRtcUpgrade(relayTransport, setStatus);
-        if (p2p) {
-          activeTransport = p2p;
-          attachEvents(activeTransport);
-          setStatus({ mode: "p2p", detail: "WebRTC data channel connected" });
-        }
-      }
-      // No silent fallback on a signaling-only bridge: relay data is rejected
-      // there, so surface the failure instead of leaving a dead relay transport.
-      if (activeTransport === relayTransport && transportStatus.detail !== undefined && isSignalingOnlyError(transportStatus.detail)) {
-        throw new Error(transportStatus.detail);
-      }
+      await establish();
     },
 
     async getStates(entityIds: string[]) {
@@ -78,17 +126,21 @@ export function createVarcoClient(options: VarcoClientOptions): VarcoClient {
 
     async subscribeEntities(entityIds: string[], cb: (event: any) => void) {
       const key = [...entityIds].sort().join("\0");
-      if ([...subscriptionKeys.values()].includes(key)) options.warn?.(`Duplicate Varco subscription for ${entityIds.join(", ")}`);
+      const existing = [...subscriptions.values()].some((record) => [...record.entityIds].sort().join("\0") === key);
+      if (existing) options.warn?.(`Duplicate Varco subscription for ${entityIds.join(", ")}`);
       const response = await activeTransport.request({ type: "subscribe_states", entity_ids: entityIds });
-      subscriptionKeys.set(response.subscription_id, key);
-      callbacks.set(response.subscription_id, cb);
+      const subscriptionId = response.subscription_id as string;
+      subscriptions.set(subscriptionId, { entityIds: [...entityIds], cb, currentId: subscriptionId });
+      callbacks.set(subscriptionId, cb);
       cb(response);
-      return response.subscription_id as string;
+      return subscriptionId;
     },
 
     async unsubscribe(subscriptionId: string) {
-      await activeTransport.request({ type: "unsubscribe_states", subscription_id: subscriptionId });
-      subscriptionKeys.delete(subscriptionId);
+      const record = subscriptions.get(subscriptionId);
+      await activeTransport.request({ type: "unsubscribe_states", subscription_id: record?.currentId ?? subscriptionId });
+      if (record) callbacks.delete(record.currentId);
+      subscriptions.delete(subscriptionId);
       callbacks.delete(subscriptionId);
     },
 
@@ -124,6 +176,7 @@ export function createVarcoClient(options: VarcoClientOptions): VarcoClient {
     },
 
     async close() {
+      closedByUser = true;
       await activeTransport.close?.();
       if (activeTransport !== relayTransport) await relayTransport.close?.();
     },
