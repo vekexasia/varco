@@ -10,6 +10,7 @@ on:
       - "custom_components/varco/**"
       - "dev/home-assistant/**"
       - "examples/gazzetta-energy-showcase/**"
+      - "examples/guest-stay-showcase/**"
       - "docs/website/src/content/docs/development/**"
       - ".github/workflows/deploy-ha-showcase.yml"
 
@@ -161,6 +162,43 @@ jobs:
           mkdir -p .pi/gazzetta-demo-dist
           cp examples/gazzetta-energy-showcase/dist/index.html examples/gazzetta-energy-showcase/dist/main.js .pi/gazzetta-demo-dist/
 
+      - name: Prepare guest stay demo grant
+        env:
+          HA_SHOWCASE_HOST: ${{ secrets.HA_SHOWCASE_HOST }}
+          HA_SHOWCASE_HTTP_PORT: ${{ secrets.HA_SHOWCASE_HTTP_PORT }}
+          HA_SHOWCASE_USERNAME: test
+          HA_SHOWCASE_PASSWORD: test
+        run: |
+          set -euo pipefail
+          if [ -z "${HA_SHOWCASE_HOST:-}" ]; then
+            echo "HA_SHOWCASE_HOST not set; skipping guest stay demo grant."
+            exit 0
+          fi
+          HA_PORT="${HA_SHOWCASE_HTTP_PORT:-8123}"
+          if [ "$HA_PORT" = "80" ]; then
+            printf -v HA_URL '%s://%s' http "$HA_SHOWCASE_HOST"
+          else
+            printf -v HA_URL '%s://%s:%s' http "$HA_SHOWCASE_HOST" "$HA_PORT"
+          fi
+          export HA_URL
+          export HA_CLIENT_ID="http://localhost:8123/"
+          export HA_USERNAME="${HA_SHOWCASE_USERNAME:-test}"
+          export HA_PASSWORD="${HA_SHOWCASE_PASSWORD:-test}"
+          for attempt in $(seq 1 12); do
+            if npm run dev:ha:guest-stay-demo; then
+              break
+            fi
+            if [ "$attempt" = "12" ]; then
+              echo "Failed to prepare guest stay demo grant after $attempt attempts." >&2
+              exit 1
+            fi
+            echo "Home Assistant auth not ready yet; retrying guest stay grant preparation ($attempt/12)."
+            sleep 5
+          done
+          rm -rf .pi/guest-stay-demo-dist
+          mkdir -p .pi/guest-stay-demo-dist
+          cp examples/guest-stay-showcase/dist/index.html examples/guest-stay-showcase/dist/main.js .pi/guest-stay-demo-dist/
+
       - name: Deploy Gazzetta demo to Cloudflare
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -174,3 +212,17 @@ jobs:
           npx wrangler deploy .pi/gazzetta-demo-dist --name varco-demo --compatibility-date 2026-06-07 --domain varco-demo.andreabaccega.com
           curl -fsS https://varco-demo.andreabaccega.com/ >/dev/null
           echo "Gazzetta demo responded at https://varco-demo.andreabaccega.com/"
+
+      - name: Deploy guest stay demo to Cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            echo "CLOUDFLARE_API_TOKEN not set; skipping guest stay demo deploy."
+            exit 0
+          fi
+          npx wrangler deploy .pi/guest-stay-demo-dist --name varco-guest-demo --compatibility-date 2026-06-07 --domain varco-guest-demo.andreabaccega.com
+          curl -fsS https://varco-guest-demo.andreabaccega.com/ >/dev/null
+          echo "Guest stay demo responded at https://varco-guest-demo.andreabaccega.com/"

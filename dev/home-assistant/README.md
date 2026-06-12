@@ -26,6 +26,11 @@ Open the synthetic energy dashboard at:
 http://127.0.0.1:8123/varco-showcase/energy
 ```
 
+Public showcase consumers:
+
+- Gazzetta energy demo: https://varco-demo.andreabaccega.com/
+- Guest-stay demo: https://varco-guest-demo.andreabaccega.com/
+
 Runtime Home Assistant storage under `config/.storage/` is local state and must not be committed.
 
 
@@ -37,4 +42,6 @@ npm run dev:ha:smoke
 npm run dev:ha:pair
 npm run dev:ha:approve -- REQUEST_ID
 npm run dev:ha:delete-grant -- GRANT_ID
+npm run dev:ha:gazzetta-demo
+npm run dev:ha:guest-stay-demo
 ```

@@ -6,6 +6,9 @@
     "packages/client",
     "examples/consumer-dashboard",
     "examples/gazzetta-energy-showcase",
+    "examples/guest-stay-showcase",
+    "examples/tesla-energy-dashboard",
+    "examples/tesla-casa-dashboard",
     "docs/website"
   ],
   "scripts": {
@@ -22,6 +25,7 @@
     "dev:ha:local-browser": "npm run dev:ha:local-assets && node dev/home-assistant/tools/browser-local-hass-e2e.mjs",
     "dev:ha:dashboard-export-browser": "node dev/home-assistant/tools/browser-dashboard-export-e2e.mjs",
     "dev:ha:gazzetta-demo": "npm --workspace packages/client run build && npm --workspace examples/gazzetta-energy-showcase run build && node dev/home-assistant/tools/prepare-gazzetta-demo.mjs && npm --workspace examples/gazzetta-energy-showcase run build",
+    "dev:ha:guest-stay-demo": "npm --workspace packages/client run build && npm --workspace examples/guest-stay-showcase run build && node dev/home-assistant/tools/prepare-guest-stay-demo.mjs && npm --workspace examples/guest-stay-showcase run build",
     "dev:ha:tools:test": "node --test dev/home-assistant/tools/test/*.test.mjs",
     "docs:dev": "npm --workspace @varco/docs-website run dev",
     "docs:build": "npm --workspace @varco/docs-website run build",

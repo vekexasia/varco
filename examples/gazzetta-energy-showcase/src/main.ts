@@ -174,8 +174,10 @@ function renderSetup(): string {
   const connectLabel = FORCE_RELAY_ONLY ? "Connect relay-only" : "Connect";
   const streamWord = FORCE_RELAY_ONLY ? "relay-only stream" : "encrypted stream";
   if (DEMO_GRANT_BUNDLE) {
-    const text = phase === "error" ? message : `Demo grant embedded. Connecting ${streamWord}...`;
-    return `<section class="setup"><div class="box"><div class="kicker"><span>Live demo</span><span class="note">read-only</span></div><button id="connect">${esc(connectLabel)}</button><div class="status${phase === "error" ? " error" : ""}">${esc(text)}</div></div></section>`;
+    const failed = phase === "error";
+    const text = failed ? message : `Demo grant embedded. Connecting ${streamWord}...`;
+    const progress = `<style>.progress{height:5px;background:var(--paper-dim);border:1px solid var(--line-2);overflow:hidden;margin:12px 0 4px;position:relative}.progress::after{content:'';position:absolute;inset:0;width:34%;background:var(--accent);animation:vslide 1.2s ease-in-out infinite}@keyframes vslide{0%{transform:translateX(-110%)}100%{transform:translateX(320%)}}</style><div class="progress" role="progressbar" aria-label="Connecting"></div>`;
+    return `<section class="setup"><div class="box"><div class="kicker"><span>Live demo</span><span class="note">read-only</span></div>${failed ? `<button id="connect">Retry</button>` : progress}<div class="status${failed ? " error" : ""}">${esc(text)}</div></div></section>`;
   }
   const savedMessage = saved?.status === "approved"
     ? `Saved grant for this browser. Press Connect to resume the ${streamWord}.`

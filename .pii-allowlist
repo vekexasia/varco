@@ -30,3 +30,9 @@ home-assistant:[0-9][0-9.]*@sha256:[0-9a-f]{64}
 ^[0-9][0-9.]*@sha256:[0-9a-f]{64}$
 # x264 encoder metadata inside showcase MP4 binaries (videolan banner URL).
 http://www\.videolan\.org/x264\.html
+# Public CDN assets used by the guest-stay showcase UI (fonts, stock photos).
+https://fonts\.googleapis\.com(/css2\?[\w@&;:,.+=-]*)?
+https://fonts\.gstatic\.com
+https://images\.unsplash\.com/photo-[0-9a-f-]+\?auto=format&fit=crop&w=\d+&q=\d+
+# Browser localStorage key for the guest showcase grant (not a secret value).
+^varco\.guestStayShowcase\.grant\.v1$

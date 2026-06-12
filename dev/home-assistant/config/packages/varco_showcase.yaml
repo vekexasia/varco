@@ -95,6 +95,76 @@ input_number:
     step: 1
     mode: slider
     initial: 0
+  varco_guest_temperature:
+    name: Varco Guest Temperature Raw
+    min: 16
+    max: 30
+    step: 0.1
+    mode: box
+    initial: 22.1
+  varco_guest_humidity:
+    name: Varco Guest Humidity Raw
+    min: 20
+    max: 80
+    step: 1
+    mode: box
+    initial: 48
+  varco_guest_co2:
+    name: Varco Guest CO2 Raw
+    min: 380
+    max: 1200
+    step: 1
+    mode: box
+    initial: 530
+  varco_guest_power_load_w:
+    name: Varco Guest Power Load W Raw
+    min: 0
+    max: 3000
+    step: 1
+    mode: box
+    initial: 620
+  varco_guest_solar_w:
+    name: Varco Guest Solar W Raw
+    min: 0
+    max: 5000
+    step: 1
+    mode: box
+    initial: 1850
+  varco_guest_battery_charge:
+    name: Varco Guest Battery Charge Raw
+    min: 5
+    max: 100
+    step: 0.1
+    mode: box
+    initial: 72
+  varco_guest_living_room_light_level:
+    name: Varco Guest Living Room Light Level
+    min: 0
+    max: 255
+    step: 1
+    mode: slider
+    initial: 125
+  varco_guest_bedroom_light_level:
+    name: Varco Guest Bedroom Light Level
+    min: 0
+    max: 255
+    step: 1
+    mode: slider
+    initial: 70
+  varco_guest_kitchen_light_level:
+    name: Varco Guest Kitchen Light Level
+    min: 0
+    max: 255
+    step: 1
+    mode: slider
+    initial: 150
+  varco_guest_terrace_light_level:
+    name: Varco Guest Terrace Light Level
+    min: 0
+    max: 255
+    step: 1
+    mode: slider
+    initial: 0
 
 input_boolean:
   varco_ev_charger:
@@ -106,6 +176,18 @@ input_boolean:
   varco_living_room_cooling:
     name: Varco Living Room Cooling Raw
     icon: mdi:air-conditioner
+  varco_guest_coffee_machine:
+    name: Varco Guest Coffee Machine Raw
+    icon: mdi:coffee-maker
+  varco_guest_cooling:
+    name: Varco Guest Cooling Raw
+    icon: mdi:air-conditioner
+  varco_guest_front_door:
+    name: Varco Guest Front Door Raw
+    icon: mdi:door
+  varco_guest_motion:
+    name: Varco Guest Motion Raw
+    icon: mdi:motion-sensor
 
 # Energy signs follow Tesla-style conventions used by the showcase:
 # battery < 0 means charging, battery > 0 means discharging,
@@ -339,6 +421,177 @@ template:
           {% set minute = now().hour * 60 + now().minute %}
           {{ 470 <= minute <= 478 or 1090 <= minute <= 1098 }}
 
+  - light:
+      - name: Guest Living Room
+        unique_id: varco_guest_living_room
+        icon: mdi:floor-lamp
+        level: "{{ states('input_number.varco_guest_living_room_light_level') | int(0) }}"
+        state: "{{ states('input_number.varco_guest_living_room_light_level') | int(0) > 0 }}"
+        turn_on:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.varco_guest_living_room_light_level
+            data:
+              value: 150
+        turn_off:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.varco_guest_living_room_light_level
+            data:
+              value: 0
+        set_level:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.varco_guest_living_room_light_level
+            data:
+              value: "{{ brightness }}"
+      - name: Guest Bedroom
+        unique_id: varco_guest_bedroom
+        icon: mdi:bed-king
+        level: "{{ states('input_number.varco_guest_bedroom_light_level') | int(0) }}"
+        state: "{{ states('input_number.varco_guest_bedroom_light_level') | int(0) > 0 }}"
+        turn_on:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.varco_guest_bedroom_light_level
+            data:
+              value: 110
+        turn_off:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.varco_guest_bedroom_light_level
+            data:
+              value: 0
+        set_level:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.varco_guest_bedroom_light_level
+            data:
+              value: "{{ brightness }}"
+      - name: Guest Kitchen
+        unique_id: varco_guest_kitchen
+        icon: mdi:ceiling-light-multiple
+        level: "{{ states('input_number.varco_guest_kitchen_light_level') | int(0) }}"
+        state: "{{ states('input_number.varco_guest_kitchen_light_level') | int(0) > 0 }}"
+        turn_on:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.varco_guest_kitchen_light_level
+            data:
+              value: 180
+        turn_off:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.varco_guest_kitchen_light_level
+            data:
+              value: 0
+        set_level:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.varco_guest_kitchen_light_level
+            data:
+              value: "{{ brightness }}"
+      - name: Guest Terrace
+        unique_id: varco_guest_terrace
+        icon: mdi:string-lights
+        level: "{{ states('input_number.varco_guest_terrace_light_level') | int(0) }}"
+        state: "{{ states('input_number.varco_guest_terrace_light_level') | int(0) > 0 }}"
+        turn_on:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.varco_guest_terrace_light_level
+            data:
+              value: 165
+        turn_off:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.varco_guest_terrace_light_level
+            data:
+              value: 0
+        set_level:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.varco_guest_terrace_light_level
+            data:
+              value: "{{ brightness }}"
+  - switch:
+      - name: Guest Coffee Machine
+        unique_id: varco_guest_coffee_machine
+        icon: mdi:coffee-maker
+        state: "{{ is_state('input_boolean.varco_guest_coffee_machine', 'on') }}"
+        turn_on:
+          - action: input_boolean.turn_on
+            target:
+              entity_id: input_boolean.varco_guest_coffee_machine
+        turn_off:
+          - action: input_boolean.turn_off
+            target:
+              entity_id: input_boolean.varco_guest_coffee_machine
+      - name: Guest Cooling
+        unique_id: varco_guest_cooling
+        icon: mdi:air-conditioner
+        state: "{{ is_state('input_boolean.varco_guest_cooling', 'on') }}"
+        turn_on:
+          - action: input_boolean.turn_on
+            target:
+              entity_id: input_boolean.varco_guest_cooling
+        turn_off:
+          - action: input_boolean.turn_off
+            target:
+              entity_id: input_boolean.varco_guest_cooling
+  - sensor:
+      - name: Guest Temperature
+        unique_id: varco_guest_temperature
+        icon: mdi:home-thermometer
+        unit_of_measurement: °C
+        device_class: temperature
+        state_class: measurement
+        state: "{{ states('input_number.varco_guest_temperature') | float(0) | round(1) }}"
+      - name: Guest Humidity
+        unique_id: varco_guest_humidity
+        icon: mdi:water-percent
+        unit_of_measurement: "%"
+        device_class: humidity
+        state_class: measurement
+        state: "{{ states('input_number.varco_guest_humidity') | float(0) | round(0) }}"
+      - name: Guest CO2
+        unique_id: varco_guest_co2
+        icon: mdi:molecule-co2
+        unit_of_measurement: ppm
+        device_class: carbon_dioxide
+        state_class: measurement
+        state: "{{ states('input_number.varco_guest_co2') | float(0) | round(0) }}"
+      - name: Guest Power Load W
+        unique_id: varco_guest_power_load_w
+        icon: mdi:home-lightning-bolt
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        state: "{{ states('input_number.varco_guest_power_load_w') | float(0) | round(0) }}"
+      - name: Guest Solar W
+        unique_id: varco_guest_solar_w
+        icon: mdi:solar-power
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        state: "{{ states('input_number.varco_guest_solar_w') | float(0) | round(0) }}"
+      - name: Guest Battery Charge
+        unique_id: varco_guest_battery_charge
+        icon: mdi:battery-charging-70
+        unit_of_measurement: "%"
+        device_class: battery
+        state_class: measurement
+        state: "{{ states('input_number.varco_guest_battery_charge') | float(0) | round(1) }}"
+  - binary_sensor:
+      - name: Guest Front Door
+        unique_id: varco_guest_front_door
+        device_class: door
+        state: "{{ is_state('input_boolean.varco_guest_front_door', 'on') }}"
+      - name: Guest Motion
+        unique_id: varco_guest_motion
+        device_class: motion
+        state: "{{ is_state('input_boolean.varco_guest_motion', 'on') }}"
+
 
 climate:
   - platform: generic_thermostat
@@ -349,6 +602,18 @@ climate:
     min_temp: 18
     max_temp: 28
     target_temp: 23
+    cold_tolerance: 0.2
+    hot_tolerance: 0.4
+    initial_hvac_mode: "cool"
+    precision: 0.1
+  - platform: generic_thermostat
+    name: Guest Suite Climate
+    heater: switch.guest_cooling
+    target_sensor: sensor.guest_temperature
+    ac_mode: true
+    min_temp: 19
+    max_temp: 24
+    target_temp: 21
     cold_tolerance: 0.2
     hot_tolerance: 0.4
     initial_hvac_mode: "cool"

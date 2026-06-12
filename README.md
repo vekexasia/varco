@@ -28,8 +28,9 @@ When deployed on GitHub Pages, the site is built from `docs/website/src/content/
 ## Try the demo
 
 Open the Gazzetta-style energy dashboard: [varco-demo.andreabaccega.com](https://varco-demo.andreabaccega.com/).
+Open the guest-stay dashboard: [varco-guest-demo.andreabaccega.com](https://varco-guest-demo.andreabaccega.com/).
 
-The demo is a browser-only consumer backed by a synthetic Home Assistant showcase instance. It connects through Varco with a pre-approved read-only grant for only the energy entities used by the dashboard.
+These demos are browser-only consumers backed by a synthetic Home Assistant showcase instance. They connect through Varco with pre-approved grants scoped to the entities and actions used by each dashboard.
 
 ## Repository map
 
@@ -38,6 +39,7 @@ The demo is a browser-only consumer backed by a synthetic Home Assistant showcas
 - `packages/client/`: browser TypeScript client (`@varco/client`).
 - `examples/consumer-dashboard/`: minimal external dashboard consumer.
 - `examples/gazzetta-energy-showcase/`: read-only energy dashboard showcase.
+- `examples/guest-stay-showcase/`: guest-stay dashboard showcase with narrow read and safe action scopes.
 - `dev/home-assistant/`: local Home Assistant development and showcase environment.
 - `docs/website/`: canonical documentation website source.
 - `tests/`: Python tests for Authority behavior and policy enforcement.
@@ -58,6 +60,8 @@ Package-level commands:
 npm --workspace packages/client run test
 npm --workspace bridge run test
 npm --workspace examples/consumer-dashboard run build
+npm run dev:ha:gazzetta-demo
+npm run dev:ha:guest-stay-demo
 ```
 
 Varco is an early MVP/prototype. The core pieces in this repository are implemented and covered by tests, but the API and grant model may still change.

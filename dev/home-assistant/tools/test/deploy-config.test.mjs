@@ -43,6 +43,14 @@ test('showcase workflow prepares and deploys the public Gazzetta demo after HA d
   assert.match(workflow, /varco-demo\.andreabaccega\.com/);
 });
 
+test('showcase workflow prepares and deploys the public guest stay demo after HA deploy', () => {
+  assert.match(workflow, /examples\/guest-stay-showcase\/\*\*/);
+  assert.match(workflow, /npm run dev:ha:guest-stay-demo/);
+  assert.match(workflow, /\.pi\/guest-stay-demo-dist/);
+  assert.match(workflow, /wrangler deploy \.pi\/guest-stay-demo-dist --name varco-guest-demo/);
+  assert.match(workflow, /varco-guest-demo\.andreabaccega\.com/);
+});
+
 test('CI runs the hass-first local Home Assistant e2e smoke test', () => {
   assert.match(ciWorkflow, /npx playwright install --with-deps chromium/);
   assert.match(ciWorkflow, /npm run dev:ha:local-assets/);
