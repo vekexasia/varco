@@ -88,19 +88,14 @@ jobs:
 
       - name: Publish @varco/client to npm
         if: ${{ github.event_name == 'push' || inputs.publish_npm }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
-          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
-            echo "NPM_TOKEN is not configured; skipping npm publish."
-            exit 0
-          fi
           VERSION="${{ steps.version.outputs.version }}"
           if npm dist-tag ls @varco/client 2>/dev/null | grep -Eq "^[^:]+: ${VERSION}$"; then
             echo "@varco/client@$VERSION is already published; skipping npm publish."
             exit 0
           fi
+          # Uses npm Trusted Publishing for this GitHub Actions workflow.
           npm --workspace packages/client publish --access public --provenance
 
       - name: Create GitHub release

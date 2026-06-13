@@ -45,7 +45,7 @@ git push origin v0.1.0
 The release workflow builds and uploads:
 
 - `varco-home-assistant.zip`: the Home Assistant custom integration directory for users who do not install through HACS.
-- `@varco/client`: published to npm from `packages/client` when `NPM_TOKEN` is configured.
+- `@varco/client`: published to npm from `packages/client` through npm Trusted Publishing.
 
 ## npm publishing
 
@@ -55,7 +55,16 @@ The package is published as:
 npm install @varco/client
 ```
 
-The GitHub release workflow publishes with npm provenance when `NPM_TOKEN` is available. Manual publishing is:
+The GitHub release workflow publishes with npm provenance through npm Trusted Publishing. Configure the package on npm with this trusted publisher:
+
+```text
+Package: @varco/client
+Publisher: GitHub Actions
+Repository: vekexasia/varco
+Workflow: release.yml
+```
+
+Manual publishing remains possible for maintainers:
 
 ```bash
 npm --workspace packages/client publish --access public
