@@ -55,13 +55,18 @@ The package is published as:
 npm install @varco/client
 ```
 
-The GitHub release workflow publishes with npm provenance through npm Trusted Publishing. Configure the package on npm with this trusted publisher:
+The GitHub release workflow publishes with npm provenance through npm Trusted Publishing. It uses a GitHub-hosted runner, `id-token: write`, Node 24, and npm 11.5.1 or newer so npm can exchange the workflow OIDC identity for a short-lived publish credential.
+
+Configure the package on npm with this trusted publisher:
 
 ```text
 Package: @varco/client
 Publisher: GitHub Actions
-Repository: vekexasia/varco
-Workflow: release.yml
+Organization or user: vekexasia
+Repository: varco
+Workflow filename: release.yml
+Environment name: leave empty
+Allowed actions: npm publish
 ```
 
 Manual publishing remains possible for maintainers:
