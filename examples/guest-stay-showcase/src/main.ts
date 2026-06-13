@@ -21,6 +21,7 @@ let message = "";
 let lastUpdate = "waiting";
 let transport = FORCE_RELAY_ONLY ? "Encrypted relay" : "Encrypted relay / P2P";
 let busyAction = "";
+let selectedTargetTemperature: number | null = null;
 const grantStorage = createDemoStorage(window.localStorage);
 
 const LIGHTS = [
@@ -95,7 +96,7 @@ function liveView(target: number): string {
     <section class="section"><h2>Stay guide</h2><p class="hint">Everything a guest needs, without Home Assistant jargon.</p><div class="guide"><div class="guide-card"><h3>Wi-Fi</h3><p>Network: Casa Varco Guest<br>Password: ask-your-host</p></div><div class="guide-card"><h3>House notes</h3><p>Quiet hours after 22:00. Checkout is 11:00. Door unlock remains host-managed for safety.</p></div></div></section>
   </div><aside class="side">
     <div class="panel"><h2>Your stay</h2><div class="stay-grid"><div class="stay-cell"><div class="label">Check-in</div><div class="value">Today 15:00</div></div><div class="stay-cell"><div class="label">Checkout</div><div class="value">Tomorrow 11:00</div></div><div class="stay-cell"><div class="label">Access</div><div class="value">${phase === "live" ? "Active" : "Pending"}</div></div><div class="stay-cell"><div class="label">Updated</div><div class="value">${esc(lastUpdate)}</div></div></div><div class="status-list"><div class="status-row"><span>Front door</span><b>${binary(HOUSE_ENTITIES.frontDoor, "Open", "Closed")}</b></div><div class="status-row"><span>Motion near kitchen</span><b>${binary(HOUSE_ENTITIES.motion, "Detected", "Quiet")}</b></div><div class="status-row"><span>Solar right now</span><b>${kw(ENERGY_ENTITIES.solar)} kW</b></div><div class="status-row"><span>Battery</span><b>${round(ENERGY_ENTITIES.batteryCharge)}%</b></div></div></div>
-    <div class="panel"><h2>Comfort</h2><div class="comfort"><div class="metric"><span class="label">Room</span><b>${temp(COMFORT_ENTITIES.temperature)}°</b></div><div class="metric"><span class="label">Humidity</span><b>${round(COMFORT_ENTITIES.humidity)}%</b></div><div class="metric"><span class="label">CO2</span><b>${round(COMFORT_ENTITIES.co2)}</b></div></div><p class="hint" style="margin:0">Temperature is constrained to 19-24°C for this stay.</p><div class="temp-row"><button class="btn ghost" data-temp="${target - 1}" ${target <= 19 ? "disabled" : ""}>−</button><input class="range" id="temp" type="range" min="19" max="24" step="1" value="${target}"><button class="btn ghost" data-temp="${target + 1}" ${target >= 24 ? "disabled" : ""}>+</button></div><div class="temp-actions"><button class="btn primary" id="applyTemp">Set ${target}°C</button></div><div class="temp-actions"><button class="btn ghost" data-switch="${COMFORT_ENTITIES.cooling}" data-state="on">Cooling on</button><button class="btn ghost" data-switch="${COMFORT_ENTITIES.cooling}" data-state="off">Cooling off</button></div></div>
+    <div class="panel"><h2>Comfort</h2><div class="comfort"><div class="metric"><span class="label">Room</span><b>${temp(COMFORT_ENTITIES.temperature)}°</b></div><div class="metric"><span class="label">Humidity</span><b>${round(COMFORT_ENTITIES.humidity)}%</b></div><div class="metric"><span class="label">CO2</span><b>${round(COMFORT_ENTITIES.co2)}</b></div></div><p class="hint" style="margin:0">Temperature is constrained to 19-24°C for this stay. Cooling is ${titleState(COMFORT_ENTITIES.cooling).toLowerCase()}.</p><div class="temp-row"><button class="btn ghost" data-temp="${target - 1}" ${target <= 19 ? "disabled" : ""}>−</button><input class="range" id="temp" type="range" min="19" max="24" step="1" value="${target}"><button class="btn ghost" data-temp="${target + 1}" ${target >= 24 ? "disabled" : ""}>+</button></div><div class="temp-actions"><button class="btn primary" id="applyTemp">Set ${target}°C</button></div><div class="temp-actions"><button class="btn ghost" data-switch="${COMFORT_ENTITIES.cooling}" data-state="on" ${state(COMFORT_ENTITIES.cooling) === "on" ? "disabled" : ""}>Cooling on</button><button class="btn ghost" data-switch="${COMFORT_ENTITIES.cooling}" data-state="off" ${state(COMFORT_ENTITIES.cooling) === "off" ? "disabled" : ""}>Cooling off</button></div></div>
   </aside></div>`;
 }
 
@@ -110,10 +111,10 @@ function bind(): void {
   document.getElementById("clearGrant")?.addEventListener("click", () => { clearShowcaseGrant(grantStorage); phase = "setup"; message = "Saved grant removed."; render(); });
   document.querySelectorAll<HTMLElement>("[data-light]").forEach((el) => el.addEventListener("click", () => void setLight(el.dataset.light!, el.dataset.state === "on")));
   document.querySelectorAll<HTMLElement>("[data-switch]").forEach((el) => el.addEventListener("click", () => void setSwitch(el.dataset.switch!, el.dataset.state === "on")));
-  document.querySelectorAll<HTMLElement>("[data-temp]").forEach((el) => el.addEventListener("click", () => void setTemperature(Number(el.dataset.temp))));
-  document.getElementById("applyTemp")?.addEventListener("click", () => void setTemperature(Number((document.getElementById("temp") as HTMLInputElement).value)));
+  document.querySelectorAll<HTMLElement>("[data-temp]").forEach((el) => el.addEventListener("click", () => chooseTemperature(Number(el.dataset.temp))));
+  document.getElementById("applyTemp")?.addEventListener("click", () => void setTemperature(targetTemperature()));
   document.querySelectorAll<HTMLElement>("[data-scene]").forEach((el) => el.addEventListener("click", () => void runScene(el.dataset.scene!)));
-  document.getElementById("temp")?.addEventListener("input", () => render());
+  document.getElementById("temp")?.addEventListener("input", (event) => chooseTemperature(Number((event.currentTarget as HTMLInputElement).value)));
 }
 
 function authorityId(): string { return DEMO_GRANT_BUNDLE?.authorityId || (document.getElementById("authority") as HTMLInputElement | null)?.value.trim() || DEFAULT_AUTHORITY_ID; }
@@ -150,9 +151,10 @@ async function connectLive(): Promise<void> {
   render();
 }
 
-async function setLight(entity: string, on: boolean): Promise<void> { await action(`${entity}:${on}`, async () => { if (on) await client?.light.turnOn(entity); else await client?.light.turnOff(entity); }); }
-async function setSwitch(entity: string, on: boolean): Promise<void> { await action(`${entity}:${on}`, async () => { if (on) await client?.switch.turnOn(entity); else await client?.switch.turnOff(entity); }); }
-async function setTemperature(value: number): Promise<void> { const next = Math.max(19, Math.min(24, Math.round(value))); await action(`temp:${next}`, async () => client?.climate.setTemperature(COMFORT_ENTITIES.climate, next)); }
+async function setLight(entity: string, on: boolean): Promise<void> { await action(`${entity}:${on}`, async () => { if (on) await client?.light.turnOn(entity); else await client?.light.turnOff(entity); optimisticState(entity, on ? "on" : "off", on ? { brightness: 150 } : {}); }); }
+async function setSwitch(entity: string, on: boolean): Promise<void> { await action(`${entity}:${on}`, async () => { if (on) await client?.switch.turnOn(entity); else await client?.switch.turnOff(entity); optimisticState(entity, on ? "on" : "off"); }); }
+function chooseTemperature(value: number): void { selectedTargetTemperature = clampTemperature(value); render(); }
+async function setTemperature(value: number): Promise<void> { const next = clampTemperature(value); selectedTargetTemperature = next; await action(`temp:${next}`, async () => { await client?.climate.setTemperature(COMFORT_ENTITIES.climate, next); optimisticAttributes(COMFORT_ENTITIES.climate, { temperature: next }); }); }
 async function runScene(scene: string): Promise<void> {
   if (scene === "arrival") await action("arrival", async () => { await client?.light.turnOn(LIGHT_ENTITIES.livingRoom); await client?.light.turnOn(LIGHT_ENTITIES.kitchen); });
   if (scene === "night") await action("night", async () => { await Promise.all(Object.values(LIGHT_ENTITIES).map((entity) => client?.light.turnOff(entity))); await client?.switch.turnOff(COMFORT_ENTITIES.cooling); });
@@ -165,6 +167,14 @@ async function action(name: string, fn: () => Promise<void | unknown>): Promise<
   finally { busyAction = ""; render(); }
 }
 
+function optimisticState(entity: string, nextState: string, attributes: Record<string, unknown> = {}): void {
+  const current = values.get(entity);
+  values.set(entity, { entity_id: entity, state: nextState, attributes: { ...(current?.attributes ?? {}), ...attributes } });
+}
+function optimisticAttributes(entity: string, attributes: Record<string, unknown>): void {
+  const current = values.get(entity);
+  values.set(entity, { entity_id: entity, state: current?.state ?? "-", attributes: { ...(current?.attributes ?? {}), ...attributes } });
+}
 function applyStates(states: Record<string, HassState | null>): void { for (const [entity, value] of Object.entries(states)) values.set(entity, value); lastUpdate = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }); if (phase === "live") render(); }
 function createDemoStorage(storage: Storage): StorageLike & ShowcaseGrantStorage { if (!DEMO_GRANT_BUNDLE) return storage; storage.setItem("varco.consumerIdentity.v1", JSON.stringify(DEMO_GRANT_BUNDLE.identity)); storage.setItem(SHOWCASE_GRANT_KEY, JSON.stringify(DEMO_GRANT_BUNDLE.grant)); return storage; }
 function state(entity: string): string { return String(values.get(entity)?.state ?? "-"); }
@@ -175,7 +185,8 @@ function kw(entity: string): string { const value = num(entity); return value ==
 function titleState(entity: string): string { const value = state(entity); return value === "-" ? "-" : value.charAt(0).toUpperCase() + value.slice(1).replaceAll("_", " "); }
 function binary(entity: string, onWord: string, offWord: string): string { return state(entity) === "on" ? onWord : offWord; }
 function brightness(entity: string): string { const raw = Number(values.get(entity)?.attributes?.brightness); return state(entity) === "on" && Number.isFinite(raw) ? ` · ${Math.round(raw / 255 * 100)}%` : ""; }
-function targetTemperature(): number { const input = document.getElementById("temp") as HTMLInputElement | null; const value = input ? Number(input.value) : Number(values.get(COMFORT_ENTITIES.climate)?.attributes?.temperature); return Number.isFinite(value) ? Math.max(19, Math.min(24, Math.round(value))) : 21; }
+function targetTemperature(): number { const value = selectedTargetTemperature ?? Number(values.get(COMFORT_ENTITIES.climate)?.attributes?.temperature); return Number.isFinite(value) ? clampTemperature(value) : 21; }
+function clampTemperature(value: number): number { return Math.max(19, Math.min(24, Math.round(value))); }
 function errorMessage(err: unknown): string { return err instanceof Error ? err.message : String(err); }
 function esc(value: string): string { return value.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]!); }
 
