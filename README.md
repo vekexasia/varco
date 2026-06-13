@@ -1,3 +1,5 @@
+![Varco header](docs/website/public/assets/header.png)
+
 # Varco
 
 Varco lets external apps use Home Assistant without receiving a Home Assistant token and without requiring Home Assistant to be publicly reachable.
