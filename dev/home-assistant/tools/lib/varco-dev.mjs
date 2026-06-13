@@ -278,6 +278,8 @@ export async function runVarcoRestrictionsSmoke(options = {}) {
     log('Connected');
 
     // 1. Without restrictions: service call and live subscription must succeed.
+    await admin.command('call_service', { domain: 'switch', service: 'turn_off', service_data: {}, target: { entity_id: SMOKE_SWITCH_ID } });
+    await waitForAdminState(admin, SMOKE_SWITCH_ID, 'off');
     const subscriptionEvents = [];
     await client.subscribeEntities([SMOKE_SWITCH_ID], (event) => subscriptionEvents.push(event));
     await client.callService('switch', 'turn_on', { entity_id: SMOKE_SWITCH_ID });
