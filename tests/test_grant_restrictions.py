@@ -309,6 +309,38 @@ def test_subscription_restrictions_preserve_read_scope_subscription_fallback():
     asyncio.run(run())
 
 
+def test_updating_grant_restrictions_invalidates_active_subscription():
+    async def run():
+        authority, _, _, grant = await paired_authority(
+            {"name": "Demo", "version": "1", "subscriptions": ["sensor.temp"]},
+        )
+
+        subscribed = await authority.handle_plaintext("s1", {"type": "subscribe_states", "entity_ids": ["sensor.temp"]})
+        assert subscribed["type"] == "state_snapshot"
+
+        await authority.set_grant_restrictions(
+            grant.grant_id,
+            [
+                {
+                    "id": "subscription-expired",
+                    "type": "expiry",
+                    "enabled": True,
+                    "applies_to": "subscriptions",
+                    "params": {"expires_at": "2026-06-09T11:59:00+00:00"},
+                }
+            ],
+        )
+
+        events = await authority.state_changed("sensor.temp", {"entity_id": "sensor.temp", "state": "22", "attributes": {}})
+        outbox = await authority.pop_outbox("s1")
+
+        assert events == []
+        assert outbox[-1]["type"] == "error"
+        assert outbox[-1]["code"] == "grant_restrictions_updated"
+
+    asyncio.run(run())
+
+
 def test_set_grant_restrictions_hashes_top_level_pin_before_storage():
     async def run():
         authority, store, _, grant = await paired_authority(

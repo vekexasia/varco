@@ -128,6 +128,8 @@ test('runVarcoRestrictionsSmoke verifies add/remove/PIN/rate-limit grant restric
   const adminCalls = [];
   const restrictions = { current: [] };
 
+  const state = { value: 'off' };
+  const subscriptionCallbacks = [];
   const admin = {
     async command(type, payload = {}) {
       adminCalls.push({ type, payload });
@@ -138,6 +140,14 @@ test('runVarcoRestrictionsSmoke verifies add/remove/PIN/rate-limit grant restric
         restrictions.current = payload.restrictions ?? [];
         return {};
       }
+      if (type === 'call_service') {
+        state.value = payload.service === 'turn_on' ? 'on' : 'off';
+        if (!restrictions.current.length) {
+          for (const cb of subscriptionCallbacks) cb({ type: 'state_delta', states: { [payload.target.entity_id]: { state: state.value } } });
+        }
+        return {};
+      }
+      if (type === 'get_states') return [{ entity_id: 'switch.ev_charger', state: state.value }];
       throw new Error(`Unexpected admin command: ${type}`);
     },
   };
@@ -146,6 +156,11 @@ test('runVarcoRestrictionsSmoke verifies add/remove/PIN/rate-limit grant restric
   const createClient = () => ({
     async requestAccess() { return { request_id: 'req-1', pairing_code: '123456', status: 'pending' }; },
     async connect() {},
+    async subscribeEntities(entityIds, cb) {
+      subscriptionCallbacks.push(cb);
+      cb({ type: 'state_snapshot', subscription_id: 'sub-1', states: Object.fromEntries(entityIds.map((entityId) => [entityId, { state: state.value }])) });
+      return 'sub-1';
+    },
     async callService(domain, service, data) {
       callCount++;
       const active = restrictions.current;
@@ -175,6 +190,10 @@ test('runVarcoRestrictionsSmoke verifies add/remove/PIN/rate-limit grant restric
           throw err;
         }
       }
+      state.value = service === 'turn_on' ? 'on' : 'off';
+      if (!active.length) {
+        for (const cb of subscriptionCallbacks) cb({ type: 'state_delta', states: { 'switch.ev_charger': { state: state.value } } });
+      }
     },
     async close() {},
   });
@@ -186,6 +205,7 @@ test('runVarcoRestrictionsSmoke verifies add/remove/PIN/rate-limit grant restric
   assert.ok(result.deniedByPin, 'should be denied without PIN');
   assert.ok(result.deniedByWrongPin, 'should be denied with wrong PIN');
   assert.ok(result.deniedByRateLimit, 'should be denied by rate limit');
+  assert.ok(result.subscriptionInvalidated, 'should stop subscription deltas after restriction update');
 
   // Verify the admin was asked to update and clear restrictions.
   const updateCalls = adminCalls.filter((c) => c.type === 'varco/update_grant_restrictions');

@@ -211,6 +211,17 @@ test('client exposes Varco-native data-plane API and duplicate subscription warn
   assert.equal(transport.messages.at(-1).target.entity_id, 'light.cucina');
 });
 
+test('client warns when grant restrictions change and active subscriptions are cleared', async () => {
+  const warnings = [];
+  const transport = new FakeTransport();
+  const client = createVarcoClient({ authorityId: 'authority', bridgeUrl: 'ws://bridge', manifest: { name: 'Demo', version: '1' }, transport, storage: new MemoryStorage(), warn: (msg) => warnings.push(msg) });
+  await client.connect();
+
+  transport.handler?.({ type: 'error', code: 'grant_restrictions_updated', message: 'Grant restrictions updated; active subscriptions cleared' });
+
+  assert.equal(warnings.at(-1), 'Grant restrictions updated; active subscriptions cleared');
+});
+
 test('client upgrades to WebRTC data channel and reports p2p transport status', async () => {
   const previous = globalThis.RTCPeerConnection;
   const statuses = [];

@@ -74,6 +74,8 @@ all enabled matching restrictions allow the operation
 
 Restrictions are enforced by the Home Assistant Authority on every data-plane request. They never widen a manifest scope, and the bridge/consumer are not trusted to enforce them.
 
+When an owner changes a grant's restrictions, the Authority clears active subscriptions for that grant and sends the consumer a `grant_restrictions_updated` error event. The consumer must create new subscriptions under the updated restrictions. Non-subscription requests continue on the same authenticated session, but are checked against the updated restrictions on the next request.
+
 <img src="/varco/assets/restriction-evaluation-stack.png" alt="Diagram showing Varco's fail-fast restriction evaluation stack: grant scope, expiry, schedule, PIN, and rate limit" />
 
 A restriction has this generic shape:

@@ -50,7 +50,7 @@ from custom_components.varco.crypto import (
     generate_authority_keypair,
     verify_signature,
 )
-from custom_components.varco.models import AccessRequest
+from custom_components.varco.models import AccessRequest, Grant
 from custom_components.varco.relay import VarcoRelay
 from custom_components.varco.storage import MemoryVarcoStore
 
@@ -310,6 +310,33 @@ def test_push_state_changed_sends_live_without_retaining_outbox_copy():
         assert len(sent) == 1
         assert client.decrypt(sent[0]["payload"]) == event
         assert await relay.authority.pop_outbox("s1") == []
+    asyncio.run(run())
+
+
+def test_restriction_update_sends_queued_error_to_live_client():
+    async def run():
+        relay, keys, sent = make_relay()
+        client = await _handshake(relay, keys, sent)
+        grant = Grant(
+            grant_id="g1",
+            consumer_pk="consumer-pk",
+            manifest={"name": "Demo", "version": "1", "subscriptions": ["sensor.temp"]},
+        )
+        await relay.store.async_upsert_grant(grant)
+        relay.authority._session("s1").consumer_pk = grant.consumer_pk
+
+        updated = await relay.set_grant_restrictions(
+            grant.grant_id,
+            [{"id": "hours", "type": "schedule", "applies_to": "subscriptions", "params": {}}],
+        )
+
+        assert updated.grant_id == grant.grant_id
+        assert len(sent) == 1
+        frame = sent[0]
+        assert frame["type"] == "authority_message"
+        assert frame["sessionId"] == "s1"
+        assert client.decrypt(frame["payload"])["code"] == "grant_restrictions_updated"
+
     asyncio.run(run())
 
 

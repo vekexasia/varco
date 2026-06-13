@@ -228,6 +228,26 @@ class VarcoRelay:
             else:
                 self.authority.queue_event(session_id, event)
 
+    async def set_grant_restrictions(self, grant_id: str, restrictions: list[dict[str, Any]]):
+        grant = await self.authority.set_grant_restrictions(grant_id, restrictions)
+        for session_id, runtime in list(self.authority.sessions.items()):
+            if runtime.consumer_pk == grant.consumer_pk:
+                await self._flush_outbox(session_id)
+        return grant
+
+    async def _flush_outbox(self, session_id: str) -> None:
+        session = self.sessions.get(session_id)
+        can_send_relay = session is not None and session.secure is not None
+        can_send_p2p = self.peer_stack is not None and hasattr(self.peer_stack, "send_event")
+        if not can_send_relay and not can_send_p2p:
+            return
+        for event in await self.authority.pop_outbox(session_id):
+            sent_p2p = False
+            if can_send_p2p:
+                sent_p2p = await self.peer_stack.send_event(session_id, event)
+            if not sent_p2p and can_send_relay:
+                await self._send_to_client(session_id, session.secure.encrypt(event))
+
     async def _send(self, message: dict[str, Any]) -> None:
         if self._ws is not None and not self._ws.closed:
             await self._ws.send_json(message)

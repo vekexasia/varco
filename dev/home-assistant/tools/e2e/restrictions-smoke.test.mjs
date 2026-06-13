@@ -18,4 +18,5 @@ test('restrictions smoke: pair grant, add/remove expiry, PIN, and rate-limit res
   assert.ok(result.deniedByPin, 'PIN restriction should deny call without PIN');
   assert.ok(result.deniedByWrongPin, 'PIN restriction should deny call with wrong PIN');
   assert.ok(result.deniedByRateLimit, 'rate-limit restriction should deny calls over the limit');
+  assert.ok(result.subscriptionInvalidated, 'restriction update should stop existing subscriptions');
 });

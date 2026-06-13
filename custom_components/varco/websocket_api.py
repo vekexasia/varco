@@ -99,7 +99,7 @@ async def websocket_delete_grant(hass: HomeAssistant, connection, msg) -> None:
 @websocket_api.require_admin
 @websocket_api.async_response
 async def websocket_update_grant_restrictions(hass: HomeAssistant, connection, msg) -> None:
-    grant = await _authority(hass).set_grant_restrictions(msg["grant_id"], msg["restrictions"])
+    grant = await _relay(hass).set_grant_restrictions(msg["grant_id"], msg["restrictions"])
     connection.send_result(msg["id"], grant.as_dict())
 
 

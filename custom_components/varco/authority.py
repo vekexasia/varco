@@ -169,6 +169,17 @@ class VarcoAuthority:
         grant.restrictions = [self._normalize_restriction(item) for item in restrictions if isinstance(item, dict)]
         await self.store.async_upsert_grant(grant)
         await audit.async_log(self.store, "grant_restrictions_updated", grant.grant_id, {"restriction_count": len(grant.restrictions)})
+        for session in self.sessions.values():
+            if session.consumer_pk == grant.consumer_pk:
+                session.subscriptions.clear()
+                self.queue_event(
+                    session.session_id,
+                    {
+                        "type": "error",
+                        "code": "grant_restrictions_updated",
+                        "message": "Grant restrictions updated; active subscriptions cleared",
+                    },
+                )
         return grant
 
     def _normalize_restriction(self, restriction: dict[str, Any]) -> dict[str, Any]:

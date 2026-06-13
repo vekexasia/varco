@@ -24,6 +24,11 @@ export function createVarcoClient(options: VarcoClientOptions): VarcoClient {
   const callbacks = new Map<string, (event: any) => void>();
   const attachEvents = (transport: VarcoTransport) => transport.onEvent?.((event) => {
     if ((event.type === "state_snapshot" || event.type === "state_delta") && event.subscription_id) callbacks.get(event.subscription_id)?.(event);
+    else if (event.type === "error" && event.code === "grant_restrictions_updated") {
+      subscriptions.clear();
+      callbacks.clear();
+      options.warn?.(String(event.message || "Grant restrictions updated"));
+    }
   });
   const setStatus = (status: VarcoTransportStatus) => {
     transportStatus = status;

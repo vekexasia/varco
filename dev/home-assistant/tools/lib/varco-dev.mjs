@@ -10,7 +10,7 @@ export const SMOKE_MANIFEST = {
   name: 'Varco local smoke test',
   version: 'dev',
   read_entities: [SMOKE_ENTITY_ID],
-  subscriptions: [SMOKE_ENTITY_ID],
+  subscriptions: [SMOKE_ENTITY_ID, SMOKE_SWITCH_ID],
   history: [SMOKE_ENTITY_ID],
   camera_snapshots: [],
   actions: [
@@ -212,6 +212,14 @@ async function waitForAdminState(admin, entityId, expectedState, attempts = 20) 
   throw new Error(`${entityId} did not become ${expectedState}; current state is ${hass.states[entityId]?.state || 'missing'}`);
 }
 
+async function waitForCondition(check, description, attempts = 20, delayMs = 250) {
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    if (check()) return;
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+  throw new Error(description);
+}
+
 class FileStorage {
   constructor(path) {
     this.path = path;
@@ -269,12 +277,22 @@ export async function runVarcoRestrictionsSmoke(options = {}) {
     await client.connect();
     log('Connected');
 
-    // 1. Without restrictions: service call must succeed.
+    // 1. Without restrictions: service call and live subscription must succeed.
+    const subscriptionEvents = [];
+    await client.subscribeEntities([SMOKE_SWITCH_ID], (event) => subscriptionEvents.push(event));
     await client.callService('switch', 'turn_on', { entity_id: SMOKE_SWITCH_ID });
+    await waitForAdminState(admin, SMOKE_SWITCH_ID, 'on');
+    await waitForCondition(
+      () => subscriptionEvents.some((event) => event.type === 'state_delta'),
+      'Expected live subscription to receive a switch state_delta before restrictions changed',
+    );
+    log('subscription before restriction update: received delta');
     log('call_service without restrictions: ok');
     await client.callService('switch', 'turn_off', { entity_id: SMOKE_SWITCH_ID });
+    await waitForAdminState(admin, SMOKE_SWITCH_ID, 'off');
 
-    // 2. Add an expired whole-grant expiry restriction — all data-plane calls must now be denied.
+    // 2. Add an expired whole-grant expiry restriction — all data-plane calls must now be denied
+    // and existing subscriptions must stop receiving deltas.
     const expiredRestriction = [{
       id: 'expired-grant',
       type: 'expiry',
@@ -284,7 +302,13 @@ export async function runVarcoRestrictionsSmoke(options = {}) {
     }];
     await admin.command('varco/update_grant_restrictions', { grant_id: grantId, restrictions: expiredRestriction });
     log('Set expired grant restriction');
-
+    const deltasBeforeAdminChange = subscriptionEvents.filter((event) => event.type === 'state_delta').length;
+    await admin.command('call_service', { domain: 'switch', service: 'turn_on', service_data: {}, target: { entity_id: SMOKE_SWITCH_ID } });
+    await waitForAdminState(admin, SMOKE_SWITCH_ID, 'on');
+    await new Promise((resolve) => setTimeout(resolve, 750));
+    const subscriptionInvalidated = subscriptionEvents.filter((event) => event.type === 'state_delta').length === deltasBeforeAdminChange;
+    if (!subscriptionInvalidated) throw new Error('Expected restriction update to stop the existing subscription');
+    log('subscription after restriction update: no further deltas');
     let deniedByExpiry = false;
     try {
       await client.callService('switch', 'turn_on', { entity_id: SMOKE_SWITCH_ID });
@@ -381,7 +405,7 @@ export async function runVarcoRestrictionsSmoke(options = {}) {
     grantId = undefined;
     log('Restrictions smoke completed, grant cleaned up');
 
-    return { authorityId, deniedByExpiry, deniedByPin, deniedByWrongPin, deniedByRateLimit };
+    return { authorityId, deniedByExpiry, deniedByPin, deniedByWrongPin, deniedByRateLimit, subscriptionInvalidated };
   } finally {
     if (grantId) await deleteGrant(admin, grantId).catch(() => {});
     await client.close?.();
