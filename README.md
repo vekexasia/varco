@@ -32,17 +32,6 @@ Open the guest-stay dashboard: [varco-guest-demo.andreabaccega.com](https://varc
 
 These demos are browser-only consumers backed by a synthetic Home Assistant showcase instance. They connect through Varco with pre-approved grants scoped to the entities and actions used by each dashboard.
 
-## Repository map
-
-- `custom_components/varco/`: Home Assistant custom integration. It provides the Authority, consent storage, grant enforcement, audit events, a `/varco` admin panel, and Home Assistant services.
-- `bridge/`: Cloudflare Worker plus Durable Object relay. It routes encrypted envelopes between consumers and the Authority.
-- `packages/client/`: browser TypeScript client (`@varco/client`).
-- `examples/consumer-dashboard/`: minimal external dashboard consumer.
-- `examples/gazzetta-energy-showcase/`: read-only energy dashboard showcase.
-- `examples/guest-stay-showcase/`: guest-stay dashboard showcase with narrow read and safe action scopes.
-- `dev/home-assistant/`: local Home Assistant development and showcase environment.
-- `docs/website/`: canonical documentation website source.
-- `tests/`: Python tests for Authority behavior and policy enforcement.
 
 ## Development
 

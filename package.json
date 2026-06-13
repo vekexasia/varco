@@ -7,8 +7,6 @@
     "examples/consumer-dashboard",
     "examples/gazzetta-energy-showcase",
     "examples/guest-stay-showcase",
-    "examples/tesla-energy-dashboard",
-    "examples/tesla-casa-dashboard",
     "docs/website"
   ],
   "scripts": {
