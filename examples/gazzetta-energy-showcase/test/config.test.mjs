@@ -6,6 +6,7 @@ import {
   ENERGY_ENTITIES,
   FORCE_RELAY_ONLY,
   HISTORY_ENTITIES,
+  HISTORY_LINK_ENTITIES,
   LIGHT_ENTITIES,
   READ_ENTITIES,
   SECURITY_ENTITIES,
@@ -21,6 +22,11 @@ test('showcase requests a read-only grant for all public demo entities', () => {
   assert.deepEqual(manifest.history, HISTORY_ENTITIES);
   assert.deepEqual(manifest.read_entities, READ_ENTITIES);
   assert.deepEqual(manifest.subscriptions, READ_ENTITIES);
+});
+
+test('showcase renders one ungranted history link to exercise permission errors', () => {
+  assert.equal(HISTORY_ENTITIES.includes(ENERGY_ENTITIES.batteryCharge), false);
+  assert.equal(HISTORY_LINK_ENTITIES.includes(ENERGY_ENTITIES.batteryCharge), true);
 });
 
 test('showcase allows P2P upgrade in production while keeping relay fallback', () => {

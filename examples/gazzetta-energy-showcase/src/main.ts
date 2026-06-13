@@ -7,7 +7,7 @@ import {
   DEMO_GRANT_BUNDLE,
   ENERGY_ENTITIES,
   FORCE_RELAY_ONLY,
-  HISTORY_ENTITIES,
+  HISTORY_LINK_ENTITIES,
   LIGHT_ENTITIES,
   READ_ENTITIES,
   SECURITY_ENTITIES,
@@ -25,7 +25,7 @@ let transportMode: "relay" | "p2p" = "relay";
 let phase: "setup" | "pending" | "live" | "error" = "setup";
 let message = "";
 const grantStorage = createDemoStorage(window.localStorage);
-const historyEntitySet = new Set<string>(HISTORY_ENTITIES);
+const historyEntitySet = new Set<string>(HISTORY_LINK_ENTITIES);
 
 const css = `
 :root{--ink:#211b14;--ink-2:#4a4036;--muted:#817767;--faint:#b7ac99;--line:#d8cfbb;--line-2:#c7bca3;--paper:#f4efe1;--paper-dim:#e7dfcd;--accent:#be5a38;--accent-deep:#934026;--accent-wash:#f3e4d8;--ok:#5f6b4f;--cool:#3a6ea5;--serif-display:'Libre Caslon Display',Georgia,serif;--serif-body:'Newsreader',Georgia,serif;--label-font:'Spline Sans Mono',ui-monospace,monospace}

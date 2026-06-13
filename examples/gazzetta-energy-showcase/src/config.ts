@@ -52,13 +52,21 @@ export const READ_ENTITIES = [
 ];
 
 export const HISTORY_ENTITIES = [
-  ...Object.values(ENERGY_ENTITIES),
+  ENERGY_ENTITIES.load,
+  ENERGY_ENTITIES.solar,
+  ENERGY_ENTITIES.grid,
+  ENERGY_ENTITIES.battery,
   COMFORT_ENTITIES.outdoorTemperature,
   COMFORT_ENTITIES.outdoorHumidity,
   COMFORT_ENTITIES.livingRoomTemperature,
   COMFORT_ENTITIES.livingRoomHumidity,
   COMFORT_ENTITIES.co2,
   UTILITY_ENTITIES.evCharge,
+];
+
+export const HISTORY_LINK_ENTITIES = [
+  ...HISTORY_ENTITIES,
+  ENERGY_ENTITIES.batteryCharge,
 ];
 
 export function createReadOnlyManifest(): VarcoManifest {
