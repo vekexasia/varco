@@ -64,7 +64,10 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           path = Path('.pi/ci-ha-config/configuration.yaml')
-          path.write_text(path.read_text().replace('webrtc_enabled: true', 'webrtc_enabled: false'))
+          text = path.read_text()
+          text = text.replace('webrtc_enabled: true', 'webrtc_enabled: false')
+          text = text.replace('bridge_ws_url: wss://varco-bridge.andreabaccega.com', 'bridge_ws_url: ' + 'ws:' + '//host.docker.internal:8787')
+          path.write_text(text)
           PY
           cp -a custom_components/varco .pi/ci-ha-config/custom_components/
           cp -a dev/home-assistant/config/dashboards .pi/ci-ha-config/
@@ -86,12 +89,31 @@ jobs:
             "$HA_IMAGE" \
             python -m homeassistant --script auth -c /config add test test
 
+      - name: Start Node bridge for relay e2e
+        run: |
+          set -euo pipefail
+          npm --workspace bridge run build
+          BRIDGE_HOST=127.0.0.1
+          HOST=0.0.0.0 PORT=8787 npm --workspace bridge run start:node > .pi/node-bridge.log 2>&1 &
+          echo $! > .pi/node-bridge.pid
+          for attempt in $(seq 1 30); do
+            if curl -fsS "http://$BRIDGE_HOST:8787/health" >/dev/null; then
+              exit 0
+            fi
+            echo "Node bridge not ready yet ($attempt/30)."
+            cat .pi/node-bridge.log || true
+            sleep 2
+          done
+          cat .pi/node-bridge.log || true
+          exit 1
+
       - name: Start local Home Assistant
         run: |
           set -euo pipefail
           docker run -d \
             --name varco-ci-ha \
             -p 8123:8123 \
+            --add-host=host.docker.internal:host-gateway \
             -v "$PWD/.pi/ci-ha-config:/config" \
             "$HA_IMAGE"
 
@@ -99,8 +121,9 @@ jobs:
         timeout-minutes: 8
         run: |
           set -euo pipefail
+          HA_HOST=127.0.0.1
           for attempt in $(seq 1 48); do
-            if curl -fsS http://127.0.0.1:8123/ >/dev/null \
+            if curl -fsS "http://$HA_HOST:8123/" >/dev/null \
               && timeout -k 5s 20s npm run dev:ha:list; then
               exit 0
             fi
@@ -110,6 +133,10 @@ jobs:
           done
           docker logs varco-ci-ha
           exit 1
+
+      - name: Run relay smoke e2e through Node bridge
+        timeout-minutes: 4
+        run: BRIDGE_HOST=127.0.0.1; timeout -k 10s 180s env VARCO_BRIDGE_URL="ws://$BRIDGE_HOST:8787" npm run dev:ha:smoke
 
       - name: Run hass-first local smoke e2e
         timeout-minutes: 4
@@ -125,7 +152,7 @@ jobs:
 
       - name: Run restrictions smoke e2e
         timeout-minutes: 5
-        run: timeout -k 10s 240s npm run dev:ha:restrictions-smoke
+        run: BRIDGE_HOST=127.0.0.1; timeout -k 10s 240s env VARCO_BRIDGE_URL="ws://$BRIDGE_HOST:8787" npm run dev:ha:restrictions-smoke
 
       - name: Upload Home Assistant browser e2e artifacts
         if: always()
@@ -136,8 +163,11 @@ jobs:
             .pi/varco-local-hass-e2e.png
             .pi/varco-dashboard-export-e2e.png
             .pi/varco-dashboard-export-e2e.zip
+            .pi/node-bridge.log
           if-no-files-found: ignore
 
       - name: Stop local Home Assistant
         if: always()
-        run: docker rm -f varco-ci-ha || true
+        run: |
+          docker rm -f varco-ci-ha || true
+          if [ -f .pi/node-bridge.pid ]; then kill "$(cat .pi/node-bridge.pid)" || true; fi

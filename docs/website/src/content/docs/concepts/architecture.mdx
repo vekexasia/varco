@@ -8,7 +8,7 @@ import Mermaid from "../../../components/Mermaid.astro";
 export const architectureFlow = `
 flowchart LR
   Consumer["Consumer app<br/>browser client"]
-  Bridge["Opaque bridge<br/>Cloudflare Worker + Durable Object"]
+  Bridge["Opaque bridge<br/>Cloudflare Worker or Node"]
   Authority["Home Assistant<br/>Varco Authority"]
   Owner["Owner<br/>Varco panel"]
   Grant[("Grant storage<br/>consumer public key + manifest + restrictions")]
@@ -52,7 +52,7 @@ Varco is relay-first, and Home Assistant remains the Authority.
 | Owner | The person who owns the Home Assistant instance and approves, rejects, revokes, or narrows access. |
 | Consumer | External app, dashboard, script, or browser client. It has its own keypair and self-declared manifest. |
 | Authority | Home Assistant custom integration. It approves grants, enforces policy, executes Home Assistant calls, and stores audit data. |
-| Bridge | Cloudflare Worker plus Durable Object relay. It routes encrypted envelopes and does not enforce Home Assistant permissions. |
+| Bridge | Opaque relay, implemented either as a Cloudflare Worker with Durable Object rooms or as a single-process Node in-memory bridge. It routes encrypted envelopes and does not enforce Home Assistant permissions. |
 
 ## Flow
 
@@ -75,5 +75,5 @@ Varco is relay-first, and Home Assistant remains the Authority.
 | `custom_components/varco/relay.py` | Outbound Authority connection and encrypted relay routing. |
 | `custom_components/varco/policy.py` | Scope and restriction matching. |
 | `custom_components/varco/storage.py` | Stored grants, pending requests, and audit records. |
-| `bridge/` | Opaque bridge Worker and Durable Object relay. |
+| `bridge/` | Opaque bridge implementations: Cloudflare Worker/Durable Object and Node in-memory bridge. |
 | `packages/client/src/client.ts` | Browser client relay/WebRTC protocol API. |

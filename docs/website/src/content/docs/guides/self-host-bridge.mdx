@@ -1,6 +1,6 @@
 ---
 title: Self-host the bridge
-description: Deploy the opaque Varco bridge on Cloudflare Workers and point Home Assistant and consumers at it.
+description: Deploy the opaque Varco bridge yourself and point Home Assistant and consumers at it.
 ---
 
 Most users should start with the public bridge:
@@ -9,15 +9,49 @@ Most users should start with the public bridge:
 wss://varco-bridge.andreabaccega.com
 ```
 
-The bridge does not see application plaintext and does not make permission decisions. Self-host it when you want your own Cloudflare account, origin policy, registration allowlist, or signaling-only mode.
+The bridge does not see application plaintext and does not make permission decisions. Self-host it when you want your own origin policy, registration allowlist, signaling-only mode, or infrastructure control.
 
-## Requirements
+Two implementations are available:
+
+- **Node in-memory bridge**: simplest Cloudflare-free path. It keeps only live sockets in memory, uses no database and no filesystem state, and is intended for one process behind one URL.
+- **Cloudflare Worker bridge**: managed edge deployment using Workers and Durable Objects.
+
+## Option A: Node in-memory bridge
+
+Requirements: repository dependencies installed with `npm ci`, or Docker.
+
+From the repository root:
+
+```bash
+npm ci
+npm --workspace bridge run build
+HOST=0.0.0.0 PORT=8787 npm --workspace bridge run start:node
+```
+
+For local development, point Home Assistant and consumers at the host running the bridge on port `8787` with the `ws` scheme.
+
+For a real deployment, put it behind a TLS reverse proxy and use a `wss://` URL, for example:
+
+```text
+wss://bridge.example.com
+```
+
+Docker build:
+
+```bash
+docker build -f bridge/Dockerfile -t varco-bridge .
+docker run --rm -p 8787:8787 varco-bridge
+```
+
+Node bridge limits: it is single-process and in-memory. Restarting it disconnects live Authority and consumer sockets, which then reconnect. It does not support horizontal replicas unless a future deployment adds sticky routing or shared room state.
+
+## Option B: Cloudflare Worker bridge
+
+Requirements:
 
 - A Cloudflare account with Workers and Durable Objects enabled.
 - `wrangler` login configured locally or `CLOUDFLARE_API_TOKEN` configured in CI.
 - Repository dependencies installed with `npm ci`.
-
-## Deploy
 
 From the repository root:
 
@@ -35,13 +69,13 @@ wss://my-varco-bridge.example.workers.dev
 
 ## Configure Home Assistant
 
-In the Varco integration config flow, replace the default bridge URL with your Worker WebSocket URL.
+In the Varco integration config flow, replace the default bridge URL with your self-hosted bridge WebSocket URL.
 
 For YAML setup:
 
 ```yaml
 varco:
-  bridge_ws_url: wss://my-varco-bridge.example.workers.dev
+  bridge_ws_url: wss://bridge.example.com
   webrtc_enabled: true
 ```
 
@@ -54,14 +88,14 @@ Use the same bridge URL:
 ```ts
 const client = createVarcoConsumerClient({
   authorityId: "PASTE_AUTHORITY_ID_FROM_HOME_ASSISTANT",
-  bridgeUrl: "wss://my-varco-bridge.example.workers.dev",
+  bridgeUrl: "wss://bridge.example.com",
   manifest,
 });
 ```
 
 ## Optional policy variables
 
-Set these as Worker environment variables when you need stricter operation:
+Set these as bridge environment variables when you need stricter operation:
 
 | Variable | Default | When to set it |
 | --- | --- | --- |
@@ -79,13 +113,13 @@ The full endpoint and close-code reference is in [Bridge endpoints](../../refere
 Check health:
 
 ```bash
-curl https://my-varco-bridge.example.workers.dev/health
+curl https://bridge.example.com/health
 ```
 
 Check Authority presence after Home Assistant connects:
 
 ```bash
-curl https://my-varco-bridge.example.workers.dev/presence/AUTHORITY_ID
+curl https://bridge.example.com/presence/AUTHORITY_ID
 ```
 
 Expected response:

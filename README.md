@@ -12,7 +12,7 @@ A consumer asks for a narrow grant. The Home Assistant owner approves or rejects
 
 - Home Assistant integration: install through HACS as a custom repository (`https://github.com/vekexasia/varco`) or copy `custom_components/varco`.
 - Browser client: `npm install @varco/client`.
-- Bridge: use the default public bridge (`wss://varco-bridge.andreabaccega.com`) unless you need to self-host.
+- Bridge: use the default public bridge (`wss://varco-bridge.andreabaccega.com`) unless you need to self-host on Cloudflare or with the Node in-memory bridge.
 
 Documentation: [vekexasia.github.io/varco](https://vekexasia.github.io/varco/). Source lives in [`docs/website`](docs/website).
 

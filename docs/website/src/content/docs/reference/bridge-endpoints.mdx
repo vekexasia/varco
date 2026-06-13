@@ -25,7 +25,7 @@ The Authority challenge message includes a `proto` field (currently `1`). The Au
 
 ## Deployment policy environment variables
 
-All variables are optional. The defaults preserve the public shared-bridge behaviour: any origin, public presence, open Authority registration, full relay mode.
+All variables are optional and apply to both the Cloudflare Worker bridge and the Node in-memory bridge. The defaults preserve the public shared-bridge behaviour: any origin, public presence, open Authority registration, full relay mode.
 
 | Variable | Values | Default | Effect |
 | --- | --- | --- | --- |
@@ -38,7 +38,7 @@ All variables are optional. The defaults preserve the public shared-bridge behav
 
 Requests without an `Origin` header, such as the Home Assistant Authority connection, are always allowed by every origin check. Origin checks are browser containment, not authentication.
 
-For Cloudflare Worker deployment steps, see [Self-host the bridge](../../guides/self-host-bridge/).
+For deployment steps, see [Self-host the bridge](../../guides/self-host-bridge/).
 
 ## WebSocket close codes
 

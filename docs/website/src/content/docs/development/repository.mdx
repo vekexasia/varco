@@ -8,7 +8,7 @@ description: Main paths and repository-level development commands.
 | Path | Role |
 | --- | --- |
 | `custom_components/varco/` | Home Assistant custom integration. |
-| `bridge/` | Cloudflare Worker and Durable Object bridge. |
+| `bridge/` | Opaque bridge implementations: Cloudflare Worker/Durable Object and Node in-memory bridge. |
 | `packages/client/` | Browser TypeScript client. |
 | `examples/consumer-dashboard/` | Minimal external dashboard consumer. |
 | `examples/gazzetta-energy-showcase/` | Read-only energy showcase. |
@@ -30,6 +30,8 @@ Package-level commands:
 
 ```bash
 npm --workspace bridge run test
+npm --workspace bridge run build
+npm --workspace bridge run start:node
 npm --workspace packages/client run test
 npm --workspace examples/consumer-dashboard run build
 ```

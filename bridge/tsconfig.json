@@ -4,8 +4,8 @@
     "outDir": "dist",
     "rootDir": "src",
     "lib": ["ES2022"],
-    "skipLibCheck": false,
-    "types": ["@cloudflare/workers-types"]
+    "skipLibCheck": true,
+    "types": ["@cloudflare/workers-types", "node"]
   },
   "include": ["src/**/*.ts"]
 }
