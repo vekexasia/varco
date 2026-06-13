@@ -1,0 +1,118 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Semver version to release, without leading v"
+        required: true
+      publish_npm:
+        description: "Publish @varco/client to npm"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: release-${{ github.ref }}-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Set release version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            TAG="${GITHUB_REF_NAME}"
+            VERSION="${TAG#v}"
+          else
+            VERSION="${{ inputs.version }}"
+            TAG="v${VERSION}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+
+      - name: Install Python test dependencies
+        run: python -m pip install -r requirements-ci.txt
+
+      - name: Check release versions
+        run: npm run release:check-version -- ${{ steps.version.outputs.version }}
+
+      - name: Run tests
+        run: npm test
+
+      - name: Run type checks
+        run: npm run check
+
+      - name: Build packages and docs
+        run: |
+          npm run build
+          npm run docs:build
+
+      - name: Dry-run npm package
+        run: npm --workspace packages/client pack --dry-run
+
+      - name: Build Home Assistant release artifact
+        run: |
+          set -euo pipefail
+          mkdir -p .pi/release
+          zip -r .pi/release/varco-home-assistant.zip custom_components/varco hacs.json README.md
+
+      - name: Publish @varco/client to npm
+        if: ${{ github.event_name == 'push' || inputs.publish_npm }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
+            echo "NPM_TOKEN is not configured; skipping npm publish."
+            exit 0
+          fi
+          VERSION="${{ steps.version.outputs.version }}"
+          if npm dist-tag ls @varco/client 2>/dev/null | grep -Eq "^[^:]+: ${VERSION}$"; then
+            echo "@varco/client@$VERSION is already published; skipping npm publish."
+            exit 0
+          fi
+          npm --workspace packages/client publish --access public --provenance
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.version.outputs.tag }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" .pi/release/varco-home-assistant.zip --clobber
+          else
+            gh release create "$TAG" .pi/release/varco-home-assistant.zip \
+              --title "$TAG" \
+              --notes "Varco $TAG release. Home Assistant integration artifact: varco-home-assistant.zip. The browser client is published as @varco/client when NPM_TOKEN is configured."
+          fi

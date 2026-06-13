@@ -1,15 +1,46 @@
 {
   "name": "@varco/client",
   "version": "0.1.0",
-  "private": true,
+  "description": "Browser client for scoped Home Assistant access through Varco.",
   "type": "module",
   "main": "dist/index.js",
   "module": "dist/index.js",
   "types": "dist/index.d.ts",
-  "exports": "./dist/index.js",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./browser": "./dist/varco-client.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vekexasia/varco.git",
+    "directory": "packages/client"
+  },
+  "bugs": {
+    "url": "https://github.com/vekexasia/varco/issues"
+  },
+  "homepage": "https://vekexasia.github.io/varco/reference/client-api/",
+  "keywords": [
+    "home-assistant",
+    "varco",
+    "dashboard",
+    "relay",
+    "webrtc"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json && esbuild src/index.ts --bundle --format=esm --outfile=dist/varco-client.js",
     "check": "tsc -p tsconfig.json --noEmit",
+    "prepack": "npm run build",
     "test": "npm run build && node --test test/*.test.mjs"
   },
   "dependencies": {

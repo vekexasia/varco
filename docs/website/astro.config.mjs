@@ -31,6 +31,7 @@ export default defineConfig({
           label: "Start",
           items: [
             { label: "What is Varco?", slug: "" },
+            { label: "Deploy in 10 minutes", slug: "getting-started/quickstart" },
             { label: "Try the demo", slug: "getting-started/demo" },
             { label: "Showcase: Pebble watchapp", slug: "getting-started/showcase-pebble" },
             { label: "Home Assistant quickstart", slug: "getting-started/home-assistant" },
@@ -53,6 +54,7 @@ export default defineConfig({
             { label: "Pair a consumer", slug: "guides/pair-consumer" },
             { label: "Build a consumer dashboard", slug: "guides/build-consumer-dashboard" },
             { label: "Export a dashboard brief", slug: "guides/export-dashboard-brief" },
+            { label: "Self-host the bridge", slug: "guides/self-host-bridge" },
             { label: "Troubleshooting", slug: "guides/troubleshooting" },
           ],
         },
@@ -75,6 +77,7 @@ export default defineConfig({
             { label: "Local Home Assistant", slug: "development/local-home-assistant" },
             { label: "Testing", slug: "development/testing" },
             { label: "Deployment", slug: "development/deployment" },
+            { label: "Release and versioning", slug: "development/release" },
           ],
         },
       ],

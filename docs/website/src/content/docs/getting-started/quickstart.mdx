@@ -1,0 +1,102 @@
+---
+title: Deploy Varco in 10 minutes
+description: Install the Home Assistant integration, use the public bridge, publish a browser consumer, and approve the first grant.
+---
+
+This is the shortest supported path: Home Assistant runs the Varco Authority, the consumer uses the public bridge, and the browser app installs `@varco/client` from npm.
+
+## 1. Install Varco in Home Assistant
+
+1. In HACS, open **Custom repositories**.
+2. Add this repository with type **Integration**:
+
+   ```text
+   https://github.com/vekexasia/varco
+   ```
+
+3. Install **Varco**.
+4. Restart Home Assistant.
+5. Go to **Settings -> Devices & services -> Add integration**.
+6. Search for **Varco** and add it.
+7. Keep the default bridge URL:
+
+   ```text
+   wss://varco-bridge.andreabaccega.com
+   ```
+
+8. Leave **Enable WebRTC** on unless you want relay-only transport.
+
+Manual installation is documented in [Install Home Assistant](../../guides/install-home-assistant/).
+
+## 2. Copy the Authority ID
+
+Open the **Varco** sidebar panel or browse to:
+
+```text
+/varco
+```
+
+Copy the **Authority ID**. The consumer needs this public identifier to request access.
+
+## 3. Build a minimal consumer
+
+Create a browser app and install the client:
+
+```bash
+npm install @varco/client
+```
+
+Use the Authority ID from Home Assistant:
+
+```ts
+import { createVarcoConsumerClient } from "@varco/client";
+
+const client = createVarcoConsumerClient({
+  authorityId: "PASTE_AUTHORITY_ID_FROM_HOME_ASSISTANT",
+  bridgeUrl: "wss://varco-bridge.andreabaccega.com",
+  manifest: {
+    name: "My dashboard",
+    version: "0.1.0",
+    read_entities: ["sensor.temperature"],
+    subscriptions: ["sensor.temperature"],
+    history: [],
+    camera_snapshots: [],
+    actions: [],
+  },
+});
+
+const access = await client.requestAccess();
+console.log("Pairing code", access.pairing_code);
+
+// After approval in Home Assistant:
+await client.connect();
+const states = await client.getStates(["sensor.temperature"]);
+console.log(states);
+```
+
+Deploy that app anywhere that can serve static browser assets, for example Cloudflare Pages, Vercel, Netlify, GitHub Pages, or your own web server.
+
+## 4. Approve the request
+
+1. Open the Varco panel in Home Assistant.
+2. Find the pending request.
+3. Compare the pairing code shown by the consumer with the code shown in Home Assistant.
+4. Review the manifest.
+5. Approve the request.
+
+The grant is stored in Home Assistant and is bound to the consumer public key. The consumer never receives a Home Assistant token.
+
+## 5. Verify it works
+
+- The consumer can call `connect()` without `not_authorized`.
+- `getStates()` returns only approved entities.
+- The Varco panel shows the active grant.
+- Refreshing the consumer reconnects with the same browser identity.
+
+If pairing or reconnect fails, use [Troubleshooting](../../guides/troubleshooting/).
+
+## What to customize next
+
+- Add entity and action scopes in the [Manifest reference](../../reference/manifest/).
+- Use typed helpers from the [Client API](../../reference/client-api/).
+- Self-host the relay only if you need operational control; see [Self-host the bridge](../../guides/self-host-bridge/).

@@ -4,17 +4,15 @@ Varco lets external apps use Home Assistant without receiving a Home Assistant t
 
 A consumer asks for a narrow grant. The Home Assistant owner approves or rejects it in the Varco panel. Home Assistant then enforces that stored grant on every read, subscription, history query, camera snapshot, and service call.
 
-## Documentation
+## Start
+
+> **Deploy in 10 minutes:** [vekexasia.github.io/varco/getting-started/quickstart](https://vekexasia.github.io/varco/getting-started/quickstart/)
+
+- Home Assistant integration: install through HACS as a custom repository (`https://github.com/vekexasia/varco`) or copy `custom_components/varco`.
+- Browser client: `npm install @varco/client`.
+- Bridge: use the default public bridge (`wss://varco-bridge.andreabaccega.com`) unless you need to self-host.
 
 Documentation: [vekexasia.github.io/varco](https://vekexasia.github.io/varco/). Source lives in [`docs/website`](docs/website).
-
-```bash
-npm run docs:dev
-npm run docs:build
-npm run docs:preview
-```
-
-When deployed on GitHub Pages, the site is built from `docs/website/src/content/docs` by `.github/workflows/deploy-docs.yml`.
 
 ## Core guarantees
 

@@ -1,0 +1,74 @@
+---
+title: Release and versioning
+description: How Varco versions Home Assistant integration releases, bridge releases, and @varco/client npm releases.
+---
+
+Varco uses semver tags in the form:
+
+```text
+v0.1.0
+```
+
+For a release tag, these versions must match the tag without the leading `v`:
+
+- `custom_components/varco/manifest.json`
+- `packages/client/package.json`
+- `bridge/package.json`
+
+Check them with:
+
+```bash
+npm run release:check-version -- 0.1.0
+```
+
+## Release checklist
+
+Before tagging:
+
+```bash
+npm test
+npm run check
+npm run build
+npm run docs:build
+npm --workspace packages/client pack --dry-run
+```
+
+Then create and push the tag:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+## GitHub release artifacts
+
+The release workflow builds and uploads:
+
+- `varco-home-assistant.zip`: the Home Assistant custom integration directory for users who do not install through HACS.
+- `@varco/client`: published to npm from `packages/client` when `NPM_TOKEN` is configured.
+
+## npm publishing
+
+The package is published as:
+
+```bash
+npm install @varco/client
+```
+
+The GitHub release workflow publishes with npm provenance when `NPM_TOKEN` is available. Manual publishing is:
+
+```bash
+npm --workspace packages/client publish --access public
+```
+
+Do not publish a package version that does not match the GitHub release tag.
+
+## HACS custom repository
+
+Users can install the Home Assistant integration by adding this repository as a HACS custom repository with type **Integration**:
+
+```text
+https://github.com/vekexasia/varco
+```
+
+Varco is not in the HACS default store. HACS default-store inclusion is separate future work.

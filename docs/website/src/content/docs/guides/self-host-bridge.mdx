@@ -1,0 +1,97 @@
+---
+title: Self-host the bridge
+description: Deploy the opaque Varco bridge on Cloudflare Workers and point Home Assistant and consumers at it.
+---
+
+Most users should start with the public bridge:
+
+```text
+wss://varco-bridge.andreabaccega.com
+```
+
+The bridge does not see application plaintext and does not make permission decisions. Self-host it when you want your own Cloudflare account, origin policy, registration allowlist, or signaling-only mode.
+
+## Requirements
+
+- A Cloudflare account with Workers and Durable Objects enabled.
+- `wrangler` login configured locally or `CLOUDFLARE_API_TOKEN` configured in CI.
+- Repository dependencies installed with `npm ci`.
+
+## Deploy
+
+From the repository root:
+
+```bash
+npm ci
+npm --workspace bridge run build
+npm --workspace bridge run deploy
+```
+
+The deployed Worker provides both HTTP endpoints and WebSocket endpoints. If your Worker is deployed at `https://my-varco-bridge.example.workers.dev`, use this WebSocket URL in Home Assistant and consumers:
+
+```text
+wss://my-varco-bridge.example.workers.dev
+```
+
+## Configure Home Assistant
+
+In the Varco integration config flow, replace the default bridge URL with your Worker WebSocket URL.
+
+For YAML setup:
+
+```yaml
+varco:
+  bridge_ws_url: wss://my-varco-bridge.example.workers.dev
+  webrtc_enabled: true
+```
+
+Restart or reload the integration after changing the bridge URL.
+
+## Configure consumers
+
+Use the same bridge URL:
+
+```ts
+const client = createVarcoConsumerClient({
+  authorityId: "PASTE_AUTHORITY_ID_FROM_HOME_ASSISTANT",
+  bridgeUrl: "wss://my-varco-bridge.example.workers.dev",
+  manifest,
+});
+```
+
+## Optional policy variables
+
+Set these as Worker environment variables when you need stricter operation:
+
+| Variable | Default | When to set it |
+| --- | --- | --- |
+| `ORIGIN_POLICY` | `public` | Set `restricted` to require browser origins to match `ALLOWED_ORIGINS`. Non-browser clients without an `Origin` header are still allowed. |
+| `ALLOWED_ORIGINS` | unset | Exact comma-separated browser origins allowed when `ORIGIN_POLICY=restricted` or `PRESENCE_VISIBILITY=restricted`. |
+| `PRESENCE_VISIBILITY` | `public` | Set `restricted` or `disabled` if Authority online/offline metadata is sensitive. |
+| `AUTHORITY_ALLOWLIST` | unset | Comma-separated Authority IDs allowed to register with the bridge. This controls registration only; Home Assistant still enforces permissions. |
+| `BRIDGE_MODE` | `relay` | Set `signaling-only` only when all consumers can use WebRTC and relay fallback is intentionally disabled. |
+| `MAX_SIGNALING_MESSAGES` | `64` | Per-socket signaling message budget for `BRIDGE_MODE=signaling-only`. |
+
+The full endpoint and close-code reference is in [Bridge endpoints](../../reference/bridge-endpoints/).
+
+## Verify
+
+Check health:
+
+```bash
+curl https://my-varco-bridge.example.workers.dev/health
+```
+
+Check Authority presence after Home Assistant connects:
+
+```bash
+curl https://my-varco-bridge.example.workers.dev/presence/AUTHORITY_ID
+```
+
+Expected response:
+
+```json
+{"online":true}
+```
+
+If presence is `false`, open the Varco panel in Home Assistant and check the relay status and Home Assistant logs.

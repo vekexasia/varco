@@ -36,3 +36,7 @@ https://fonts\.gstatic\.com
 https://images\.unsplash\.com/photo-[0-9a-f-]+\?auto=format&fit=crop&w=\d+&q=\d+
 # Browser localStorage key for the guest showcase grant (not a secret value).
 ^varco\.guestStayShowcase\.grant\.v1$
+# Public npm registry and documentation-only Cloudflare Worker placeholder URLs.
+https://registry\.npmjs\.org
+https://my-varco-bridge\.example\.workers\.dev(?:/(?:health|presence/AUTHORITY_ID))?
+wss://my-varco-bridge\.example\.workers\.dev

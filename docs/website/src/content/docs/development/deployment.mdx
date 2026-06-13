@@ -19,6 +19,12 @@ For GitHub Pages project hosting, the workflow sets:
 SITE_BASE_PATH=/varco
 ```
 
+## Release deployment
+
+Tagged releases are handled by `.github/workflows/release.yml`. A `vX.Y.Z` tag must match the versions in `custom_components/varco/manifest.json`, `packages/client/package.json`, and `bridge/package.json`. See [Release and versioning](../release/).
+
+The release workflow uploads a Home Assistant zip artifact and publishes `@varco/client` to npm when `NPM_TOKEN` is configured.
+
 ## Home Assistant showcase
 
 The Home Assistant showcase deployment is handled by `.github/workflows/deploy-ha-showcase.yml`.
