@@ -6,6 +6,12 @@ Varco lets external apps use Home Assistant without receiving a Home Assistant t
 
 A consumer asks for a narrow grant. The Home Assistant owner approves or rejects it in the Varco panel. Home Assistant then enforces that stored grant on every read, subscription, history query, camera snapshot, and service call.
 
+## Video overview
+
+[![Watch the Varco video overview](https://img.youtube.com/vi/QSR6oZzUb4Y/maxresdefault.jpg)](https://www.youtube.com/watch?v=QSR6oZzUb4Y)
+
+I made this short video explaining what Varco is and how it works.
+
 ## Start
 
 > **Deploy in 10 minutes:** [vekexasia.github.io/varco/getting-started/quickstart](https://vekexasia.github.io/varco/getting-started/quickstart/)

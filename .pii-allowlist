@@ -40,3 +40,6 @@ https://images\.unsplash\.com/photo-[0-9a-f-]+\?auto=format&fit=crop&w=\d+&q=\d+
 https://registry\.npmjs\.org
 https://my-varco-bridge\.example\.workers\.dev(?:/(?:health|presence/AUTHORITY_ID))?
 wss://my-varco-bridge\.example\.workers\.dev
+# Public YouTube video overview links in README.
+^https?://(www\.)?youtube\.com/watch\?v=QSR6oZzUb4Y$
+^https?://img\.youtube\.com/vi/QSR6oZzUb4Y/maxresdefault\.jpg$
