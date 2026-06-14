@@ -48,6 +48,15 @@ jobs:
       - name: Run type checks
         run: npm run check
 
+      - name: Verify the Varco panel bundle is in sync with its TypeScript source
+        run: |
+          npm --workspace custom_components/varco/frontend run build
+          if ! git diff --quiet -- custom_components/varco/frontend/panel.js; then
+            echo 'panel.js is out of sync with src/. Run: npm --workspace custom_components/varco/frontend run build' >&2
+            git --no-pager diff -- custom_components/varco/frontend/panel.js | head -40
+            exit 1
+          fi
+
       - name: Build docs
         run: npm run docs:build
 
@@ -149,6 +158,10 @@ jobs:
       - name: Run dashboard export browser e2e
         timeout-minutes: 5
         run: timeout -k 10s 240s npm run dev:ha:dashboard-export-browser
+
+      - name: Run Authority panel browser e2e
+        timeout-minutes: 5
+        run: timeout -k 10s 240s npm run dev:ha:panel-browser
 
       - name: Run restrictions smoke e2e
         timeout-minutes: 5

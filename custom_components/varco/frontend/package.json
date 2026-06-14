@@ -1,0 +1,15 @@
+{
+  "name": "@varco/panel",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/panel.ts --bundle --format=esm --target=es2022 --outfile=panel.js --legal-comments=none",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "watch": "esbuild src/panel.ts --bundle --format=esm --target=es2022 --outfile=panel.js --watch"
+  },
+  "devDependencies": {
+    "esbuild": "^0.27.0",
+    "typescript": "^5.9.3"
+  }
+}

@@ -4,6 +4,7 @@
   "workspaces": [
     "bridge",
     "packages/client",
+    "custom_components/varco/frontend",
     "examples/consumer-dashboard",
     "examples/gazzetta-energy-showcase",
     "examples/guest-stay-showcase",
