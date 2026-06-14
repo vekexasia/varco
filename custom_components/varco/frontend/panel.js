@@ -320,7 +320,7 @@ var VarcoPanel = class extends HTMLElement {
     if (!this._hass || !this._loaded) return;
     try {
       const requests = await this._hass.connection.sendMessagePromise({ type: "varco/access_requests" });
-      const signature = requests.filter((r) => r.status === "pending").map((r) => `${r.request_id}:${r.pairing_code}`).sort().join(",");
+      const signature = requests.filter((r) => r.status === "pending").map((r) => `${r.request_id}:${r.pairing_code}:${JSON.stringify(r.manifest)}`).sort().join(",");
       if (signature !== this._pendingSignature) {
         this._loaded = false;
         await this.load();
@@ -338,7 +338,7 @@ var VarcoPanel = class extends HTMLElement {
       this._hass.connection.sendMessagePromise({ type: "varco/audit" }).catch(() => [])
     ]);
     await this.loadDashboards();
-    this._pendingSignature = requests.filter((r) => r.status === "pending").map((r) => `${r.request_id}:${r.pairing_code}`).sort().join(",");
+    this._pendingSignature = requests.filter((r) => r.status === "pending").map((r) => `${r.request_id}:${r.pairing_code}:${JSON.stringify(r.manifest)}`).sort().join(",");
     this.render({ info, requests, grants, audit });
   }
   async loadDashboards() {
