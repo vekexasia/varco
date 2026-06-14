@@ -2,6 +2,7 @@ import { loadIdentitySync, loadOrCreateIdentity, randomId, signAccessRequest, si
 import type { ConsumerIdentity } from "./identity.js";
 import { attachDomainHelpers } from "./domain-helpers.js";
 import { RelayTransport } from "./transport.js";
+import { VarcoConnectionStrategy } from "./types.js";
 import type { HassState, VarcoClient, VarcoClientOptions, VarcoTransport, VarcoTransportStatus } from "./types.js";
 
 function assertManifest(manifest: VarcoClientOptions["manifest"]): void {
@@ -35,11 +36,7 @@ export function createVarcoClient(options: VarcoClientOptions): VarcoClient {
     options.onTransportStatus?.(status);
   };
 
-  const resolveStrategy = (): "relay" | "webrtc-only" | "webrtc-first" | "optimistic" => {
-    if (options.connectionStrategy) return options.connectionStrategy;
-    if (options.webrtc === false) return "relay";
-    return "webrtc-first";
-  };
+  const resolveStrategy = (): VarcoConnectionStrategy => options.connectionStrategy ?? VarcoConnectionStrategy.WebrtcFirst;
 
   const performUpgrade = async (): Promise<boolean> => {
     const p2p = await tryWebRtcUpgrade(relayTransport, setStatus);
@@ -63,7 +60,7 @@ export function createVarcoClient(options: VarcoClientOptions): VarcoClient {
     });
     setStatus({ mode: "relay", detail: "relay authenticated" });
     const strategy = resolveStrategy();
-    if (strategy === "optimistic") {
+    if (strategy === VarcoConnectionStrategy.Optimistic) {
       // Resolve on the relay immediately and upgrade to P2P in the background.
       void performUpgrade().catch((err) => {
         const detail = err instanceof Error ? err.message : "WebRTC upgrade failed";
@@ -71,9 +68,9 @@ export function createVarcoClient(options: VarcoClientOptions): VarcoClient {
       });
       return;
     }
-    if (strategy === "webrtc-only" || strategy === "webrtc-first") {
+    if (strategy === VarcoConnectionStrategy.WebrtcOnly || strategy === VarcoConnectionStrategy.WebrtcFirst) {
       const upgraded = await performUpgrade();
-      if (!upgraded && strategy === "webrtc-only") {
+      if (!upgraded && strategy === VarcoConnectionStrategy.WebrtcOnly) {
         throw new Error(transportStatus.detail || "WebRTC upgrade required but failed");
       }
     }

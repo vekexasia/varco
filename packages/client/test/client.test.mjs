@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buttonControl, cameraEntity, createManifest, createVarcoClient, createVarcoConsumerClient, fanControl, lightControl, climateControl, coverControl, lockControl, mediaPlayerControl, MemoryStorage, numberControl, readEntity, sceneControl, selectControl, switchControl } from '../dist/index.js';
+import { buttonControl, cameraEntity, createManifest, createVarcoClient, createVarcoConsumerClient, fanControl, lightControl, climateControl, coverControl, lockControl, mediaPlayerControl, MemoryStorage, numberControl, readEntity, sceneControl, selectControl, switchControl, VarcoConnectionStrategy } from '../dist/index.js';
 
 class FakeTransport {
   constructor() { this.messages = []; this.handler = null; this.next = new Map(); }
@@ -301,7 +301,7 @@ test('optimistic strategy connects on relay first then upgrades to p2p in backgr
     manifest: { name: 'Demo', version: '1' },
     transport,
     storage: new MemoryStorage(),
-    connectionStrategy: 'optimistic',
+    connectionStrategy: VarcoConnectionStrategy.Optimistic,
     onTransportStatus: (status) => statuses.push(status),
   });
   await client.connect();
@@ -327,7 +327,7 @@ test('webrtc-only strategy throws when the upgrade fails', async () => {
     manifest: { name: 'Demo', version: '1' },
     transport,
     storage: new MemoryStorage(),
-    connectionStrategy: 'webrtc-only',
+    connectionStrategy: VarcoConnectionStrategy.WebrtcOnly,
   });
   await assert.rejects(client.connect());
   globalThis.RTCPeerConnection = previous;
@@ -363,7 +363,7 @@ test('webrtc-only strategy upgrades to p2p when the channel opens', async () => 
   };
   const client = createVarcoClient({
     authorityId: 'authority', bridgeUrl: 'ws://bridge', manifest: { name: 'Demo', version: '1' },
-    transport, storage: new MemoryStorage(), connectionStrategy: 'webrtc-only',
+    transport, storage: new MemoryStorage(), connectionStrategy: VarcoConnectionStrategy.WebrtcOnly,
   });
   await client.connect();
   assert.equal(client.transportStatus.mode, 'p2p');
@@ -397,7 +397,7 @@ test('webrtc-first strategy falls back to relay when the upgrade is refused', as
   };
   const client = createVarcoClient({
     authorityId: 'authority', bridgeUrl: 'ws://bridge', manifest: { name: 'Demo', version: '1' },
-    transport, storage: new MemoryStorage(), connectionStrategy: 'webrtc-first',
+    transport, storage: new MemoryStorage(), connectionStrategy: VarcoConnectionStrategy.WebrtcFirst,
   });
   await client.connect();
   assert.equal(client.transportStatus.mode, 'relay');
@@ -431,7 +431,7 @@ test('optimistic strategy stays on relay when the background upgrade is refused'
   };
   const client = createVarcoClient({
     authorityId: 'authority', bridgeUrl: 'ws://bridge', manifest: { name: 'Demo', version: '1' },
-    transport, storage: new MemoryStorage(), connectionStrategy: 'optimistic',
+    transport, storage: new MemoryStorage(), connectionStrategy: VarcoConnectionStrategy.Optimistic,
   });
   await client.connect();
   assert.equal(client.transportStatus.mode, 'relay');
@@ -442,9 +442,27 @@ test('optimistic strategy stays on relay when the background upgrade is refused'
   globalThis.RTCPeerConnection = previous;
 });
 
+test('relay strategy never attempts a WebRTC upgrade even when available', async () => {
+  const previous = globalThis.RTCPeerConnection;
+  let peerCreated = false;
+  class FakePeerConnection { constructor() { peerCreated = true; } }
+  globalThis.RTCPeerConnection = FakePeerConnection;
+  const transport = new FakeTransport();
+  const client = createVarcoClient({
+    authorityId: 'authority', bridgeUrl: 'ws://bridge', manifest: { name: 'Demo', version: '1' },
+    transport, storage: new MemoryStorage(), connectionStrategy: VarcoConnectionStrategy.Relay,
+  });
+  await client.connect();
+  assert.equal(peerCreated, false);
+  assert.equal(client.transportStatus.mode, 'relay');
+  assert.equal(transport.messages.some((m) => m.type === 'webrtc_offer'), false);
+  assert.equal((await client.getStates(['sensor.temp']))['sensor.temp'].state, '21');
+  globalThis.RTCPeerConnection = previous;
+});
+
 test('domain helpers call Home Assistant services with expected payloads', async () => {
   const transport = new FakeTransport();
-  const client = createVarcoClient({ authorityId: 'authority', bridgeUrl: 'ws://bridge', manifest: { name: 'Demo', version: '1' }, transport, storage: new MemoryStorage(), webrtc: false });
+  const client = createVarcoClient({ authorityId: 'authority', bridgeUrl: 'ws://bridge', manifest: { name: 'Demo', version: '1' }, transport, storage: new MemoryStorage(), connectionStrategy: VarcoConnectionStrategy.Relay });
   await client.connect();
 
   await client.light.setBrightness('light.kitchen', 42);
@@ -479,7 +497,7 @@ test('domain helpers call Home Assistant services with expected payloads', async
 
 test('entity helpers route single-entity reads, subscriptions, history, and same-domain services', async () => {
   const transport = new FakeTransport();
-  const client = createVarcoClient({ authorityId: 'authority', bridgeUrl: 'ws://bridge', manifest: { name: 'Demo', version: '1' }, transport, storage: new MemoryStorage(), webrtc: false });
+  const client = createVarcoClient({ authorityId: 'authority', bridgeUrl: 'ws://bridge', manifest: { name: 'Demo', version: '1' }, transport, storage: new MemoryStorage(), connectionStrategy: VarcoConnectionStrategy.Relay });
   await client.connect();
 
   assert.equal((await client.entity.get('sensor.temp')).state, '21');
@@ -589,7 +607,7 @@ test('relay callService sends restriction PINs at the top level', async () => {
     manifest: { name: 'Demo', version: '1', actions: ['lock.unlock@lock.front_door'] },
     transport,
     storage: new MemoryStorage(),
-    webrtc: false,
+    connectionStrategy: VarcoConnectionStrategy.Relay,
   });
 
   await client.connect();
@@ -647,7 +665,7 @@ test('without provided storage the client uses non-extractable WebCrypto keys in
   };
   try {
     const transport = new FakeTransport();
-    const client = createVarcoClient({ authorityId: 'authority', bridgeUrl: 'ws://bridge', manifest: { name: 'Demo', version: '1' }, transport, webrtc: false });
+    const client = createVarcoClient({ authorityId: 'authority', bridgeUrl: 'ws://bridge', manifest: { name: 'Demo', version: '1' }, transport, connectionStrategy: VarcoConnectionStrategy.Relay });
     await client.requestAccess();
     await client.connect();
     const pair = stores.get('keys').get('consumerIdentity.v1');
@@ -657,7 +675,7 @@ test('without provided storage the client uses non-extractable WebCrypto keys in
     assert.equal(client.consumerPublicKey.length > 0, true);
 
     // Same IndexedDB yields the same identity on a fresh client.
-    const again = createVarcoClient({ authorityId: 'authority', bridgeUrl: 'ws://bridge', manifest: { name: 'Demo', version: '1' }, transport: new FakeTransport(), webrtc: false });
+    const again = createVarcoClient({ authorityId: 'authority', bridgeUrl: 'ws://bridge', manifest: { name: 'Demo', version: '1' }, transport: new FakeTransport(), connectionStrategy: VarcoConnectionStrategy.Relay });
     await again.requestAccess();
     assert.equal(again.consumerPublicKey, client.consumerPublicKey);
   } finally {
@@ -698,7 +716,7 @@ test('client reconnects after transport close: re-auth, re-subscribe, remap call
   const statuses = [];
   const client = createVarcoClient({
     authorityId: 'authority', bridgeUrl: 'ws://bridge', manifest: { name: 'Demo', version: '1' },
-    transport, storage: new MemoryStorage(), webrtc: false, reconnect: true,
+    transport, storage: new MemoryStorage(), connectionStrategy: VarcoConnectionStrategy.Relay, reconnect: true,
     onTransportStatus: (status) => statuses.push(status.detail),
   });
   await client.connect();

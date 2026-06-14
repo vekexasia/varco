@@ -42,7 +42,7 @@ The relay (`custom_components/varco/relay.py`) hit a deterministic rejection: a 
 
 The bridge runs with `BRIDGE_MODE=signaling-only`: it relays session setup and WebRTC negotiation but refuses application data. Consumers see `Bridge is signaling-only: P2P required but unavailable` when the WebRTC upgrade fails, and Home Assistant logs `Bridge is signaling-only: relay data disabled`.
 
-- Confirm WebRTC works: do not disable the upgrade (`webrtc: false`), and check Home Assistant logs for `aiortc` warnings.
+- Confirm WebRTC works: do not disable the upgrade (`connectionStrategy: "relay"`), and check Home Assistant logs for `aiortc` warnings.
 - If WebRTC cannot work in your network, use a bridge running the default `BRIDGE_MODE=relay`.
 
 ## Consumer says the Authority is offline
@@ -59,6 +59,6 @@ The bridge runs with `BRIDGE_MODE=signaling-only`: it relays session setup and W
 
 WebRTC is opportunistic. Relay transport should continue working even when WebRTC is unavailable.
 
-- Confirm the consumer works on relay only (`webrtc: false`, or omit `connectionStrategy` so it falls back to relay).
+- Confirm the consumer works on relay only (`connectionStrategy: "relay"`, or omit `connectionStrategy` so it falls back to relay).
 - Check Home Assistant logs for `aiortc` import or setup warnings.
 - Treat relay as the baseline transport while debugging WebRTC.

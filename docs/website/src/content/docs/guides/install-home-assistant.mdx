@@ -46,7 +46,7 @@ HACS default-store inclusion is future work. Until then, use the custom reposito
    wss://varco-bridge.andreabaccega.com
    ```
 
-6. Leave **Enable WebRTC** on unless you want to force relay-only transport. This is the Authority-side switch (`webrtc_enabled`); it is distinct from the consumer-side `webrtc: false` client option. Relay transport keeps working either way.
+6. Leave **Enable WebRTC** on unless you want to force relay-only transport. This is the Authority-side switch (`webrtc_enabled`); it is distinct from the consumer-side `connectionStrategy` client option. Relay transport keeps working either way.
 7. Submit the config flow.
 
 Only one Varco Authority can be configured in a Home Assistant instance.

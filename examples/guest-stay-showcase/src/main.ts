@@ -1,4 +1,4 @@
-import { createVarcoClient, type HassState, type StorageLike, type VarcoClient } from "@varco/client";
+import { createVarcoClient, VarcoConnectionStrategy, type HassState, type StorageLike, type VarcoClient } from "@varco/client";
 import {
   BRIDGE_URL,
   COMFORT_ENTITIES,
@@ -122,7 +122,7 @@ function authorityId(): string { return DEMO_GRANT_BUNDLE?.authorityId || (docum
 function makeClient(): VarcoClient {
   client = createVarcoClient({
     authorityId: authorityId(), bridgeUrl: BRIDGE_URL, manifest: createGuestStayManifest(), storage: grantStorage,
-    webrtc: !FORCE_RELAY_ONLY, reconnect: true, warn: console.warn,
+    connectionStrategy: FORCE_RELAY_ONLY ? VarcoConnectionStrategy.Relay : VarcoConnectionStrategy.Optimistic, reconnect: true, warn: console.warn,
     onTransportStatus: (status) => { transport = status.mode === "p2p" ? "Encrypted peer-to-peer" : status.detail || "Encrypted relay"; render(); },
   });
   return client;

@@ -36,11 +36,13 @@ client.updateHass(nextHass);
 Outside Home Assistant, use relay options:
 
 ```ts
+import { createVarcoConsumerClient, VarcoConnectionStrategy } from "@varco/client";
+
 const client = createVarcoConsumerClient({
   authorityId: "PASTE_AUTHORITY_ID_FROM_HOME_ASSISTANT",
   bridgeUrl: "wss://varco-bridge.andreabaccega.com",
   manifest,
-  connectionStrategy: "webrtc-first",
+  connectionStrategy: VarcoConnectionStrategy.WebrtcFirst,
 });
 ```
 
@@ -48,15 +50,14 @@ Mode selection is explicit: if `hass` is passed, local Home Assistant mode wins 
 
 ### Connection strategy
 
-`connectionStrategy` controls how the relay client establishes its data plane:
+`connectionStrategy` is the `VarcoConnectionStrategy` enum and controls how the relay client establishes its data plane:
 
 | Strategy | Behavior |
 | --- | --- |
-| `webrtc-first` (default) | `connect()` awaits the WebRTC upgrade and falls back to relay if it fails. |
-| `webrtc-only` | Require a P2P data channel. `connect()` throws if the upgrade fails, with no relay data fallback. |
-| `optimistic` | `connect()` resolves on the relay immediately. The WebRTC upgrade runs in the background and swaps in when ready, so data calls start without waiting for P2P negotiation. |
-
-The legacy `webrtc` boolean still works: `webrtc: false` is equivalent to relay-only. When both are set, `connectionStrategy` takes precedence.
+| `VarcoConnectionStrategy.Relay` (`"relay"`) | Stay on the relay. Never attempt a P2P upgrade. |
+| `VarcoConnectionStrategy.WebrtcFirst` (`"webrtc-first"`, default) | `connect()` awaits the WebRTC upgrade and falls back to relay if it fails. |
+| `VarcoConnectionStrategy.WebrtcOnly` (`"webrtc-only"`) | Require a P2P data channel. `connect()` throws if the upgrade fails, with no relay data fallback. |
+| `VarcoConnectionStrategy.Optimistic` (`"optimistic"`) | `connect()` resolves on the relay immediately. The WebRTC upgrade runs in the background and swaps in when ready, so data calls start without waiting for P2P negotiation. |
 
 ## `createVarcoClient()`
 

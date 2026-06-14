@@ -6,13 +6,13 @@ description: Use @varco/client to read, subscribe, query history, snapshot camer
 ## Create the client
 
 ```ts
-import { createVarcoConsumerClient } from "@varco/client";
+import { createVarcoConsumerClient, VarcoConnectionStrategy } from "@varco/client";
 
 const client = createVarcoConsumerClient({
   authorityId: "PASTE_AUTHORITY_ID_FROM_HOME_ASSISTANT",
   bridgeUrl: "wss://varco-bridge.andreabaccega.com",
   manifest,
-  connectionStrategy: "webrtc-first",
+  connectionStrategy: VarcoConnectionStrategy.WebrtcFirst,
 });
 ```
 

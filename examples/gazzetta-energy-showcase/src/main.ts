@@ -1,4 +1,4 @@
-import { createVarcoClient, type HassState, type StorageLike, type VarcoClient } from "@varco/client";
+import { createVarcoClient, VarcoConnectionStrategy, type HassState, type StorageLike, type VarcoClient } from "@varco/client";
 import {
   BRIDGE_URL,
   COMFORT_ENTITIES,
@@ -260,7 +260,7 @@ function makeClient(): VarcoClient {
     authorityId: authorityId(),
     bridgeUrl: BRIDGE_URL,
     manifest: createReadOnlyManifest(),
-    webrtc: !FORCE_RELAY_ONLY,
+    connectionStrategy: FORCE_RELAY_ONLY ? VarcoConnectionStrategy.Relay : VarcoConnectionStrategy.Optimistic,
     onTransportStatus: (status) => { transportMode = status.mode; transport = status.mode === "p2p" ? "WebRTC P2P" : status.detail || "Cloudflare relay"; render(); },
     warn: console.warn,
     storage: grantStorage,
