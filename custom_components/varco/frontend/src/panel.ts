@@ -98,7 +98,7 @@ export class VarcoPanel extends HTMLElement {
     if (!this._hass || !this._loaded) return;
     try {
       const requests = await this._hass.connection.sendMessagePromise<AccessRequest[]>({ type: 'varco/access_requests' });
-      const signature = requests.filter((r) => r.status === 'pending').map((r) => r.request_id).sort().join(',');
+      const signature = requests.filter((r) => r.status === 'pending').map((r) => `${r.request_id}:${r.pairing_code}`).sort().join(',');
       if (signature !== this._pendingSignature) {
         this._loaded = false;
         await this.load();
@@ -118,7 +118,7 @@ export class VarcoPanel extends HTMLElement {
       this._hass.connection.sendMessagePromise<AuditEvent[]>({ type: 'varco/audit' }).catch(() => [] as AuditEvent[]),
     ]);
     await this.loadDashboards();
-    this._pendingSignature = requests.filter((r) => r.status === 'pending').map((r) => r.request_id).sort().join(',');
+    this._pendingSignature = requests.filter((r) => r.status === 'pending').map((r) => `${r.request_id}:${r.pairing_code}`).sort().join(',');
     this.render({ info, requests, grants, audit });
   }
 
@@ -547,9 +547,9 @@ export class VarcoPanel extends HTMLElement {
   }
 
   buildNewRestriction(grantId: string): Restriction | null {
-    const container = this.querySelector<HTMLElement>(`[data-rf-fields="${grantId}"]`);
+    const container = this.querySelector<HTMLElement>(`[data-rf-fields="${CSS.escape(grantId)}"]`);
     if (!container) return null;
-    const type = this.querySelector<HTMLSelectElement>(`[data-rf-type="${grantId}"]`)?.value;
+    const type = this.querySelector<HTMLSelectElement>(`[data-rf-type="${CSS.escape(grantId)}"]`)?.value;
     if (!type) return null;
     const appliesTo = (container.querySelector<HTMLInputElement>('[data-rf-applies]')?.value || 'grant').trim();
     const id = `${type}-${Date.now()}`;
@@ -848,7 +848,7 @@ export class VarcoPanel extends HTMLElement {
 
   async requestDashboardExport(selectedEntities?: string[]): Promise<ExportResult> {
     const dashboard = this._selectedDashboardIndex !== undefined ? this._dashboards?.[this._selectedDashboardIndex] : undefined;
-    const message: Record<string, unknown> = {
+    const message: { type: string; [key: string]: unknown } = {
       type: 'varco/dashboard_export',
       config: this._exportConfig,
       dashboard_title: dashboard?.title || 'Home Assistant dashboard',
@@ -856,7 +856,7 @@ export class VarcoPanel extends HTMLElement {
     };
     if (this._selectedViewIndex !== '' && this._selectedViewIndex !== undefined && this._selectedViewIndex !== null) message.view_index = Number(this._selectedViewIndex);
     if (selectedEntities) message.selected_entities = selectedEntities;
-    return this._hass!.connection.sendMessagePromise<ExportResult>(message as { type: string });
+    return this._hass!.connection.sendMessagePromise<ExportResult>(message);
   }
 
   toggleEntity(entityId: string, checked: boolean): void {
@@ -1086,7 +1086,12 @@ export class VarcoPanel extends HTMLElement {
         const expiry = this.currentExpiry(requestId);
         if (expiry.value === 'custom') {
           const customVal = this.querySelector<HTMLInputElement>(`[data-approve-expiry-custom="${CSS.escape(requestId)}"]`)?.value;
-          if (customVal) payload.expires_at = new Date(customVal).toISOString();
+          if (!customVal || Number.isNaN(new Date(customVal).getTime())) {
+            const summary = this.querySelector<HTMLElement>(`[data-approve-summary="${CSS.escape(requestId)}"]`);
+            if (summary) this.showFieldError(summary, 'Please set a date/time for the custom expiry.');
+            return;
+          }
+          payload.expires_at = new Date(customVal).toISOString();
         } else if (expiry.value !== 'none') {
           payload.expires_at = new Date(Date.now() + Number(expiry.value)).toISOString();
         }
@@ -1119,7 +1124,7 @@ export class VarcoPanel extends HTMLElement {
     this.querySelectorAll<HTMLSelectElement>('[data-rf-type]').forEach((sel) => {
       sel.onchange = () => {
         const grantId = sel.dataset.rfType!;
-        const fieldsEl = this.querySelector<HTMLElement>(`[data-rf-fields="${grantId}"]`);
+        const fieldsEl = this.querySelector<HTMLElement>(`[data-rf-fields="${CSS.escape(grantId)}"]`);
         if (fieldsEl) fieldsEl.innerHTML = this.restrictionTypeFields(sel.value);
         if (sel.value && fieldsEl && !fieldsEl.querySelector('[data-rf-save]')) {
           const btn = document.createElement('button');

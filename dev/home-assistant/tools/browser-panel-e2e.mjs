@@ -128,6 +128,32 @@ try {
       return /expires_at/.test(src) && /data-approve-expiry/.test(src);
     });
     assert(expiryWired, 'Approve handler must support expires_at via the duration control');
+    // --- fix-round-1 #2: "Custom" expiry with an empty datetime must NOT approve ---
+    const customAbort = await page.locator('varco-panel').evaluate(async (panel, id) => {
+      const conn = panel._hass.connection;
+      const original = conn.sendMessagePromise.bind(conn);
+      let approveSent = false;
+      conn.sendMessagePromise = (msg) => {
+        if (msg && msg.type === 'varco/approve_request') approveSent = true;
+        return original(msg);
+      };
+      try {
+        const chip = panel.querySelector(`[data-expiry-chip="${CSS.escape(id)}"][data-expiry-value="custom"]`);
+        chip.click();
+        const custom = panel.querySelector(`[data-approve-expiry-custom="${CSS.escape(id)}"]`);
+        custom.value = '';
+        panel.querySelector(`[data-approve="${CSS.escape(id)}"]`).click();
+        await new Promise((r) => setTimeout(r, 300));
+        const cardStillPresent = !!panel.querySelector(`[data-request-card="${CSS.escape(id)}"]`);
+        const errorShown = !!panel.querySelector(`[data-approve-summary="${CSS.escape(id)}"] [data-rf-error]`);
+        return { approveSent, cardStillPresent, errorShown };
+      } finally {
+        conn.sendMessagePromise = original;
+      }
+    }, id);
+    assert(!customAbort.approveSent, 'Custom expiry with empty datetime must not send varco/approve_request');
+    assert(customAbort.cardStillPresent, 'Request card must remain after aborted custom-expiry approval');
+    assert(customAbort.errorShown, 'An inline error must show when custom expiry is empty');
     // Reject is reachable without approving (do not click it).
     assert((await page.locator(`varco-panel [data-reject="${cssEsc(id)}"]`).count()) > 0, 'Reject should remain available in the wizard');
   }

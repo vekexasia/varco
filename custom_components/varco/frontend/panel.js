@@ -320,7 +320,7 @@ var VarcoPanel = class extends HTMLElement {
     if (!this._hass || !this._loaded) return;
     try {
       const requests = await this._hass.connection.sendMessagePromise({ type: "varco/access_requests" });
-      const signature = requests.filter((r) => r.status === "pending").map((r) => r.request_id).sort().join(",");
+      const signature = requests.filter((r) => r.status === "pending").map((r) => `${r.request_id}:${r.pairing_code}`).sort().join(",");
       if (signature !== this._pendingSignature) {
         this._loaded = false;
         await this.load();
@@ -338,7 +338,7 @@ var VarcoPanel = class extends HTMLElement {
       this._hass.connection.sendMessagePromise({ type: "varco/audit" }).catch(() => [])
     ]);
     await this.loadDashboards();
-    this._pendingSignature = requests.filter((r) => r.status === "pending").map((r) => r.request_id).sort().join(",");
+    this._pendingSignature = requests.filter((r) => r.status === "pending").map((r) => `${r.request_id}:${r.pairing_code}`).sort().join(",");
     this.render({ info, requests, grants, audit });
   }
   async loadDashboards() {
@@ -729,9 +729,9 @@ var VarcoPanel = class extends HTMLElement {
     return { ...original, applies_to: appliesTo, params };
   }
   buildNewRestriction(grantId) {
-    const container = this.querySelector(`[data-rf-fields="${grantId}"]`);
+    const container = this.querySelector(`[data-rf-fields="${CSS.escape(grantId)}"]`);
     if (!container) return null;
-    const type = this.querySelector(`[data-rf-type="${grantId}"]`)?.value;
+    const type = this.querySelector(`[data-rf-type="${CSS.escape(grantId)}"]`)?.value;
     if (!type) return null;
     const appliesTo = (container.querySelector("[data-rf-applies]")?.value || "grant").trim();
     const id = `${type}-${Date.now()}`;
@@ -1259,7 +1259,12 @@ var VarcoPanel = class extends HTMLElement {
         const expiry = this.currentExpiry(requestId);
         if (expiry.value === "custom") {
           const customVal = this.querySelector(`[data-approve-expiry-custom="${CSS.escape(requestId)}"]`)?.value;
-          if (customVal) payload.expires_at = new Date(customVal).toISOString();
+          if (!customVal || Number.isNaN(new Date(customVal).getTime())) {
+            const summary = this.querySelector(`[data-approve-summary="${CSS.escape(requestId)}"]`);
+            if (summary) this.showFieldError(summary, "Please set a date/time for the custom expiry.");
+            return;
+          }
+          payload.expires_at = new Date(customVal).toISOString();
         } else if (expiry.value !== "none") {
           payload.expires_at = new Date(Date.now() + Number(expiry.value)).toISOString();
         }
@@ -1288,7 +1293,7 @@ var VarcoPanel = class extends HTMLElement {
     this.querySelectorAll("[data-rf-type]").forEach((sel) => {
       sel.onchange = () => {
         const grantId = sel.dataset.rfType;
-        const fieldsEl = this.querySelector(`[data-rf-fields="${grantId}"]`);
+        const fieldsEl = this.querySelector(`[data-rf-fields="${CSS.escape(grantId)}"]`);
         if (fieldsEl) fieldsEl.innerHTML = this.restrictionTypeFields(sel.value);
         if (sel.value && fieldsEl && !fieldsEl.querySelector("[data-rf-save]")) {
           const btn = document.createElement("button");
