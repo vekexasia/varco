@@ -16,6 +16,7 @@ on:
 
 permissions:
   contents: write
+  packages: write
   id-token: write
 
 concurrency:
@@ -45,6 +46,11 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
+          MAJOR="${VERSION%%.*}"
+          REST="${VERSION#*.}"
+          MINOR="${REST%%.*}"
+          echo "major=$MAJOR" >> "$GITHUB_OUTPUT"
+          echo "major_minor=$MAJOR.$MINOR" >> "$GITHUB_OUTPUT"
       - name: Set up Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
@@ -92,6 +98,33 @@ jobs:
           mkdir -p .pi/release
           zip -r .pi/release/varco-home-assistant.zip custom_components/varco hacs.json README.md
 
+
+      - name: Publish bridge Docker image to GHCR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          MAJOR_MINOR: ${{ steps.version.outputs.major_minor }}
+          MAJOR: ${{ steps.version.outputs.major }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          OWNER="${GITHUB_REPOSITORY_OWNER,,}"
+          IMAGE="ghcr.io/${OWNER}/varco-bridge"
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker build \
+            -f bridge/Dockerfile \
+            --label "org.opencontainers.image.description=Varco opaque Node bridge" \
+            --label "org.opencontainers.image.version=${VERSION}" \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            -t "${IMAGE}:${VERSION}" \
+            -t "${IMAGE}:${MAJOR_MINOR}" \
+            -t "${IMAGE}:${MAJOR}" \
+            -t "${IMAGE}:latest" \
+            .
+          docker push "${IMAGE}:${VERSION}"
+          docker push "${IMAGE}:${MAJOR_MINOR}"
+          docker push "${IMAGE}:${MAJOR}"
+          docker push "${IMAGE}:latest"
       - name: Publish @varco/client to npm
         if: ${{ github.event_name == 'push' || inputs.publish_npm }}
         run: |

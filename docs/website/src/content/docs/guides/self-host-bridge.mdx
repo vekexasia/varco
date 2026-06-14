@@ -36,7 +36,15 @@ For a real deployment, put it behind a TLS reverse proxy and use a `wss://` URL,
 wss://bridge.example.com
 ```
 
-Docker build:
+Docker image from GHCR:
+
+```bash
+docker run --rm -p 8787:8787 ghcr.io/vekexasia/varco-bridge:0.1.1
+```
+
+Pin an exact version for repeatable deployments. The release workflow also publishes moving `0.1`, `0`, and `latest` tags.
+
+Local Docker build:
 
 ```bash
 docker build -f bridge/Dockerfile -t varco-bridge .

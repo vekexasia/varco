@@ -42,10 +42,19 @@ git push origin v0.1.0
 
 ## GitHub release artifacts
 
-The release workflow builds and uploads:
+The release workflow builds and publishes:
 
 - `varco-home-assistant.zip`: the Home Assistant custom integration directory for users who do not install through HACS.
 - `@varco/client`: published to npm from `packages/client` through npm Trusted Publishing.
+- `ghcr.io/vekexasia/varco-bridge`: the Node in-memory bridge Docker image, tagged as the exact version (`0.1.0`), minor line (`0.1`), major line (`0`), and `latest`.
+
+After the first GHCR publish, make the package public in GitHub's package settings if GitHub creates it as private.
+
+Use the exact Docker tag for stable deployments:
+
+```bash
+docker run --rm -p 8787:8787 ghcr.io/vekexasia/varco-bridge:0.1.0
+```
 
 ## npm publishing
 
