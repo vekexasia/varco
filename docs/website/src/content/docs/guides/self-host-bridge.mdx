@@ -11,40 +11,90 @@ wss://varco-bridge.andreabaccega.com
 
 The bridge does not see application plaintext and does not make permission decisions. Self-host it when you want your own origin policy, registration allowlist, signaling-only mode, or infrastructure control.
 
+**Network boundary:** the bridge must be reachable from the public internet because Home Assistant Authorities and consumers open outbound WebSocket connections to it. Do not give the bridge direct network access to Home Assistant. Home Assistant should be able to connect out to the bridge, but the bridge should not be able to initiate requests back into Home Assistant.
+
 Two implementations are available:
 
 - **Node in-memory bridge**: simplest Cloudflare-free path. It keeps only live sockets in memory, uses no database and no filesystem state, and is intended for one process behind one URL.
 - **Cloudflare Worker bridge**: managed edge deployment using Workers and Durable Objects.
 
-## Option A: Node in-memory bridge
+## Option A: Node in-memory bridge with Docker
 
-Requirements: repository dependencies installed with `npm ci`, or Docker.
+Use this when you want the simplest Cloudflare-free bridge. The image runs the Node in-memory bridge, stores no filesystem state, and listens on port `8787` inside the container.
 
-From the repository root:
+Quick start:
 
 ```bash
-npm ci
-npm --workspace bridge run build
-HOST=0.0.0.0 PORT=8787 npm --workspace bridge run start:node
+docker run -d \
+  --name varco-bridge \
+  --restart unless-stopped \
+  -p 127.0.0.1:8787:8787 \
+  ghcr.io/vekexasia/varco-bridge:0.1.1
 ```
 
-For local development, point Home Assistant and consumers at the host running the bridge on port `8787` with the `ws` scheme.
+Pin an exact version for repeatable deployments. The release workflow also publishes moving `0.1`, `0`, and `latest` tags.
 
-For a real deployment, put it behind a TLS reverse proxy and use a `wss://` URL, for example:
-
-```text
-wss://bridge.example.com
-```
-
-Docker image from GHCR:
+For local testing without a reverse proxy, publish the port on all interfaces and use the `ws` scheme:
 
 ```bash
 docker run --rm -p 8787:8787 ghcr.io/vekexasia/varco-bridge:0.1.1
 ```
 
-Pin an exact version for repeatable deployments. The release workflow also publishes moving `0.1`, `0`, and `latest` tags.
+For a real deployment, keep the container on localhost and put a TLS reverse proxy in front of it. Public Home Assistant and consumer URLs should use `wss://`, for example:
 
-Local Docker build:
+```text
+wss://bridge.example.com
+```
+
+Minimal nginx vhost:
+
+```nginx
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    '' close;
+}
+
+server {
+    listen 80;
+    server_name bridge.example.com;
+
+    proxy_buffering off;
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+
+    location / {
+        proxy_pass http://127.0.0.1:8787;
+    }
+}
+```
+
+With Cloudflare in front, use a proxied DNS record for `bridge.example.com` pointing at the server and let Cloudflare terminate public TLS. If you terminate TLS locally instead, use your normal certificate automation and expose nginx on `443`.
+
+Docker Compose example:
+
+```yaml
+services:
+  varco-bridge:
+    image: ghcr.io/vekexasia/varco-bridge:0.1.1
+    container_name: varco-bridge
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8787:8787"
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8787
+```
+
+Optional policy variables can be added under `environment`; see [Optional policy variables](#optional-policy-variables).
+
+Local Docker build from the repository root:
 
 ```bash
 docker build -f bridge/Dockerfile -t varco-bridge .
