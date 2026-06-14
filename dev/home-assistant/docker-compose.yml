@@ -5,9 +5,24 @@ services:
     container_name: varco-ha-showcase
     restart: unless-stopped
     ports:
-      - "${HA_HTTP_PORT:-8123}:8123"
+      # nginx on the host owns port 80 and reverse-proxies to this. Bind to
+      # localhost so Home Assistant never competes for the host :80 binding.
+      - "127.0.0.1:${HA_HTTP_PORT:-8123}:8123"
     environment:
       TZ: Europe/Rome
     volumes:
       - ./config:/config
       - ${VARCO_INTEGRATION_PATH:-../../custom_components/varco}:/config/custom_components/varco:ro
+
+  varco-bridge:
+    # Relay-first bridge backing varco-bridge.andreabaccega.com. nginx proxies
+    # /health, /presence/, /authority/, /consumer/ here. Pulled from GHCR.
+    image: ghcr.io/vekexasia/varco-bridge:${VARCO_BRIDGE_VERSION:-0.1.1}
+    container_name: varco-bridge
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${BRIDGE_HTTP_PORT:-8787}:8787"
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8787
+    command: ["node", "bridge/dist/node.js"]

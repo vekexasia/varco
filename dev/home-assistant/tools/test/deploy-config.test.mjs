@@ -4,22 +4,47 @@ import { readFileSync } from 'node:fs';
 
 const compose = readFileSync('dev/home-assistant/docker-compose.yml', 'utf8');
 const deploy = readFileSync('dev/home-assistant/deploy-to-docker-host.sh', 'utf8');
+const nginx = readFileSync('dev/home-assistant/nginx-varco.conf', 'utf8');
 const workflow = readFileSync('.github/workflows/deploy-ha-showcase.yml', 'utf8');
 const ciWorkflow = readFileSync('.github/workflows/ci.yml', 'utf8');
 const manifest = JSON.parse(readFileSync('custom_components/varco/manifest.json', 'utf8'));
 
-test('Home Assistant compose lets remote deploy bind Cloudflare-compatible port 80', () => {
-  assert.match(compose, /\$\{HA_HTTP_PORT:-8123\}:8123/);
+test('Home Assistant compose binds to localhost so host nginx owns port 80', () => {
+  assert.match(compose, /127\.0\.0\.1:\$\{HA_HTTP_PORT:-8123\}:8123/);
 });
 
-test('deploy script preserves remote runtime state, force-recreates Home Assistant, and prunes unused Docker resources', () => {
+test('compose defines the varco-bridge service bound to localhost', () => {
+  assert.match(compose, /varco-bridge:/);
+  assert.match(compose, /ghcr\.io\/vekexasia\/varco-bridge:/);
+  assert.match(compose, /127\.0\.0\.1:\$\{BRIDGE_HTTP_PORT:-8787\}:8787/);
+});
+
+test('deploy script preserves remote runtime state, recreates all services, and prunes unused Docker resources', () => {
   assert.match(deploy, /--exclude '\.storage\/'/);
   assert.match(deploy, /--exclude '\.cache\/'/);
   assert.doesNotMatch(deploy, /--exclude 'www\/'/);
-  assert.match(deploy, /HA_HTTP_PORT=\$\{HA_HTTP_PORT:-8123\}/);
-  assert.match(deploy, /docker compose up -d --force-recreate --remove-orphans homeassistant/);
+  assert.match(deploy, /HA_HTTP_PORT=8123/);
+  assert.match(deploy, /BRIDGE_HTTP_PORT=8787/);
+  // Must recreate the whole compose project, not just homeassistant, or the
+  // bridge container gets dropped as an orphan (the outage on 2026-06-14).
+  assert.match(deploy, /docker compose up -d --force-recreate --remove-orphans\b/);
+  assert.doesNotMatch(deploy, /--remove-orphans homeassistant/);
   assert.match(deploy, /docker system prune -af/);
   assert.doesNotMatch(deploy, /--volumes/);
+});
+
+test('deploy script installs the committed nginx ingress and verifies both backends', () => {
+  assert.match(deploy, /nginx-varco\.conf.*sites-available\/varco/);
+  assert.match(deploy, /nginx -t/);
+  assert.match(deploy, /127\.0\.0\.1:8123\//);
+  assert.match(deploy, /127\.0\.0\.1:8787\/health/);
+});
+
+test('nginx ingress routes bridge paths to the bridge and everything else to Home Assistant', () => {
+  assert.match(nginx, /varco-bridge\.andreabaccega\.com/);
+  assert.match(nginx, /varco-ha\.andreabaccega\.com/);
+  assert.match(nginx, /location \/authority\/ \{ proxy_pass http:\/\/127\.0\.0\.1:8787; \}/);
+  assert.match(nginx, /location \/ \{ proxy_pass http:\/\/127\.0\.0\.1:8123; \}/);
 });
 
 test('Varco declares aiortc so deployed Home Assistant can accept WebRTC offers', () => {
