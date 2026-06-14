@@ -151,7 +151,23 @@ def test_ready_marks_connected_and_clears_error():
         relay, _, _ = make_relay()
         relay.status.update({"connected": False, "last_error": "boom"})
         await relay._handle_bridge_message({"type": "ready"})
-        assert relay.status == {"connected": True, "last_error": None}
+        assert relay.status["connected"] is True
+        assert relay.status["last_error"] is None
+    asyncio.run(run())
+
+
+def test_ready_records_bridge_url_and_last_connected():
+    async def run():
+        from datetime import datetime
+
+        relay, _, _ = make_relay()
+        assert relay.status["bridge_url"] == "wss://bridge.example/ws"
+        await relay._handle_bridge_message({"type": "ready"})
+        assert relay.status["bridge_url"] == "wss://bridge.example/ws"
+        last_connected = relay.status["last_connected"]
+        assert isinstance(last_connected, str) and last_connected
+        # Parses as an ISO 8601 timestamp.
+        datetime.fromisoformat(last_connected)
     asyncio.run(run())
 
 

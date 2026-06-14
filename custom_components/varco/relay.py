@@ -5,6 +5,7 @@ import time
 import json
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 
 from aiohttp import WSMsgType
@@ -68,7 +69,7 @@ class VarcoRelay:
         self.private_key = entry_data["private_key"]
         self.bridge_ws_url = entry_data["bridge_ws_url"].rstrip("/")
         self.sessions: dict[str, BridgeSession] = {}
-        self.status: dict[str, Any] = {"connected": False, "last_error": None}
+        self.status: dict[str, Any] = {"connected": False, "last_error": None, "bridge_url": self.bridge_ws_url}
         self._task: asyncio.Task | None = None
         # Base reconnect delay in seconds; exposed for tests.
         self._reconnect_initial_delay = 1.0
@@ -174,7 +175,7 @@ class VarcoRelay:
             await self._send({"type": "auth", "proto": PROTO_VERSION, "signature": sign_challenge(self.private_key, message["nonce"])})
         elif typ == "ready":
             self._terminal_failures = 0
-            self.status.update({"connected": True, "last_error": None})
+            self.status.update({"connected": True, "last_error": None, "last_connected": datetime.now(timezone.utc).isoformat()})
             persistent_notification.async_dismiss(self.hass, "varco_relay_paused")
         elif typ == "client_connected":
             self.sessions[message["sessionId"]] = BridgeSession(message["sessionId"])

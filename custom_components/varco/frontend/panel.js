@@ -751,6 +751,12 @@ class VarcoPanel extends HTMLElement {
         .restriction-form { border: 1px dashed var(--divider-color); border-radius: 8px; margin-top: 12px; padding: 12px; }
         .restriction-form-row { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
         .restriction-form-row select { margin: 0; }
+        .relay-health { border: 1px solid var(--divider-color); border-radius: 10px; margin: 12px 0; padding: 12px; background: var(--card-background-color); }
+        .relay-health-head { align-items: center; display: flex; gap: 10px; }
+        .relay-health-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px 16px; margin-top: 12px; }
+        .relay-health-grid span { color: var(--secondary-text-color); display: block; font-size: 12px; margin-bottom: 2px; }
+        .relay-health-grid strong { display: block; }
+        .relay-last-error { border-left: 4px solid var(--error-color, #db4437); }
       </style>`;
   }
 
@@ -800,6 +806,26 @@ class VarcoPanel extends HTMLElement {
     row.appendChild(confirmEl);
   }
 
+  // Relay health block: connection state, bridge URL, last connected time, and
+  // the last error (with actionable guidance) when disconnected.
+  relayHealthSection(relay) {
+    const info = relay || {};
+    const connected = !!info.connected;
+    return `
+      <div class="relay-health" data-relay-status="${connected ? 'connected' : 'disconnected'}">
+        <div class="relay-health-head">
+          <b>Relay</b>
+          <span class="status-pill ${connected ? 'status-active' : 'status-revoked'}">${connected ? 'connected' : 'disconnected'}</span>
+        </div>
+        <div class="relay-health-grid">
+          <div><span>Bridge URL</span><strong data-relay-bridge-url><code>${info.bridge_url ? this.escape(info.bridge_url) : 'unknown'}</code></strong></div>
+          <div><span>Last connected</span><strong data-relay-last-connected>${info.last_connected ? this.escape(this.formatDate(info.last_connected)) : 'never'}</strong></div>
+        </div>
+        ${info.last_error ? `<div class="warning relay-last-error" data-relay-last-error>Last error: ${this.escape(info.last_error)}</div>` : ''}
+        ${!connected ? `<div class="warning relay-guidance" data-relay-guidance>Check that the bridge URL above is reachable from Home Assistant and review the integration logs for connection errors.</div>` : ''}
+      </div>`;
+  }
+
   render(state) {
     if (state) this._lastState = state;
     if (!this._lastState || this._lastState.loading) {
@@ -812,7 +838,7 @@ class VarcoPanel extends HTMLElement {
       <ha-card header="Varco Authority">
         <div class="card-content">${this.styles()}
           <p><b>Authority ID</b><br><code>${this.escape(current.info.authority_id)}</code></p>
-          <p><b>Relay</b>: ${current.info.relay.connected ? 'connected' : 'disconnected'}</p>
+          ${this.relayHealthSection(current.info.relay)}
           ${this.dashboardExportSection()}
           <h3>Pending access requests</h3>
           ${pending.length ? pending.map((request) => this.requestCard(request)).join('') : '<p>No pending requests.</p>'}
