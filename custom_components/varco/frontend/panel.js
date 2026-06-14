@@ -1248,7 +1248,7 @@ var VarcoPanel = class extends HTMLElement {
         const requestId = el.dataset.approve;
         const boxes = [...this.querySelectorAll(`[data-scope-request="${CSS.escape(requestId)}"]`)];
         const payload = { request_id: requestId };
-        if (boxes.some((b) => !b.checked)) {
+        if (boxes.length > 0) {
           const approved = {};
           boxes.forEach((b) => {
             approved[b.dataset.scopeKey] = approved[b.dataset.scopeKey] || [];
