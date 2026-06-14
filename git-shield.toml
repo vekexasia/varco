@@ -1,0 +1,21 @@
+# git-shield configuration for the Varco repository.
+#
+# ignore_globs must restate the tool defaults (this list replaces them) and adds
+# two entries for false positives from the ML PII filter:
+#   - custom_components/varco/frontend/panel.js: a GENERATED esbuild bundle whose
+#     TypeScript source under .../frontend/src/ is still scanned. It inlines SVG
+#     icon path data that the model misreads as "secret"/"private_address".
+#   - .../frontend/src/icons.ts: pure inline SVG <path> definitions (vector
+#     coordinates only, no real data) that trip the same false positive.
+[git_shield]
+ignore_globs = [
+  "*.lock", "*.lockb",
+  "*.png", "*.jpg", "*.jpeg", "*.gif", "*.webp", "*.pdf",
+  "*.zip", "*.tar", "*.tgz", "*.gz",
+  "*.bin", "*.exe", "*.dll", "*.so", "*.dylib",
+  "*.woff", "*.woff2", "*.ttf", "*.ico",
+  ".pii-allowlist",
+  "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "poetry.lock", "Cargo.lock", "uv.lock",
+  "custom_components/varco/frontend/panel.js",
+  "custom_components/varco/frontend/src/icons.ts",
+]
