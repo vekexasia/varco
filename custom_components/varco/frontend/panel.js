@@ -393,6 +393,18 @@ class VarcoPanel extends HTMLElement {
         </div>
         <p class="approval-note">Untick any permission you do not want to grant before approving.</p>
         ${this.scopeDetailsEditable(request.manifest, request.request_id)}
+        <div class="approve-expiry-row">
+          <label>Grant for
+            <select data-approve-expiry="${this.escape(request.request_id)}">
+              <option value="none" selected>No expiry</option>
+              <option value="3600000">1 hour</option>
+              <option value="86400000">24 hours</option>
+              <option value="604800000">7 days</option>
+              <option value="custom">Custom</option>
+            </select>
+          </label>
+          <input type="datetime-local" data-approve-expiry-custom="${this.escape(request.request_id)}" style="display:none">
+        </div>
         <div class="button-row">
           <button class="primary" data-approve="${this.escape(request.request_id)}">Approve selected permissions</button>
           <button class="secondary" data-reject="${this.escape(request.request_id)}">Reject</button>
@@ -718,6 +730,9 @@ class VarcoPanel extends HTMLElement {
         .status-revoked { background: var(--secondary-background-color); color: var(--secondary-text-color); }
         .status-pill.status-expired { background: var(--warning-color, #f4b400); color: #1f1f1f; }
         .grant-card.grant-expired { opacity: 0.88; border-left: 4px solid var(--warning-color, #f4b400); }
+        .approve-expiry-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; margin: 8px 0; }
+        .approve-expiry-row label { font-size: 0.9em; color: var(--secondary-text-color); }
+        .approve-expiry-row select, .approve-expiry-row input[type="datetime-local"] { margin: 4px 0 0; max-width: 220px; }
         .grant-controls { display: flex; flex-wrap: wrap; gap: 10px; margin: 10px 0 4px; }
         .grant-controls input[type="search"] { flex: 1 1 220px; min-width: 180px; padding: 8px; border: 1px solid var(--divider-color); border-radius: 6px; background: var(--card-background-color); color: var(--primary-text-color); }
         .grant-controls select { margin: 0; max-width: 200px; }
@@ -841,7 +856,20 @@ class VarcoPanel extends HTMLElement {
         });
         payload.approved_manifest = approved;
       }
+      const expirySel = this.querySelector(`[data-approve-expiry="${CSS.escape(requestId)}"]`);
+      const expiryVal = expirySel ? expirySel.value : 'none';
+      if (expiryVal === 'custom') {
+        const customEl = this.querySelector(`[data-approve-expiry-custom="${CSS.escape(requestId)}"]`);
+        const customVal = customEl && customEl.value;
+        if (customVal) payload.expires_at = new Date(customVal).toISOString();
+      } else if (expiryVal !== 'none') {
+        payload.expires_at = new Date(Date.now() + Number(expiryVal)).toISOString();
+      }
       this.call('varco/approve_request', payload);
+    });
+    this.querySelectorAll('[data-approve-expiry]').forEach((sel) => sel.onchange = () => {
+      const customEl = this.querySelector(`[data-approve-expiry-custom="${CSS.escape(sel.dataset.approveExpiry)}"]`);
+      if (customEl) customEl.style.display = sel.value === 'custom' ? 'block' : 'none';
     });
     this.querySelectorAll('[data-reject]').forEach((el) => el.onclick = () => this.call('varco/reject_request', { request_id: el.dataset.reject }));
     this.querySelectorAll('[data-revoke]').forEach((el) => el.onclick = () => {
