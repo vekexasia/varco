@@ -12,7 +12,7 @@ const client = createVarcoConsumerClient({
   authorityId: "PASTE_AUTHORITY_ID_FROM_HOME_ASSISTANT",
   bridgeUrl: "wss://varco-bridge.andreabaccega.com",
   manifest,
-  webrtc: true,
+  connectionStrategy: "webrtc-first",
 });
 ```
 
