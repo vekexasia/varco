@@ -161,7 +161,7 @@ jobs:
 
       - name: Run Authority panel browser e2e
         timeout-minutes: 5
-        run: timeout -k 10s 240s npm run dev:ha:panel-browser
+        run: BRIDGE_HOST=127.0.0.1; timeout -k 10s 240s env VARCO_BRIDGE_URL="ws://$BRIDGE_HOST:8787" npm run dev:ha:panel-browser
 
       - name: Run restrictions smoke e2e
         timeout-minutes: 5

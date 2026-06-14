@@ -4,11 +4,12 @@
  * Covers the redesigned panel: #60 (audit log), #65 (filter + expired pill),
  * #64 (confirm destructive actions), #62 (live refresh), #66 (relay health),
  * #61 (approve-with-expiry, now a multi-step wizard), #63 (restriction
- * toggle/edit hooks). Read-only: it never approves, revokes, or deletes real
- * grants.
+ * toggle/edit hooks). It seeds one reusable grant through the relay at start
+ * (so the panel has grant + audit data to render) and deletes that grant on
+ * exit. It never approves, revokes, or deletes any other real grant.
  *
  * Requires a live Home Assistant at HA_URL (default http://127.0.0.1:8123)
- * with Varco loaded and grants/audit data present.
+ * with Varco loaded, and a reachable bridge at VARCO_BRIDGE_URL for pairing.
  *
  * Run: node dev/home-assistant/tools/browser-panel-e2e.mjs
  */
@@ -16,6 +17,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { chromium } from '@playwright/test';
 import { haConfig } from './lib/ha-admin.mjs';
+import { createHomeAssistantAdmin, deleteGrant, pairVarcoConsumer } from './lib/varco-dev.mjs';
 import { openVarcoPanel } from './lib/browser-auth.mjs';
 
 const config = haConfig();
@@ -24,7 +26,16 @@ const screenshotPath = resolve(process.env.SCREENSHOT_PATH || '.pi/varco-panel-e
 const browser = await chromium.launch({ headless: process.env.HEADLESS !== 'false' });
 const page = await browser.newPage({ viewport: { width: 1280, height: 1400 } });
 
+// Seed a reusable grant before opening the panel so the grant cards, per-grant
+// activity affordance, and audit log all have data to render. Pairing connects
+// the consumer through the bridge and approves a persistent grant.
+let seededGrantId = null;
+
 try {
+  const seeded = await pairVarcoConsumer({ ...config });
+  seededGrantId = seeded.grantId;
+  console.log(`Seeded panel e2e grant: ${seededGrantId}`);
+
   await openVarcoPanel(page, config);
   await page.getByText('Authority ID').waitFor({ timeout: 60_000 });
   await page.locator('varco-panel .h-page', { hasText: /^Grants/ }).waitFor({ timeout: 20_000 });
@@ -176,6 +187,16 @@ try {
   console.log(`Varco panel browser e2e passed. Screenshot: ${screenshotPath}`);
 } finally {
   await browser.close();
+  if (seededGrantId) {
+    try {
+      const admin = await createHomeAssistantAdmin({ ...config });
+      await deleteGrant(admin, seededGrantId);
+      admin.close?.();
+      console.log(`Cleaned up panel e2e grant: ${seededGrantId}`);
+    } catch (err) {
+      console.warn(`Failed to clean up seeded grant ${seededGrantId}: ${err?.message || err}`);
+    }
+  }
 }
 
 function cssEsc(value) {
