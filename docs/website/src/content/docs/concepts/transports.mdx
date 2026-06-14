@@ -17,7 +17,8 @@ WebRTC is opportunistic:
 - WebRTC uses the same application protocol.
 - WebRTC uses the same Authority enforcement path.
 - If WebRTC setup fails, the client falls back to relay.
-- Consumers can disable WebRTC with `webrtc: false`.
+- Consumers can choose how the upgrade happens with `connectionStrategy`: `webrtc-first` (default, await the upgrade then fall back to relay), `webrtc-only` (require P2P, fail otherwise), or `optimistic` (use relay immediately and upgrade in the background).
+- Consumers can disable WebRTC entirely with the legacy `webrtc: false` flag (relay-only).
 
 The Home Assistant integration declares `aiortc>=1.9.0`. If `aiortc` fails to install or import at runtime, Varco logs a warning and keeps relay transport working.
 

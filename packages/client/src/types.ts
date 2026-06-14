@@ -45,6 +45,8 @@ export type VarcoConsumerTransportStatus = {
   detail?: string;
 };
 
+export type VarcoConnectionStrategy = "webrtc-only" | "webrtc-first" | "optimistic";
+
 export type VarcoClientOptions = {
   authorityId: string;
   bridgeUrl: string;
@@ -52,7 +54,15 @@ export type VarcoClientOptions = {
   storage?: StorageLike;
   transport?: VarcoTransport;
   warn?: (message: string) => void;
+  /** @deprecated Use `connectionStrategy`. `webrtc: false` maps to relay-only; when `connectionStrategy` is set it takes precedence. */
   webrtc?: boolean;
+  /**
+   * Controls how the data plane is established:
+   * - `webrtc-only`: require a P2P data channel; `connect()` throws if the upgrade fails.
+   * - `webrtc-first` (default): await the P2P upgrade, fall back to relay on failure.
+   * - `optimistic`: resolve `connect()` on the relay, then upgrade to P2P in the background.
+   */
+  connectionStrategy?: VarcoConnectionStrategy;
   reconnect?: boolean;
   onTransportStatus?: (status: VarcoTransportStatus) => void;
 };

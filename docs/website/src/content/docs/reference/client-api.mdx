@@ -40,11 +40,23 @@ const client = createVarcoConsumerClient({
   authorityId: "PASTE_AUTHORITY_ID_FROM_HOME_ASSISTANT",
   bridgeUrl: "wss://varco-bridge.andreabaccega.com",
   manifest,
-  webrtc: true,
+  connectionStrategy: "webrtc-first",
 });
 ```
 
 Mode selection is explicit: if `hass` is passed, local Home Assistant mode wins even when relay options are also present. If `hass` is not passed, the client uses the relay path and optional WebRTC upgrade.
+
+### Connection strategy
+
+`connectionStrategy` controls how the relay client establishes its data plane:
+
+| Strategy | Behavior |
+| --- | --- |
+| `webrtc-first` (default) | `connect()` awaits the WebRTC upgrade and falls back to relay if it fails. |
+| `webrtc-only` | Require a P2P data channel. `connect()` throws if the upgrade fails, with no relay data fallback. |
+| `optimistic` | `connect()` resolves on the relay immediately. The WebRTC upgrade runs in the background and swaps in when ready, so data calls start without waiting for P2P negotiation. |
+
+The legacy `webrtc` boolean still works: `webrtc: false` is equivalent to relay-only. When both are set, `connectionStrategy` takes precedence.
 
 ## `createVarcoClient()`
 

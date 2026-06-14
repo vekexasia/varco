@@ -228,6 +228,7 @@ test('client upgrades to WebRTC data channel and reports p2p transport status', 
   class FakeDataChannel {
     constructor() { this.listeners = {}; this.readyState = 'connecting'; }
     addEventListener(type, handler) { this.listeners[type] = handler; }
+    removeEventListener(type) { delete this.listeners[type]; }
     send(data) {
       const request = JSON.parse(data);
       this.listeners.message({ data: JSON.stringify({ type: 'states', request_id: request.request_id, states: { 'sensor.temp': { entity_id: 'sensor.temp', state: 'p2p', attributes: {} } } }) });
@@ -261,6 +262,183 @@ test('client upgrades to WebRTC data channel and reports p2p transport status', 
   await client.connect();
   assert.equal(statuses.at(-1).mode, 'p2p');
   assert.equal((await client.getStates(['sensor.temp']))['sensor.temp'].state, 'p2p');
+  globalThis.RTCPeerConnection = previous;
+});
+
+test('optimistic strategy connects on relay first then upgrades to p2p in background', async () => {
+  const previous = globalThis.RTCPeerConnection;
+  const statuses = [];
+  let openChannel = () => {};
+  class FakeDataChannel {
+    constructor() { this.listeners = {}; this.readyState = 'connecting'; }
+    addEventListener(type, handler) { this.listeners[type] = handler; }
+    removeEventListener(type) { delete this.listeners[type]; }
+    send(data) {
+      const request = JSON.parse(data);
+      this.listeners.message({ data: JSON.stringify({ type: 'states', request_id: request.request_id, states: { 'sensor.temp': { entity_id: 'sensor.temp', state: 'p2p', attributes: {} } } }) });
+    }
+    open() { this.readyState = 'open'; this.listeners.open?.(); }
+  }
+  class FakePeerConnection {
+    constructor() { this.iceGatheringState = 'complete'; this.channel = null; }
+    createDataChannel() { this.channel = new FakeDataChannel(); openChannel = () => this.channel.open(); return this.channel; }
+    async createOffer() { return { type: 'offer', sdp: 'offer-sdp' }; }
+    async setLocalDescription(desc) { this.localDescription = desc; }
+    async setRemoteDescription(desc) { this.remoteDescription = desc; }
+    addEventListener() {}
+    close() {}
+  }
+  globalThis.RTCPeerConnection = FakePeerConnection;
+  const transport = new FakeTransport();
+  const originalRequest = transport.request.bind(transport);
+  transport.request = async (message) => {
+    if (message.type === 'webrtc_offer') return { type: 'webrtc_answer', sdp: 'answer-sdp', sdp_type: 'answer', transport: 'p2p' };
+    return originalRequest(message);
+  };
+  const client = createVarcoClient({
+    authorityId: 'authority',
+    bridgeUrl: 'ws://bridge',
+    manifest: { name: 'Demo', version: '1' },
+    transport,
+    storage: new MemoryStorage(),
+    connectionStrategy: 'optimistic',
+    onTransportStatus: (status) => statuses.push(status),
+  });
+  await client.connect();
+  // connect() resolved before the data channel opened: still on relay.
+  assert.equal(client.transportStatus.mode, 'relay');
+  // The data plane works immediately over relay.
+  assert.equal((await client.getStates(['sensor.temp']))['sensor.temp'].state, '21');
+  // Complete the background upgrade, then it swaps to p2p.
+  openChannel();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(statuses.at(-1).mode, 'p2p');
+  assert.equal((await client.getStates(['sensor.temp']))['sensor.temp'].state, 'p2p');
+  globalThis.RTCPeerConnection = previous;
+});
+
+test('webrtc-only strategy throws when the upgrade fails', async () => {
+  const previous = globalThis.RTCPeerConnection;
+  globalThis.RTCPeerConnection = undefined;
+  const transport = new FakeTransport();
+  const client = createVarcoClient({
+    authorityId: 'authority',
+    bridgeUrl: 'ws://bridge',
+    manifest: { name: 'Demo', version: '1' },
+    transport,
+    storage: new MemoryStorage(),
+    connectionStrategy: 'webrtc-only',
+  });
+  await assert.rejects(client.connect());
+  globalThis.RTCPeerConnection = previous;
+});
+
+test('webrtc-only strategy upgrades to p2p when the channel opens', async () => {
+  const previous = globalThis.RTCPeerConnection;
+  class FakeDataChannel {
+    constructor() { this.listeners = {}; this.readyState = 'connecting'; }
+    addEventListener(type, handler) { this.listeners[type] = handler; }
+    removeEventListener(type) { delete this.listeners[type]; }
+    send(data) {
+      const request = JSON.parse(data);
+      this.listeners.message({ data: JSON.stringify({ type: 'states', request_id: request.request_id, states: { 'sensor.temp': { entity_id: 'sensor.temp', state: 'p2p', attributes: {} } } }) });
+    }
+    open() { this.readyState = 'open'; this.listeners.open?.(); }
+  }
+  class FakePeerConnection {
+    constructor() { this.iceGatheringState = 'complete'; this.channel = null; }
+    createDataChannel() { this.channel = new FakeDataChannel(); return this.channel; }
+    async createOffer() { return { type: 'offer', sdp: 'offer-sdp' }; }
+    async setLocalDescription(desc) { this.localDescription = desc; }
+    async setRemoteDescription(desc) { this.remoteDescription = desc; setTimeout(() => this.channel.open(), 0); }
+    addEventListener() {}
+    close() {}
+  }
+  globalThis.RTCPeerConnection = FakePeerConnection;
+  const transport = new FakeTransport();
+  const originalRequest = transport.request.bind(transport);
+  transport.request = async (message) => {
+    if (message.type === 'webrtc_offer') return { type: 'webrtc_answer', sdp: 'answer-sdp', sdp_type: 'answer', transport: 'p2p' };
+    return originalRequest(message);
+  };
+  const client = createVarcoClient({
+    authorityId: 'authority', bridgeUrl: 'ws://bridge', manifest: { name: 'Demo', version: '1' },
+    transport, storage: new MemoryStorage(), connectionStrategy: 'webrtc-only',
+  });
+  await client.connect();
+  assert.equal(client.transportStatus.mode, 'p2p');
+  assert.equal((await client.getStates(['sensor.temp']))['sensor.temp'].state, 'p2p');
+  globalThis.RTCPeerConnection = previous;
+});
+
+test('webrtc-first strategy falls back to relay when the upgrade is refused', async () => {
+  const previous = globalThis.RTCPeerConnection;
+  class FakeDataChannel {
+    constructor() { this.listeners = {}; this.readyState = 'connecting'; }
+    addEventListener(type, handler) { this.listeners[type] = handler; }
+    removeEventListener(type) { delete this.listeners[type]; }
+    send() {}
+  }
+  class FakePeerConnection {
+    constructor() { this.iceGatheringState = 'complete'; }
+    createDataChannel() { return new FakeDataChannel(); }
+    async createOffer() { return { type: 'offer', sdp: 'offer-sdp' }; }
+    async setLocalDescription(desc) { this.localDescription = desc; }
+    async setRemoteDescription() {}
+    addEventListener() {}
+    close() {}
+  }
+  globalThis.RTCPeerConnection = FakePeerConnection;
+  const transport = new FakeTransport();
+  const originalRequest = transport.request.bind(transport);
+  transport.request = async (message) => {
+    if (message.type === 'webrtc_offer') return { type: 'relay_kept', reason: 'Authority kept relay fallback' };
+    return originalRequest(message);
+  };
+  const client = createVarcoClient({
+    authorityId: 'authority', bridgeUrl: 'ws://bridge', manifest: { name: 'Demo', version: '1' },
+    transport, storage: new MemoryStorage(), connectionStrategy: 'webrtc-first',
+  });
+  await client.connect();
+  assert.equal(client.transportStatus.mode, 'relay');
+  assert.equal((await client.getStates(['sensor.temp']))['sensor.temp'].state, '21');
+  globalThis.RTCPeerConnection = previous;
+});
+
+test('optimistic strategy stays on relay when the background upgrade is refused', async () => {
+  const previous = globalThis.RTCPeerConnection;
+  class FakeDataChannel {
+    constructor() { this.listeners = {}; this.readyState = 'connecting'; }
+    addEventListener(type, handler) { this.listeners[type] = handler; }
+    removeEventListener(type) { delete this.listeners[type]; }
+    send() {}
+  }
+  class FakePeerConnection {
+    constructor() { this.iceGatheringState = 'complete'; }
+    createDataChannel() { return new FakeDataChannel(); }
+    async createOffer() { return { type: 'offer', sdp: 'offer-sdp' }; }
+    async setLocalDescription(desc) { this.localDescription = desc; }
+    async setRemoteDescription() {}
+    addEventListener() {}
+    close() {}
+  }
+  globalThis.RTCPeerConnection = FakePeerConnection;
+  const transport = new FakeTransport();
+  const originalRequest = transport.request.bind(transport);
+  transport.request = async (message) => {
+    if (message.type === 'webrtc_offer') return { type: 'relay_kept', reason: 'Authority kept relay fallback' };
+    return originalRequest(message);
+  };
+  const client = createVarcoClient({
+    authorityId: 'authority', bridgeUrl: 'ws://bridge', manifest: { name: 'Demo', version: '1' },
+    transport, storage: new MemoryStorage(), connectionStrategy: 'optimistic',
+  });
+  await client.connect();
+  assert.equal(client.transportStatus.mode, 'relay');
+  // Let the background upgrade settle; it must not throw and must stay on relay.
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(client.transportStatus.mode, 'relay');
+  assert.equal((await client.getStates(['sensor.temp']))['sensor.temp'].state, '21');
   globalThis.RTCPeerConnection = previous;
 });
 

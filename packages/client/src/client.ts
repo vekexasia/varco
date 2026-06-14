@@ -35,6 +35,22 @@ export function createVarcoClient(options: VarcoClientOptions): VarcoClient {
     options.onTransportStatus?.(status);
   };
 
+  const resolveStrategy = (): "relay" | "webrtc-only" | "webrtc-first" | "optimistic" => {
+    if (options.connectionStrategy) return options.connectionStrategy;
+    if (options.webrtc === false) return "relay";
+    return "webrtc-first";
+  };
+
+  const performUpgrade = async (): Promise<boolean> => {
+    const p2p = await tryWebRtcUpgrade(relayTransport, setStatus);
+    if (!p2p) return false;
+    activeTransport = p2p;
+    attachEvents(activeTransport);
+    activeTransport.onClose?.(scheduleReconnect);
+    setStatus({ mode: "p2p", detail: "WebRTC data channel connected" });
+    return true;
+  };
+
   const establish = async () => {
     const id = await identityPromise;
     const nonce = randomId(12);
@@ -46,13 +62,19 @@ export function createVarcoClient(options: VarcoClientOptions): VarcoClient {
       signature: await signAuthenticate(id, nonce, binding),
     });
     setStatus({ mode: "relay", detail: "relay authenticated" });
-    if (options.webrtc !== false) {
-      const p2p = await tryWebRtcUpgrade(relayTransport, setStatus);
-      if (p2p) {
-        activeTransport = p2p;
-        attachEvents(activeTransport);
-        activeTransport.onClose?.(scheduleReconnect);
-        setStatus({ mode: "p2p", detail: "WebRTC data channel connected" });
+    const strategy = resolveStrategy();
+    if (strategy === "optimistic") {
+      // Resolve on the relay immediately and upgrade to P2P in the background.
+      void performUpgrade().catch((err) => {
+        const detail = err instanceof Error ? err.message : "WebRTC upgrade failed";
+        setStatus({ mode: "relay", detail });
+      });
+      return;
+    }
+    if (strategy === "webrtc-only" || strategy === "webrtc-first") {
+      const upgraded = await performUpgrade();
+      if (!upgraded && strategy === "webrtc-only") {
+        throw new Error(transportStatus.detail || "WebRTC upgrade required but failed");
       }
     }
     // No silent fallback on a signaling-only bridge: relay data is rejected
@@ -261,8 +283,8 @@ async function tryWebRtcUpgrade(relayTransport: VarcoTransport, setStatus: (stat
   }
   const pc = new Peer({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
   const channel = pc.createDataChannel("varco", { ordered: true });
+  const opened = waitForDataChannelOpen(channel);
   try {
-    const opened = waitForDataChannelOpen(channel);
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
     await waitForIceGathering(pc);
@@ -270,15 +292,17 @@ async function tryWebRtcUpgrade(relayTransport: VarcoTransport, setStatus: (stat
     const answer = await relayTransport.request({ type: "webrtc_offer", sdp: local.sdp, sdp_type: local.type });
     if (answer.type !== "webrtc_answer") {
       setStatus({ mode: "relay", detail: answer.reason || "Authority kept relay fallback" });
+      opened.cancel();
       pc.close();
       return null;
     }
     await pc.setRemoteDescription({ type: answer.sdp_type ?? "answer", sdp: answer.sdp });
-    await opened;
+    await opened.promise;
     return new DataChannelTransport(pc, channel);
   } catch (err) {
     const detail = err instanceof Error ? err.message : "WebRTC failed";
     setStatus({ mode: "relay", detail });
+    opened.cancel();
     pc.close();
     return null;
   }
@@ -298,13 +322,24 @@ function waitForIceGathering(pc: RTCPeerConnection): Promise<void> {
   });
 }
 
-function waitForDataChannelOpen(channel: RTCDataChannel): Promise<void> {
-  if (channel.readyState === "open") return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error("WebRTC data channel timeout")), 10_000);
-    channel.addEventListener("open", () => {
+function waitForDataChannelOpen(channel: RTCDataChannel): { promise: Promise<void>; cancel: () => void } {
+  if (channel.readyState === "open") return { promise: Promise.resolve(), cancel: () => {} };
+  let timeout: ReturnType<typeof setTimeout>;
+  let onOpen: () => void;
+  const cancel = () => {
+    clearTimeout(timeout);
+    channel.removeEventListener("open", onOpen);
+  };
+  const promise = new Promise<void>((resolve, reject) => {
+    timeout = setTimeout(() => {
+      channel.removeEventListener("open", onOpen);
+      reject(new Error("WebRTC data channel timeout"));
+    }, 10_000);
+    onOpen = () => {
       clearTimeout(timeout);
       resolve();
-    }, { once: true });
+    };
+    channel.addEventListener("open", onOpen, { once: true });
   });
+  return { promise, cancel };
 }
