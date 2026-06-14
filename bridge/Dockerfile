@@ -21,4 +21,4 @@ COPY --from=deps /app/bridge/node_modules ./bridge/node_modules
 COPY --from=build /app/bridge/dist ./bridge/dist
 COPY --from=build /app/bridge/package.json ./bridge/package.json
 EXPOSE 8787
-CMD ["npm", "--workspace", "@varco/bridge", "run", "start:node"]
+CMD ["node", "bridge/dist/node.js"]
