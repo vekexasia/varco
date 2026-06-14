@@ -47,6 +47,16 @@ test('nginx ingress routes bridge paths to the bridge and everything else to Hom
   assert.match(nginx, /location \/ \{ proxy_pass http:\/\/127\.0\.0\.1:8123; \}/);
 });
 
+test('deploy workflow does not pass a host bind port to the deploy step', () => {
+  // The HA container host port is fixed at 127.0.0.1:8123 by the deploy script;
+  // exporting HA_HTTP_PORT in the deploy step is what collided with nginx on :80
+  // (the 2026-06-14 outage). Keep it out of that step.
+  assert.doesNotMatch(workflow, /export HA_HTTP_PORT=/);
+  // Public ingress (nginx) is port 80, so grant/verify steps default to 80.
+  assert.doesNotMatch(workflow, /HA_SHOWCASE_HTTP_PORT:-8123/);
+  assert.match(workflow, /HA_SHOWCASE_HTTP_PORT:-80/);
+});
+
 test('Varco declares aiortc so deployed Home Assistant can accept WebRTC offers', () => {
   assert.ok(manifest.requirements.includes('aiortc>=1.9.0'));
 });
