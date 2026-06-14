@@ -21,18 +21,50 @@ class VarcoPanel extends HTMLElement {
         this._loaded = false; await this.load();
       }
     });
+    // Poll for new pending access requests so they surface without a manual
+    // reload. A single interval is created here (connectedCallback runs once per
+    // attach) and cleared in disconnectedCallback, so no listeners accumulate.
+    if (!this._refreshTimer) {
+      const interval = Number(this.dataset.pollInterval) || 8000;
+      this._refreshTimer = setInterval(() => this.refreshPending(), interval);
+    }
+  }
+
+  disconnectedCallback() {
+    if (this._refreshTimer) {
+      clearInterval(this._refreshTimer);
+      this._refreshTimer = undefined;
+    }
+  }
+
+  // Lightweight poll: only re-render when the set of pending request IDs
+  // changed, so the owner is not interrupted mid-action by routine polling.
+  async refreshPending() {
+    if (!this._hass || !this._loaded) return;
+    try {
+      const requests = await this._hass.connection.sendMessagePromise({ type: 'varco/access_requests' });
+      const pendingIds = requests.filter((request) => request.status === 'pending').map((request) => request.request_id).sort().join(',');
+      if (pendingIds !== this._pendingSignature) {
+        this._loaded = false;
+        await this.load();
+      }
+    } catch (err) {
+      // Transient websocket errors are ignored; the next tick retries.
+    }
   }
 
   async load() {
     if (!this._hass) return;
     this._loaded = true;
-    const [info, requests, grants] = await Promise.all([
+    const [info, requests, grants, audit] = await Promise.all([
       this._hass.connection.sendMessagePromise({ type: 'varco/info' }),
       this._hass.connection.sendMessagePromise({ type: 'varco/access_requests' }),
       this._hass.connection.sendMessagePromise({ type: 'varco/grants' }),
+      this._hass.connection.sendMessagePromise({ type: 'varco/audit' }).catch(() => []),
     ]);
     await this.loadDashboards();
-    this.render({ info, requests, grants });
+    this._pendingSignature = requests.filter((request) => request.status === 'pending').map((request) => request.request_id).sort().join(',');
+    this.render({ info, requests, grants, audit });
   }
 
   async loadDashboards() {
@@ -267,6 +299,80 @@ class VarcoPanel extends HTMLElement {
     return date.toLocaleString();
   }
 
+  // Human-readable label for an audit event type.
+  auditEventLabel(event) {
+    const labels = {
+      access_request_received: 'Access request received',
+      access_request_approved: 'Access request approved',
+      access_request_rejected: 'Access request rejected',
+      grant_revoked: 'Grant revoked',
+      grant_deleted: 'Grant deleted',
+      grant_restrictions_updated: 'Restrictions updated',
+      consumer_connected: 'Consumer connected',
+      call_service: 'Service called',
+      permission_error: 'Permission denied',
+      rate_limited: 'Rate limited',
+      restriction_denied: 'Restriction denied',
+      history_query_limited: 'History query limited',
+      session_error: 'Session error',
+      webrtc_fallback: 'WebRTC fallback to relay',
+      webrtc_answer: 'WebRTC negotiated',
+    };
+    return labels[event] || String(event || 'event');
+  }
+
+  // Render the non-sensitive details of an audit event as a compact string.
+  // The Authority already redacts sensitive payloads (audit.py SENSITIVE_DETAIL_KEYS),
+  // but we additionally only surface a known-safe allowlist of summary fields.
+  auditDetailSummary(details) {
+    if (!details || typeof details !== 'object') return '';
+    const safeKeys = ['domain', 'service', 'operation', 'entity_count', 'denied_count', 'reason', 'manifest_name', 'restriction_count', 'restriction_id'];
+    const parts = [];
+    safeKeys.forEach((key) => {
+      if (details[key] !== undefined && details[key] !== null && details[key] !== '') {
+        parts.push(`${key}: ${this.escape(String(details[key]))}`);
+      }
+    });
+    return parts.join(' · ');
+  }
+
+  auditRow(event) {
+    const detail = this.auditDetailSummary(event.details);
+    return `
+      <div class="audit-row" data-audit-event data-audit-grant="${this.escape(event.grant_id || '')}">
+        <span class="audit-type" data-audit-type>${this.escape(this.auditEventLabel(event.event))}</span>
+        <span class="audit-ts">${this.escape(this.formatDate(event.ts))}</span>
+        ${detail ? `<span class="audit-detail">${detail}</span>` : ''}
+        ${event.grant_id ? `<code class="audit-grant">${this.escape(this.shortKey(event.grant_id))}</code>` : ''}
+      </div>`;
+  }
+
+  auditSection() {
+    const events = Array.isArray(this._lastState?.audit) ? this._lastState.audit : [];
+    const recent = events.slice(-50).reverse();
+    return `
+      <h3>Activity</h3>
+      <div class="varco-card audit-card">
+        <div class="eyebrow">Access oversight</div>
+        <p>Recent Varco events. Sensitive payloads (states, snapshots, history) are never shown.</p>
+        <div class="audit-list" data-audit-list>
+          ${recent.length ? recent.map((event) => this.auditRow(event)).join('') : '<p class="empty-scope">No activity recorded yet.</p>'}
+        </div>
+      </div>`;
+  }
+
+  grantActivity(grantId) {
+    const events = Array.isArray(this._lastState?.audit) ? this._lastState.audit : [];
+    const own = events.filter((event) => event.grant_id === grantId).slice(-25).reverse();
+    return `
+      <details class="scope-details grant-activity" data-grant-activity="${this.escape(grantId)}">
+        <summary>Activity (${own.length})</summary>
+        <div class="audit-list">
+          ${own.length ? own.map((event) => this.auditRow(event)).join('') : '<p class="empty-scope">No activity for this grant.</p>'}
+        </div>
+      </details>`;
+  }
+
   requestCard(request) {
     const name = this.manifestName(request);
     return `
@@ -294,18 +400,43 @@ class VarcoPanel extends HTMLElement {
       </div>`;
   }
 
+  // A grant is expired when it has a past expires_at and is not revoked.
+  isGrantExpired(grant) {
+    if (!grant.expires_at || grant.revoked) return false;
+    const expires = new Date(grant.expires_at);
+    if (Number.isNaN(expires.getTime())) return false;
+    return Date.now() >= expires.getTime();
+  }
+
+  grantStatus(grant) {
+    if (grant.revoked) return 'revoked';
+    if (this.isGrantExpired(grant)) return 'expired';
+    return 'active';
+  }
+
+  filteredGrants(grants) {
+    const search = (this._grantSearch || '').trim().toLowerCase();
+    const statusFilter = this._grantStatusFilter || 'all';
+    return grants.filter((grant) => {
+      if (search && !this.manifestName(grant).toLowerCase().includes(search)) return false;
+      if (statusFilter !== 'all' && this.grantStatus(grant) !== statusFilter) return false;
+      return true;
+    });
+  }
+
   grantCard(grant) {
     const name = this.manifestName(grant);
     const revoked = Boolean(grant.revoked);
+    const status = this.grantStatus(grant);
     const restrictions = Array.isArray(grant.restrictions) ? grant.restrictions : [];
     return `
-      <div class="varco-card grant-card ${revoked ? 'revoked' : ''}">
+      <div class="varco-card grant-card grant-${status} ${revoked ? 'revoked' : ''}" data-grant-name="${this.escape(name)}" data-grant-card-status="${status}">
         <div class="card-header-row">
           <div>
             <div class="eyebrow">Grant</div>
             <h4>${this.escape(name)}</h4>
           </div>
-          <span class="status-pill ${revoked ? 'status-revoked' : 'status-active'}">${revoked ? 'revoked' : 'active'}</span>
+          <span class="status-pill status-${status}">${status}</span>
         </div>
         <div class="meta-grid">
           <div><span>Name</span><strong>${this.escape(name)}</strong></div>
@@ -313,12 +444,14 @@ class VarcoPanel extends HTMLElement {
           <div><span>Created</span><strong>${this.escape(this.formatDate(grant.created_at))}</strong></div>
           <div><span>Last used</span><strong>${grant.last_used_at ? this.escape(this.formatDate(grant.last_used_at)) : 'never'}</strong></div>
           ${revoked ? `<div><span>Revoked</span><strong>${this.escape(this.formatDate(grant.revoked_at))}</strong></div>` : ''}
+          ${grant.expires_at ? `<div><span>Expires</span><strong>${this.escape(this.formatDate(grant.expires_at))}</strong></div>` : ''}
           <div><span>Consumer key</span><code title="${this.escape(grant.consumer_pk)}">${this.escape(this.shortKey(grant.consumer_pk))}</code></div>
           <div><span>Grant ID</span><code>${this.escape(grant.grant_id)}</code></div>
           ${grant.request_id ? `<div><span>Original request</span><code>${this.escape(grant.request_id)}</code></div>` : ''}
         </div>
         ${this.scopeDetails(grant.manifest, false)}
         ${revoked ? '' : this.restrictionsSection(grant.grant_id, restrictions)}
+        ${this.grantActivity(grant.grant_id)}
         <div class="button-row">
           ${revoked ? '' : `<button class="secondary" data-revoke="${this.escape(grant.grant_id)}">Revoke access</button>`}
           <button class="danger" data-delete-grant="${this.escape(grant.grant_id)}" data-name="${this.escape(name)}">Delete grant record</button>
@@ -415,7 +548,7 @@ class VarcoPanel extends HTMLElement {
     const id = `${type}-${Date.now()}`;
     if (type === 'expiry') {
       const raw = container.querySelector('[data-rf-expires]')?.value;
-      if (!raw) { alert('Please set a date/time for the expiry.'); return null; }
+      if (!raw) { this.showFieldError(container, 'Please set a date/time for the expiry.'); return null; }
       return { id, type, enabled: true, applies_to: appliesTo, params: { expires_at: new Date(raw).toISOString() } };
     }
     if (type === 'schedule') {
@@ -426,7 +559,7 @@ class VarcoPanel extends HTMLElement {
     }
     if (type === 'pin') {
       const pin = container.querySelector('[data-rf-pin]')?.value;
-      if (!pin) { alert('Please enter a PIN.'); return null; }
+      if (!pin) { this.showFieldError(container, 'Please enter a PIN.'); return null; }
       return { id, type, enabled: true, applies_to: appliesTo, pin };
     }
     if (type === 'rate_limit') {
@@ -436,10 +569,23 @@ class VarcoPanel extends HTMLElement {
     }
     if (type === 'template') {
       const valueTemplate = (container.querySelector('[data-rf-template]')?.value || '').trim();
-      if (!valueTemplate) { alert('Please enter a condition template.'); return null; }
+      if (!valueTemplate) { this.showFieldError(container, 'Please enter a condition template.'); return null; }
       return { id, type, enabled: true, applies_to: appliesTo, params: { value_template: valueTemplate } };
     }
     return null;
+  }
+
+  // Inline validation message inside a restriction form, replacing native dialogs.
+  showFieldError(container, message) {
+    if (!container) return;
+    let note = container.querySelector('[data-rf-error]');
+    if (!note) {
+      note = document.createElement('p');
+      note.className = 'warning';
+      note.setAttribute('data-rf-error', '');
+      container.appendChild(note);
+    }
+    note.textContent = message;
   }
 
   dashboardExportSection() {
@@ -570,6 +716,22 @@ class VarcoPanel extends HTMLElement {
         .status-pill { border-radius: 999px; font-size: 12px; font-weight: 700; padding: 5px 8px; text-transform: uppercase; }
         .status-active { background: var(--success-color, #0b8043); color: white; }
         .status-revoked { background: var(--secondary-background-color); color: var(--secondary-text-color); }
+        .status-pill.status-expired { background: var(--warning-color, #f4b400); color: #1f1f1f; }
+        .grant-card.grant-expired { opacity: 0.88; border-left: 4px solid var(--warning-color, #f4b400); }
+        .grant-controls { display: flex; flex-wrap: wrap; gap: 10px; margin: 10px 0 4px; }
+        .grant-controls input[type="search"] { flex: 1 1 220px; min-width: 180px; padding: 8px; border: 1px solid var(--divider-color); border-radius: 6px; background: var(--card-background-color); color: var(--primary-text-color); }
+        .grant-controls select { margin: 0; max-width: 200px; }
+        .audit-card .audit-list { display: flex; flex-direction: column; gap: 4px; max-height: 420px; overflow: auto; }
+        .grant-activity .audit-list { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; max-height: 300px; overflow: auto; }
+        .audit-row { align-items: baseline; background: var(--secondary-background-color); border-radius: 6px; display: flex; flex-wrap: wrap; gap: 8px; padding: 6px 10px; }
+        .audit-type { font-weight: 700; }
+        .audit-ts { color: var(--secondary-text-color); font-size: 12px; }
+        .audit-detail { color: var(--secondary-text-color); font-size: 12px; }
+        .audit-grant { font-size: 11px; margin-left: auto; }
+        .grant-activity summary { cursor: pointer; font-weight: 700; }
+        .inline-confirm { align-items: center; background: var(--secondary-background-color); border: 1px solid var(--divider-color); border-radius: 8px; display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; padding: 10px; width: 100%; }
+        .inline-confirm-msg { flex: 1 1 240px; }
+        .inline-confirm-actions { display: flex; gap: 6px; }
         .button-row { margin-top: 12px; }
         .field-label { display: block; font-weight: 700; margin-top: 12px; }
         .export-summary { align-items: center; background: var(--secondary-background-color); border-radius: 8px; display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; padding: 10px; }
@@ -592,6 +754,52 @@ class VarcoPanel extends HTMLElement {
       </style>`;
   }
 
+  // Show/hide grant cards in place by current search + status filter, without
+  // a full re-render so the search input keeps focus.
+  applyGrantFilter() {
+    const search = (this._grantSearch || '').trim().toLowerCase();
+    const statusFilter = this._grantStatusFilter || 'all';
+    let visible = 0;
+    this.querySelectorAll('.grant-card').forEach((card) => {
+      const name = (card.getAttribute('data-grant-name') || '').toLowerCase();
+      const status = card.getAttribute('data-grant-card-status') || 'active';
+      const matches = (!search || name.includes(search)) && (statusFilter === 'all' || status === statusFilter);
+      card.style.display = matches ? '' : 'none';
+      if (matches) visible += 1;
+    });
+    const empty = this.querySelector('[data-grant-empty]');
+    if (empty) empty.style.display = visible ? 'none' : '';
+  }
+
+  // Inline, panel-native confirmation for destructive actions. Replaces native
+  // browser dialogs. Injects a confirm row next to the triggering button.
+  showInlineConfirm(triggerEl, { kind, message, confirmLabel, onConfirm }) {
+    const row = triggerEl.closest('.button-row') || triggerEl.parentElement;
+    if (!row) { onConfirm(); return; }
+    if (row.querySelector('[data-confirm-row]')) return;
+    triggerEl.style.display = 'none';
+    const confirmEl = document.createElement('div');
+    confirmEl.className = 'inline-confirm';
+    confirmEl.setAttribute('data-confirm-row', kind);
+    confirmEl.setAttribute(`data-confirm-${kind}`, '');
+    confirmEl.innerHTML = `
+      <span class="inline-confirm-msg">${this.escape(message)}</span>
+      <span class="inline-confirm-actions">
+        <button class="danger" data-confirm-yes>${this.escape(confirmLabel)}</button>
+        <button class="secondary" data-cancel-confirm>Cancel</button>
+      </span>`;
+    const cleanup = () => {
+      confirmEl.remove();
+      triggerEl.style.display = '';
+    };
+    confirmEl.querySelector('[data-cancel-confirm]').onclick = cleanup;
+    confirmEl.querySelector('[data-confirm-yes]').onclick = () => {
+      confirmEl.querySelectorAll('button').forEach((button) => { button.disabled = true; });
+      onConfirm();
+    };
+    row.appendChild(confirmEl);
+  }
+
   render(state) {
     if (state) this._lastState = state;
     if (!this._lastState || this._lastState.loading) {
@@ -609,7 +817,16 @@ class VarcoPanel extends HTMLElement {
           <h3>Pending access requests</h3>
           ${pending.length ? pending.map((request) => this.requestCard(request)).join('') : '<p>No pending requests.</p>'}
           <h3>Grants</h3>
+          ${current.grants.length ? `
+            <div class="grant-controls">
+              <input type="search" data-grant-search placeholder="Search by consumer name" value="${this.escape(this._grantSearch || '')}">
+              <select data-grant-status-filter>
+                ${['all', 'active', 'revoked', 'expired'].map((value) => `<option value="${value}" ${(this._grantStatusFilter || 'all') === value ? 'selected' : ''}>${value === 'all' ? 'All statuses' : value.charAt(0).toUpperCase() + value.slice(1)}</option>`).join('')}
+              </select>
+            </div>` : ''}
           ${current.grants.length ? current.grants.map((grant) => this.grantCard(grant)).join('') : '<p>No grants.</p>'}
+          ${current.grants.length ? '<p class="empty-scope" data-grant-empty style="display:none">No grants match the current filter.</p>' : ''}
+          ${this.auditSection()}
         </div>
       </ha-card>`;
     this.querySelectorAll('[data-approve]').forEach((el) => el.onclick = () => {
@@ -627,10 +844,21 @@ class VarcoPanel extends HTMLElement {
       this.call('varco/approve_request', payload);
     });
     this.querySelectorAll('[data-reject]').forEach((el) => el.onclick = () => this.call('varco/reject_request', { request_id: el.dataset.reject }));
-    this.querySelectorAll('[data-revoke]').forEach((el) => el.onclick = () => this.call('varco/revoke_grant', { grant_id: el.dataset.revoke }));
+    this.querySelectorAll('[data-revoke]').forEach((el) => el.onclick = () => {
+      this.showInlineConfirm(el, {
+        kind: 'revoke',
+        message: 'Revoke access? This immediately ends active sessions for this consumer.',
+        confirmLabel: 'Revoke access',
+        onConfirm: () => this.call('varco/revoke_grant', { grant_id: el.dataset.revoke }),
+      });
+    });
     this.querySelectorAll('[data-delete-grant]').forEach((el) => el.onclick = () => {
-      if (!window.confirm(`Delete grant record for ${el.dataset.name}? This also removes active access for that consumer.`)) return;
-      this.call('varco/delete_grant', { grant_id: el.dataset.deleteGrant });
+      this.showInlineConfirm(el, {
+        kind: 'delete',
+        message: `Delete grant record for ${el.dataset.name}? This also removes active access for that consumer.`,
+        confirmLabel: 'Delete grant record',
+        onConfirm: () => this.call('varco/delete_grant', { grant_id: el.dataset.deleteGrant }),
+      });
     });
     // restriction type selector — swap in the appropriate fields
     this.querySelectorAll('[data-rf-type]').forEach((sel) => {
@@ -668,6 +896,16 @@ class VarcoPanel extends HTMLElement {
         await this.load();
       };
     });
+    const grantSearch = this.querySelector('[data-grant-search]');
+    if (grantSearch) grantSearch.oninput = () => {
+      this._grantSearch = grantSearch.value;
+      this.applyGrantFilter();
+    };
+    const grantStatusFilter = this.querySelector('[data-grant-status-filter]');
+    if (grantStatusFilter) grantStatusFilter.onchange = () => {
+      this._grantStatusFilter = grantStatusFilter.value;
+      this.applyGrantFilter();
+    };
     const dashboardSelect = this.querySelector('[data-dashboard-select]');
     if (dashboardSelect) dashboardSelect.onchange = () => this.pickDashboard(dashboardSelect.value);
     const viewSelect = this.querySelector('[data-view-select]');
@@ -675,6 +913,7 @@ class VarcoPanel extends HTMLElement {
     this.querySelectorAll('[data-export-entity]').forEach((el) => el.onchange = () => this.toggleEntity(el.dataset.exportEntity, el.checked));
     const download = this.querySelector('[data-download-brief]');
     if (download) download.onclick = () => this.downloadDashboardBrief();
+    this.applyGrantFilter();
   }
 
   slugify(value) {
