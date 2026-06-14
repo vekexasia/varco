@@ -103,6 +103,40 @@ try {
   });
   assert(liveRefresh.ok, `Live refresh should surface new pending request without manual reload (${liveRefresh.reason})`);
 
+  // --- #66: relay health block ---
+  const relayBlock = page.locator('varco-panel [data-relay-status]');
+  await relayBlock.waitFor({ timeout: 20_000 });
+  const bridgeUrl = await page.locator('varco-panel [data-relay-bridge-url]').innerText();
+  assert(bridgeUrl.trim().length > 0 && bridgeUrl.trim() !== 'unknown', `Relay block should show a bridge URL (got: ${bridgeUrl})`);
+  await page.locator('varco-panel [data-relay-last-connected]').waitFor({ timeout: 5_000 });
+
+  // --- #61: approve a request with an expiry in one step ---
+  const expiryControl = page.locator('varco-panel [data-approve-expiry]').first();
+  if ((await expiryControl.count()) > 0) {
+    await expiryControl.waitFor({ timeout: 10_000 });
+    // The approve handler must read the chosen expiry and send expires_at.
+    const expiryWired = await page.locator('varco-panel').evaluate((panel) => {
+      const src = panel.constructor?.toString() || '';
+      return /expires_at/.test(src) && /data-approve-expiry/.test(src);
+    });
+    assert(expiryWired, 'Approve handler must support expires_at via the approve-expiry control');
+  }
+
+  // --- #63: restrictions toggle + edit hooks (rendered by restrictionRow) ---
+  // No live grant carries restrictions, so assert the renderer emits the hooks
+  // for a synthetic restriction without mutating any real grant.
+  const restrictionHooks = await page.locator('varco-panel').evaluate((panel) => {
+    const html = panel.restrictionRow({ id: 'r1', type: 'rate_limit', enabled: true, applies_to: 'grant', params: { limit: 5, window_seconds: 60 } }, 0, 'GRANT_X');
+    return {
+      toggle: /data-toggle-restriction/.test(html),
+      edit: /data-edit-restriction/.test(html),
+      remove: /data-remove-restriction/.test(html),
+    };
+  });
+  assert(restrictionHooks.toggle, 'Restriction row must expose an enable/disable toggle hook');
+  assert(restrictionHooks.edit, 'Restriction row must expose an edit-in-place hook');
+  assert(restrictionHooks.remove, 'Restriction row must keep the remove hook');
+
   mkdirSync(dirname(screenshotPath), { recursive: true });
   await page.screenshot({ path: screenshotPath, fullPage: true });
   console.log(`Varco panel browser e2e passed. Screenshot: ${screenshotPath}`);
