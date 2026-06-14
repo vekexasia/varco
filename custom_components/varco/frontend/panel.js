@@ -521,6 +521,8 @@ class VarcoPanel extends HTMLElement {
     const type = String(r.type || '');
     const appliesTo = String(r.applies_to || 'grant');
     const params = r.params || {};
+    const enabled = r.enabled !== false;
+    const id = this.escape(grantId);
     let detail = '';
     if (type === 'expiry')    detail = `deny after ${this.escape(params.expires_at || '?')}`;
     if (type === 'schedule')  detail = `${this.escape((params.days || []).join(', '))} ${this.escape(params.start_time || '')}–${this.escape(params.end_time || '')}`;
@@ -528,14 +530,100 @@ class VarcoPanel extends HTMLElement {
     if (type === 'rate_limit') detail = `max ${this.escape(String(params.limit || '?'))} per ${this.escape(String(params.window_seconds || '?'))} s`;
     if (type === 'template')  detail = this.escape(String(params.value_template || ''));
     return `
-      <div class="restriction-row">
-        <div>
-          <span class="restriction-type-badge">${this.escape(type)}</span>
-          <code>${this.escape(appliesTo)}</code>
-          <small>${detail}</small>
+      <div class="restriction-row ${enabled ? '' : 'disabled'}">
+        <div class="restriction-main">
+          <div>
+            <span class="restriction-type-badge">${this.escape(type)}</span>
+            <code>${this.escape(appliesTo)}</code>
+            <small>${detail}</small>
+            ${enabled ? '' : '<span class="restriction-disabled-tag">disabled</span>'}
+          </div>
+          <div class="restriction-actions">
+            <button class="secondary" style="padding:4px 10px;font-size:12px" data-toggle-restriction="${id}" data-restriction-index="${index}">${enabled ? 'Disable' : 'Enable'}</button>
+            <button class="secondary" style="padding:4px 10px;font-size:12px" data-edit-restriction="${id}" data-restriction-index="${index}">Edit</button>
+            <button class="secondary" style="padding:4px 10px;font-size:12px" data-remove-restriction="${id}" data-restriction-index="${index}">Remove</button>
+          </div>
         </div>
-        <button class="secondary" style="padding:4px 10px;font-size:12px" data-remove-restriction="${this.escape(grantId)}" data-restriction-index="${index}">Remove</button>
+        <div class="restriction-edit" data-restriction-edit="${id}" data-restriction-index="${index}" hidden></div>
       </div>`;
+  }
+
+  // datetime-local input value (YYYY-MM-DDTHH:mm) from a stored ISO string.
+  toLocalInput(iso) {
+    if (!iso) return '';
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return '';
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+
+  // Inline editable fields for an existing restriction, prefilled from its
+  // current params. Hooks use data-re-* to stay distinct from the add form.
+  restrictionEditFields(r) {
+    const type = String(r.type || '');
+    const params = r.params || {};
+    const inputStyle = 'display:block;width:100%;max-width:420px;padding:7px;border:1px solid var(--divider-color);border-radius:6px;background:var(--card-background-color);color:var(--primary-text-color);margin-bottom:10px';
+    const appliesField = `
+      <label class="field-label" style="margin-top:0">Applies to</label>
+      <input type="text" data-re-applies value="${this.escape(String(r.applies_to || 'grant'))}" style="${inputStyle}">`;
+    if (type === 'expiry') return appliesField + `
+      <label class="field-label">Deny after</label>
+      <input type="datetime-local" data-re-expires value="${this.escape(this.toLocalInput(params.expires_at))}" style="${inputStyle}">`;
+    if (type === 'schedule') {
+      const days = Array.isArray(params.days) ? params.days : [];
+      return appliesField + `
+      <label class="field-label">Allowed days</label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+        ${['mon','tue','wed','thu','fri','sat','sun'].map(d => `<label><input type="checkbox" data-re-day="${d}" ${days.includes(d) ? 'checked' : ''}> ${d}</label>`).join(' ')}
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <label class="field-label">From <input type="time" data-re-start value="${this.escape(params.start_time || '08:00')}" style="margin-left:6px;padding:5px;border:1px solid var(--divider-color);border-radius:6px;background:var(--card-background-color);color:var(--primary-text-color)"></label>
+        <label class="field-label">Until <input type="time" data-re-end value="${this.escape(params.end_time || '22:00')}" style="margin-left:6px;padding:5px;border:1px solid var(--divider-color);border-radius:6px;background:var(--card-background-color);color:var(--primary-text-color)"></label>
+      </div>`;
+    }
+    if (type === 'pin') return appliesField + `
+      <label class="field-label">New PIN <small style="font-weight:400;color:var(--secondary-text-color)">(leave blank to keep the current PIN)</small></label>
+      <input type="password" data-re-pin placeholder="Leave blank to keep current" autocomplete="new-password" style="display:block;width:100%;max-width:280px;padding:7px;border:1px solid var(--divider-color);border-radius:6px;background:var(--card-background-color);color:var(--primary-text-color);margin-bottom:10px">`;
+    if (type === 'rate_limit') return appliesField + `
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
+        <label class="field-label">Max calls <input type="number" data-re-limit min="1" value="${this.escape(String(params.limit ?? 10))}" style="margin-left:6px;width:70px;padding:5px;border:1px solid var(--divider-color);border-radius:6px;background:var(--card-background-color);color:var(--primary-text-color)"></label>
+        <label class="field-label">per <input type="number" data-re-window min="1" value="${this.escape(String(params.window_seconds ?? 3600))}" style="margin-left:6px;width:80px;padding:5px;border:1px solid var(--divider-color);border-radius:6px;background:var(--card-background-color);color:var(--primary-text-color)"> seconds</label>
+      </div>`;
+    if (type === 'template') return appliesField + `
+      <label class="field-label">Condition template <small style="font-weight:400;color:var(--secondary-text-color)">(Jinja2; falsy or error denies)</small></label>
+      <textarea data-re-template rows="3" style="display:block;width:100%;max-width:420px;padding:7px;border:1px solid var(--divider-color);border-radius:6px;background:var(--card-background-color);color:var(--primary-text-color);margin-bottom:10px;font-family:monospace">${this.escape(params.value_template || '')}</textarea>`;
+    return appliesField;
+  }
+
+  // Build the updated restriction for an edit, preserving id/type/enabled and
+  // any params not exposed in the form (e.g. an existing pin_hash).
+  buildEditedRestriction(grantId, index, editEl) {
+    const grant = this._lastState?.grants?.find((g) => g.grant_id === grantId);
+    const original = grant?.restrictions?.[index];
+    if (!original) return null;
+    const type = String(original.type || '');
+    const appliesTo = (editEl.querySelector('[data-re-applies]')?.value || 'grant').trim();
+    const params = { ...(original.params || {}) };
+    if (type === 'expiry') {
+      const raw = editEl.querySelector('[data-re-expires]')?.value;
+      if (!raw) { this.showFieldError(editEl, 'Please set a date/time for the expiry.'); return null; }
+      params.expires_at = new Date(raw).toISOString();
+    } else if (type === 'schedule') {
+      params.days = ['mon','tue','wed','thu','fri','sat','sun'].filter(d => editEl.querySelector(`[data-re-day="${d}"]`)?.checked);
+      params.start_time = editEl.querySelector('[data-re-start]')?.value || '00:00';
+      params.end_time = editEl.querySelector('[data-re-end]')?.value || '23:59';
+    } else if (type === 'pin') {
+      const pin = editEl.querySelector('[data-re-pin]')?.value;
+      if (pin) params.pin = pin; // blank leaves existing pin_hash untouched
+    } else if (type === 'rate_limit') {
+      params.limit = Number(editEl.querySelector('[data-re-limit]')?.value || 10);
+      params.window_seconds = Number(editEl.querySelector('[data-re-window]')?.value || 3600);
+    } else if (type === 'template') {
+      const valueTemplate = (editEl.querySelector('[data-re-template]')?.value || '').trim();
+      if (!valueTemplate) { this.showFieldError(editEl, 'Please enter a condition template.'); return null; }
+      params.value_template = valueTemplate;
+    }
+    return { ...original, applies_to: appliesTo, params };
   }
 
   buildNewRestriction(grantId) {
@@ -744,9 +832,14 @@ class VarcoPanel extends HTMLElement {
         .entity-row small { color: var(--secondary-text-color); display: block; margin-top: 3px; }
         .restriction-section summary { cursor: pointer; font-weight: 700; }
         .restriction-list { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
-        .restriction-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--secondary-background-color); border-radius: 8px; padding: 8px 10px; }
-        .restriction-row > div { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .restriction-row { display: flex; flex-direction: column; gap: 8px; background: var(--secondary-background-color); border-radius: 8px; padding: 8px 10px; }
+        .restriction-row.disabled { opacity: 0.6; }
+        .restriction-main { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+        .restriction-main > div { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .restriction-actions { display: flex; gap: 4px; flex-wrap: wrap; }
+        .restriction-disabled-tag { color: var(--secondary-text-color); font-size: 11px; font-weight: 700; text-transform: uppercase; }
         .restriction-row small { color: var(--secondary-text-color); }
+        .restriction-edit { border-top: 1px solid var(--divider-color); padding-top: 8px; }
         .restriction-type-badge { background: var(--primary-color); color: var(--text-primary-color); border-radius: 4px; font-size: 11px; font-weight: 700; padding: 2px 7px; text-transform: uppercase; }
         .restriction-form { border: 1px dashed var(--divider-color); border-radius: 8px; margin-top: 12px; padding: 12px; }
         .restriction-form-row { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
@@ -894,6 +987,59 @@ class VarcoPanel extends HTMLElement {
         });
         this._loaded = false;
         await this.load();
+      };
+    });
+    // toggle restriction enabled/disabled
+    this.querySelectorAll('[data-toggle-restriction]').forEach((btn) => {
+      btn.onclick = async () => {
+        const grantId = btn.dataset.toggleRestriction;
+        const idx = Number(btn.dataset.restrictionIndex);
+        const grant = this._lastState?.grants?.find((g) => g.grant_id === grantId);
+        const existing = Array.isArray(grant?.restrictions) ? grant.restrictions : [];
+        if (!existing[idx]) return;
+        btn.disabled = true;
+        const updated = existing.map((item, i) => i === idx ? { ...item, enabled: item.enabled === false } : item);
+        await this._hass.connection.sendMessagePromise({
+          type: 'varco/update_grant_restrictions',
+          grant_id: grantId,
+          restrictions: updated,
+        });
+        this._loaded = false;
+        await this.load();
+      };
+    });
+    // edit restriction in place
+    this.querySelectorAll('[data-edit-restriction]').forEach((btn) => {
+      btn.onclick = () => {
+        const grantId = btn.dataset.editRestriction;
+        const idx = Number(btn.dataset.restrictionIndex);
+        const grant = this._lastState?.grants?.find((g) => g.grant_id === grantId);
+        const original = grant?.restrictions?.[idx];
+        const editEl = this.querySelector(`[data-restriction-edit="${CSS.escape(grantId)}"][data-restriction-index="${idx}"]`);
+        if (!original || !editEl) return;
+        if (!editEl.hidden) return; // already open
+        editEl.innerHTML = `
+          ${this.restrictionEditFields(original)}
+          <div class="button-row" style="margin-top:8px">
+            <button class="primary" style="padding:6px 12px;font-size:13px" data-re-save>Save</button>
+            <button class="secondary" style="padding:6px 12px;font-size:13px" data-re-cancel>Cancel</button>
+          </div>`;
+        editEl.hidden = false;
+        editEl.querySelector('[data-re-cancel]').onclick = () => { editEl.hidden = true; editEl.innerHTML = ''; };
+        editEl.querySelector('[data-re-save]').onclick = async (ev) => {
+          const updatedR = this.buildEditedRestriction(grantId, idx, editEl);
+          if (!updatedR) return;
+          const existing = Array.isArray(grant?.restrictions) ? grant.restrictions : [];
+          const updated = existing.map((item, i) => i === idx ? updatedR : item);
+          ev.currentTarget.disabled = true; ev.currentTarget.textContent = 'Saving…';
+          await this._hass.connection.sendMessagePromise({
+            type: 'varco/update_grant_restrictions',
+            grant_id: grantId,
+            restrictions: updated,
+          });
+          this._loaded = false;
+          await this.load();
+        };
       };
     });
     const grantSearch = this.querySelector('[data-grant-search]');
