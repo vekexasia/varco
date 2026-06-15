@@ -18,6 +18,7 @@ import {
   validAuthorityId,
 } from "./logic";
 import { shareShellResponse } from "./share";
+import { VERSION } from "./version";
 import { VARCO_CLIENT_BUNDLE } from "./varco-client-bundle";
 
 export interface Env {
@@ -70,7 +71,7 @@ export default {
     const origin = request.headers.get("Origin");
     const policy = parsePolicy(env);
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(policy, origin) });
-    if (parts[0] === "health" || parts[0] === "healthz") return jsonResponse({ ok: true }, policy, origin);
+    if (parts[0] === "health" || parts[0] === "healthz") return jsonResponse({ ok: true, version: VERSION }, policy, origin);
     if (parts[0] === "varco-client.js") return new Response(VARCO_CLIENT_BUNDLE, { headers: { "Content-Type": "application/javascript; charset=utf-8", "Cache-Control": "no-store" } });
     if (parts[0] === "share" && parts[1]) return shareShellResponse(decodeURIComponent(parts[1]));
     if (parts[0] === "presence" && parts[1]) {

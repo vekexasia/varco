@@ -82,9 +82,7 @@ async def _async_setup_authority(hass, entry_id: str, entry_data: dict, entry=No
     relay = VarcoRelay(hass, {**entry_data, **identity}, store)
     hass.data[DOMAIN][entry_id] = {"store": store, "relay": relay}
     await async_setup_services(hass)
-    if not hass.data[DOMAIN].get("websocket_registered"):
-        async_setup_websocket(hass)
-        hass.data[DOMAIN]["websocket_registered"] = True
+    async_setup_websocket(hass)
     await _async_register_panel(hass)
     await relay.async_start()
     return True

@@ -94,7 +94,9 @@ test('node bridge reports health and offline/online presence', async () => {
   const bridge = await startNodeBridge({ port: 0 });
   try {
     const authority = makeAuthority();
-    assert.deepEqual(await (await fetch(httpUrl(bridge.server, '/health'))).json(), { ok: true });
+    const health = await (await fetch(httpUrl(bridge.server, '/health'))).json();
+    assert.equal(health.ok, true);
+    assert.equal(typeof health.version, 'string');
     assert.deepEqual(await (await fetch(httpUrl(bridge.server, `/presence/${authority.authorityId}`))).json(), { online: false });
     const ws = await authedAuthority(bridge.server, authority);
     assert.deepEqual(await (await fetch(httpUrl(bridge.server, `/presence/${authority.authorityId}`))).json(), { online: true });

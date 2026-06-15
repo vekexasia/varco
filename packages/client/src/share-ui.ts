@@ -74,16 +74,19 @@ export function renderShareCards(cards: ShareCard[]): string {
   return `<div class="varco-share-cards">${cards.map(renderShareCard).join("")}</div>`;
 }
 
+const INACTIVE_STATES = new Set(["off", "closed", "locked", "unavailable", "unknown", "idle", "standby", "none", ""]);
+
 export function renderShareCard(card: ShareCard): string {
   const controls = card.controls.map(renderControl).join("");
-  return `<section class="varco-card varco-card--${esc(card.domain)}" data-entity="${esc(card.entityId)}" data-domain="${esc(card.domain)}"><header><h2>${esc(card.title)}</h2><p>${esc(card.displayValue)}</p></header>${controls ? `<div class="varco-card__controls">${controls}</div>` : ""}</section>`;
+  const active = !INACTIVE_STATES.has(card.state.toLowerCase());
+  return `<section class="varco-card" data-entity="${esc(card.entityId)}" data-domain="${esc(card.domain)}" data-active="${active}"><div class="varco-card__head"><span class="varco-card__dot"></span><h2 class="varco-card__title">${esc(card.title)}</h2><span class="varco-card__state">${esc(card.displayValue)}</span></div>${controls ? `<div class="varco-card__controls">${controls}</div>` : ""}</section>`;
 }
 
 function renderControl(control: ShareControl): string {
   const base = `data-entity="${esc(control.entityId)}" data-domain="${esc(control.domain)}" data-service="${esc(control.service)}"`;
-  if (control.kind === "range") return `<label>${esc(control.label)} <input type="range" ${base} data-value-key="${esc(control.valueKey ?? "value")}" min="${esc(control.min ?? 0)}" max="${esc(control.max ?? 100)}" step="${esc(control.step ?? 1)}" value="${esc(control.value ?? 0)}"></label>`;
-  if (control.kind === "select") return `<label>${esc(control.label)} <select ${base} data-value-key="${esc(control.valueKey ?? "value")}">${(control.options ?? []).map((option) => `<option value="${esc(option)}"${option === control.value ? " selected" : ""}>${esc(option)}</option>`).join("")}</select></label>`;
-  return `<button type="button" ${base}>${esc(control.label)}</button>`;
+  if (control.kind === "range") return `<label class="varco-ctl varco-ctl--range"><span class="varco-ctl__label">${esc(control.label)}</span><span class="varco-ctl__row"><input type="range" ${base} data-value-key="${esc(control.valueKey ?? "value")}" min="${esc(control.min ?? 0)}" max="${esc(control.max ?? 100)}" step="${esc(control.step ?? 1)}" value="${esc(control.value ?? 0)}"><output class="varco-ctl__value">${esc(control.value ?? 0)}</output></span></label>`;
+  if (control.kind === "select") return `<label class="varco-ctl varco-ctl--select"><span class="varco-ctl__label">${esc(control.label)}</span><select ${base} data-value-key="${esc(control.valueKey ?? "value")}">${(control.options ?? []).map((option) => `<option value="${esc(option)}"${option === control.value ? " selected" : ""}>${esc(option)}</option>`).join("")}</select></label>`;
+  return `<button type="button" class="varco-ctl varco-ctl--btn" ${base}>${esc(control.label)}</button>`;
 }
 
 function orderedEntities(manifest: VarcoManifest): string[] {

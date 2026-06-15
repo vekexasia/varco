@@ -24,6 +24,7 @@ import {
   PROTO_VERSION,
 } from "./logic.js";
 import { renderShareShell } from "./share.js";
+import { VERSION } from "./version.js";
 
 export type NodeBridgeEnv = Record<string, string | undefined>;
 export type StartNodeBridgeOptions = { port?: number; host?: string; env?: NodeBridgeEnv };
@@ -195,7 +196,7 @@ export async function startNodeBridge(options: StartNodeBridgeOptions = {}): Pro
     const reqOrigin = origin(req);
     const path = parts(req);
     if (req.method === "OPTIONS") { res.writeHead(204, corsHeaders(policy, reqOrigin)); res.end(); return; }
-    if (path[0] === "health" || path[0] === "healthz") { writeJson(res, 200, { ok: true }, corsHeaders(policy, reqOrigin)); return; }
+    if (path[0] === "health" || path[0] === "healthz") { writeJson(res, 200, { ok: true, version: VERSION }, corsHeaders(policy, reqOrigin)); return; }
     if (path[0] === "varco-client.js") {
       res.writeHead(200, { "Content-Type": "application/javascript; charset=utf-8", "Cache-Control": "no-store" });
       res.end(readFileSync(CLIENT_BUNDLE_PATH));

@@ -7,23 +7,35 @@ export function renderShareShell(shareCode: string): string {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Varco share</title>
   <style>
-    :root { color-scheme: light dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: Canvas; color: CanvasText; }
-    main { width: min(720px, calc(100vw - 32px)); }
-    .card { border: 1px solid color-mix(in srgb, CanvasText 14%, transparent); border-radius: 20px; padding: 24px; box-shadow: 0 18px 60px color-mix(in srgb, CanvasText 10%, transparent); }
-    h1 { margin: 0 0 8px; font-size: clamp(28px, 6vw, 48px); letter-spacing: -0.04em; }
-    p { line-height: 1.5; }
-    #app { display: grid; gap: 14px; }
-    .muted { color: color-mix(in srgb, CanvasText 62%, transparent); }
+    :root { color-scheme: light dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; --accent: #2563eb; --line: color-mix(in srgb, CanvasText 12%, transparent); --soft: color-mix(in srgb, CanvasText 6%, transparent); --muted: color-mix(in srgb, CanvasText 58%, transparent); }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px; background: Canvas; color: CanvasText; }
+    main { width: min(560px, 100%); }
+    .card { border: 1px solid var(--line); border-radius: 24px; padding: 28px; background: color-mix(in srgb, Canvas 92%, CanvasText 2%); box-shadow: 0 20px 70px color-mix(in srgb, CanvasText 9%, transparent); }
+    h1 { margin: 0 0 4px; font-size: clamp(24px, 5vw, 34px); letter-spacing: -0.03em; font-weight: 650; }
+    p { line-height: 1.5; margin: 0; }
+    #app { display: grid; gap: 18px; }
+    .muted { color: var(--muted); }
     .error { color: #d93025; }
     .varco-share-cards { display: grid; gap: 12px; }
-    .varco-card { border: 1px solid color-mix(in srgb, CanvasText 12%, transparent); border-radius: 16px; padding: 16px; }
-    .varco-card header { display: flex; justify-content: space-between; gap: 16px; align-items: baseline; }
-    .varco-card h2 { margin: 0; font-size: 18px; }
-    .varco-card p { margin: 0; }
-    .varco-card__controls { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
-    button { border: 0; border-radius: 999px; padding: 10px 14px; background: #2563eb; color: white; font: inherit; cursor: pointer; }
-    input, select { font: inherit; }
+    .varco-card { border: 1px solid var(--line); border-radius: 18px; padding: 18px; background: Canvas; transition: border-color .2s, box-shadow .2s; }
+    .varco-card[data-active="true"] { border-color: color-mix(in srgb, var(--accent) 45%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent); }
+    .varco-card__head { display: flex; align-items: center; gap: 10px; }
+    .varco-card__dot { width: 9px; height: 9px; border-radius: 50%; flex: none; background: color-mix(in srgb, CanvasText 30%, transparent); transition: background .2s, box-shadow .2s; }
+    .varco-card[data-active="true"] .varco-card__dot { background: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent); }
+    .varco-card__title { margin: 0; font-size: 16px; font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .varco-card__state { font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; flex: none; }
+    .varco-card__controls { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+    .varco-ctl__label { font-size: 12px; color: var(--muted); }
+    .varco-ctl--btn { border: 0; border-radius: 999px; padding: 9px 16px; background: var(--soft); color: CanvasText; font: inherit; font-weight: 550; cursor: pointer; transition: background .15s, transform .05s; }
+    .varco-ctl--btn:hover { background: color-mix(in srgb, CanvasText 12%, transparent); }
+    .varco-ctl--btn:active { transform: scale(.97); }
+    .varco-ctl--btn:disabled { opacity: .5; cursor: progress; }
+    .varco-ctl--range, .varco-ctl--select { display: flex; flex-direction: column; gap: 6px; flex: 1 1 100%; }
+    .varco-ctl__row { display: flex; align-items: center; gap: 12px; }
+    .varco-ctl__row input[type=range] { flex: 1; accent-color: var(--accent); }
+    .varco-ctl__value { font-size: 13px; color: CanvasText; font-variant-numeric: tabular-nums; min-width: 3ch; text-align: right; }
+    select { font: inherit; padding: 9px 12px; border-radius: 12px; border: 1px solid var(--line); background: Canvas; color: CanvasText; }
   </style>
 </head>
 <body>
@@ -48,7 +60,8 @@ export function renderShareShell(shareCode: string): string {
     if (location.hash) history.replaceState(null, '', location.pathname + location.search);
 
     function fail(message) { app.innerHTML = '<h1>Varco share</h1><p class="error"></p>'; app.querySelector('p').textContent = message; }
-    function setStatus(message) { app.innerHTML = '<h1>Varco share</h1><p class="muted"></p>'; app.querySelector('p').textContent = message; }
+    let ready = false;
+    function setStatus(message) { if (ready) return; app.innerHTML = '<h1>Varco share</h1><p class="muted"></p>'; app.querySelector('p').textContent = message; }
     function scopedStorage(authority, share) {
       const prefix = 'varco.shareIdentity.v1.' + authority + '.' + share + '.';
       return {
@@ -80,6 +93,7 @@ export function renderShareShell(shareCode: string): string {
         const grant = await client.getGrantInfo();
         const entities = Array.from(new Set([...(grant.manifest.read_entities || []), ...(grant.manifest.subscriptions || [])]));
         const states = entities.length ? await client.getStates(entities) : {};
+        ready = true;
         app.innerHTML = '<h1></h1><div id="cards"></div>';
         app.querySelector('h1').textContent = grant.manifest.name || 'Varco share';
         const render = () => { app.querySelector('#cards').innerHTML = renderShareCards(buildShareCards(grant.manifest, states)); };
@@ -90,6 +104,19 @@ export function renderShareShell(shareCode: string): string {
           button.disabled = true;
           try { await client.callService(button.dataset.domain, button.dataset.service, { entity_id: button.dataset.entity }); }
           finally { button.disabled = false; }
+        });
+        app.addEventListener('input', (event) => {
+          const range = event.target.closest('input[type=range][data-service]');
+          if (!range) return;
+          const out = range.parentElement.querySelector('.varco-ctl__value');
+          if (out) out.textContent = range.value;
+        });
+        app.addEventListener('change', async (event) => {
+          const input = event.target.closest('[data-service][data-value-key]');
+          if (!input) return;
+          input.disabled = true;
+          try { await client.callService(input.dataset.domain, input.dataset.service, { entity_id: input.dataset.entity, [input.dataset.valueKey]: input.type === 'range' ? Number(input.value) : input.value }); }
+          finally { input.disabled = false; }
         });
         if (entities.length) {
           await client.subscribeEntities(entities, (event) => {
