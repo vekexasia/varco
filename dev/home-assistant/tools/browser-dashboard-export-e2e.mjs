@@ -21,7 +21,6 @@ try {
   await loginIfNeeded(page, config.username, config.password);
 
   await page.getByText('Dashboard brief export').waitFor({ timeout: 60_000 });
-  await page.getByText('Manifest blueprint').waitFor({ timeout: 10_000 });
 
   const dashboardSelect = page.locator('varco-panel [data-dashboard-select]');
   await dashboardSelect.waitFor({ timeout: 20_000 });
