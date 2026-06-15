@@ -39,6 +39,7 @@ ssh "${SSH_ARGS[@]}" "$SSH_TARGET" "cat > '$REMOTE_DIR/.env' <<EOF
 VARCO_INTEGRATION_PATH=$REMOTE_DIR/custom_components/varco
 HA_HTTP_PORT=8123
 BRIDGE_HTTP_PORT=8787
+VARCO_BRIDGE_VERSION=${VARCO_BRIDGE_VERSION:-latest}
 EOF"
 
 # nginx on the host owns port 80 and reverse-proxies to the Home Assistant and
