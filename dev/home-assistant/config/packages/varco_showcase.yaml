@@ -188,6 +188,12 @@ input_boolean:
   varco_guest_motion:
     name: Varco Guest Motion Raw
     icon: mdi:motion-sensor
+  varco_demo_gate:
+    name: Varco Demo Gate Raw
+    icon: mdi:gate
+  varco_demo_lock:
+    name: Varco Demo Lock Raw
+    icon: mdi:lock
 
 # Energy signs follow Tesla-style conventions used by the showcase:
 # battery < 0 means charging, battery > 0 means discharging,
@@ -591,6 +597,34 @@ template:
         unique_id: varco_guest_motion
         device_class: motion
         state: "{{ is_state('input_boolean.varco_guest_motion', 'on') }}"
+
+
+  - cover:
+      - name: Varco Demo Gate
+        unique_id: varco_demo_gate
+        device_class: gate
+        state: "{{ 'open' if is_state('input_boolean.varco_demo_gate', 'on') else 'closed' }}"
+        open_cover:
+          - action: input_boolean.turn_on
+            target:
+              entity_id: input_boolean.varco_demo_gate
+        close_cover:
+          - action: input_boolean.turn_off
+            target:
+              entity_id: input_boolean.varco_demo_gate
+        stop_cover: []
+  - lock:
+      - name: Varco Demo Lock
+        unique_id: varco_demo_lock
+        state: "{{ 'unlocked' if is_state('input_boolean.varco_demo_lock', 'on') else 'locked' }}"
+        lock:
+          - action: input_boolean.turn_off
+            target:
+              entity_id: input_boolean.varco_demo_lock
+        unlock:
+          - action: input_boolean.turn_on
+            target:
+              entity_id: input_boolean.varco_demo_lock
 
 
 climate:

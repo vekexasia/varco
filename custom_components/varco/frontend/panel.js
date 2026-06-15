@@ -57,6 +57,9 @@ var styles = () => `
     input:focus, select:focus, textarea:focus { outline: 2px solid color-mix(in srgb, var(--varco-accent) 55%, transparent); outline-offset: 1px; border-color: var(--varco-accent); }
     label.field { display: block; font-size: 12px; font-weight: 700; color: var(--varco-muted); margin: 14px 0 5px; }
     code { background: var(--varco-surface-2); padding: 2px 6px; border-radius: 6px; font-size: .92em; word-break: break-all; }
+    .share-suggestions { display: grid; gap: 6px; margin-top: 6px; }
+    .share-suggestions button { justify-content: flex-start; background: var(--varco-surface-2); color: var(--varco-text); border-color: var(--varco-border); }
+    .share-suggestions span { color: var(--varco-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
     /* ---- cards ---- */
     .card { background: var(--varco-surface); border: 1px solid var(--varco-border); border-radius: var(--varco-radius); padding: 18px; margin: 12px 0; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
@@ -268,6 +271,12 @@ var VarcoPanel = class extends HTMLElement {
   _pendingSignature = "";
   _grantSearch = "";
   _grantStatusFilter = "all";
+  _shareEntityId = "";
+  _shareName = "";
+  _shareClaims = "1";
+  _shareUrl = "";
+  _shareError = "";
+  _shareLoading = false;
   // wizard step per request id
   _step = {};
   // dashboard export state
@@ -880,6 +889,123 @@ var VarcoPanel = class extends HTMLElement {
         ${!connected ? `<div class="callout warn relay-guidance" data-relay-guidance>Check that the bridge URL above is reachable from Home Assistant and review the integration logs for connection errors.</div>` : ""}
       </div>`;
   }
+  // ---------- entity share ----------
+  shareEntities() {
+    return Object.entries(this._hass?.states || {}).map(([id, state]) => ({ id, label: String(state.attributes?.friendly_name || id) })).sort((a, b) => a.id.localeCompare(b.id));
+  }
+  shareEntityLabel(entityId) {
+    return this.shareEntities().find((entity) => entity.id === entityId)?.label || entityId;
+  }
+  entityShareSection() {
+    return `
+      <div class="h-page">Create entity share</div>
+      <div class="card">
+        <div class="eyebrow">Claim link</div>
+        <p class="muted" style="margin:6px 0 12px">Create a share link for one Home Assistant entity.</p>
+        ${this._shareError ? `<p class="callout danger">${this.escape(this._shareError)}</p>` : ""}
+        ${this._shareUrl ? `<p class="callout"><b>Share created.</b><br><code>${this.escape(this._shareUrl)}</code></p><button data-copy-share-link>Copy link</button>` : ""}
+        <label class="field">Entity</label>
+        <input data-share-entity placeholder="Start typing a name or entity id" value="${this.escape(this._shareEntityId)}" autocomplete="off">
+        <div class="share-suggestions" data-share-suggestions></div>
+        <label class="field">Share name</label>
+        <input data-share-name placeholder="Mario living room light" value="${this.escape(this._shareName)}">
+        <label class="field">Allowed devices / claims</label>
+        <input data-share-claims type="number" min="1" value="${this.escape(this._shareClaims)}">
+        <div class="btn-row"><button data-create-entity-share ${this._shareLoading ? "disabled" : ""}>${this._shareLoading ? "Creating\u2026" : "Create share link"}</button></div>
+      </div>`;
+  }
+  entityShareManifest(entityId, name) {
+    const domain = entityId.split(".")[0];
+    return {
+      name,
+      version: "1",
+      read_entities: [entityId],
+      subscriptions: [entityId],
+      actions: ["sensor", "binary_sensor"].includes(domain) ? [] : [`${domain}.*@${entityId}`]
+    };
+  }
+  localShareUrl(shareUrl) {
+    if (!["127.0.0.1", "localhost"].includes(location.hostname)) return shareUrl;
+    try {
+      const url = new URL(shareUrl);
+      const bridge = new URL(shareUrl);
+      bridge.protocol = bridge.protocol === "https:" ? "wss:" : "ws:";
+      url.protocol = "http:";
+      url.hostname = "127.0.0.1";
+      url.port = "8787";
+      url.searchParams.set("bridge", bridge.origin);
+      return url.toString();
+    } catch {
+      return shareUrl;
+    }
+  }
+  copyText(value) {
+    if (navigator.clipboard?.writeText) {
+      void navigator.clipboard.writeText(value);
+      return;
+    }
+    const textarea = document.createElement("textarea");
+    textarea.value = value;
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand("copy");
+    textarea.remove();
+  }
+  updateShareSuggestions(input) {
+    const box = this.querySelector("[data-share-suggestions]");
+    if (!box) return;
+    const query = input.value.trim().toLowerCase();
+    const matches = this.shareEntities().filter((entity) => !query || entity.id.toLowerCase().includes(query) || entity.label.toLowerCase().includes(query)).slice(0, 8);
+    box.innerHTML = matches.map((entity) => `<button type="button" data-share-pick="${this.escape(entity.id)}"><span>${this.escape(entity.label)}</span><code>${this.escape(entity.id)}</code></button>`).join("");
+    box.querySelectorAll("[data-share-pick]").forEach((button) => {
+      button.onclick = () => {
+        const entityId = button.dataset.sharePick || "";
+        this._shareEntityId = entityId;
+        input.value = entityId;
+        const nameInput = this.querySelector("[data-share-name]");
+        if (nameInput && !nameInput.value.trim()) {
+          this._shareName = this.shareEntityLabel(entityId);
+          nameInput.value = this._shareName;
+        }
+        box.innerHTML = "";
+      };
+    });
+  }
+  async createEntityShare() {
+    const entityId = this._shareEntityId.trim();
+    const name = this._shareName.trim() || entityId;
+    const maxClaims = Number(this._shareClaims || "1");
+    this._shareError = "";
+    this._shareUrl = "";
+    if (!/^\w+\.[\w-]+$/.test(entityId)) {
+      this._shareError = "Enter an entity id like light.kitchen.";
+      this.render(this._lastState);
+      return;
+    }
+    if (!Number.isInteger(maxClaims) || maxClaims < 1) {
+      this._shareError = "Allowed devices must be a positive number.";
+      this.render(this._lastState);
+      return;
+    }
+    this._shareLoading = true;
+    this.render(this._lastState);
+    try {
+      const response = await this._hass.connection.sendMessagePromise({
+        type: "varco/create_share",
+        name,
+        max_claims: maxClaims,
+        manifest: this.entityShareManifest(entityId, name)
+      });
+      this._shareUrl = this.localShareUrl(response.share_url);
+    } catch (err) {
+      this._shareError = err?.message || String(err);
+    } finally {
+      this._shareLoading = false;
+      this.render(this._lastState);
+    }
+  }
   // ---------- dashboard export ----------
   dashboardExportSection() {
     const dashboards = this._dashboards || [];
@@ -1178,6 +1304,8 @@ var VarcoPanel = class extends HTMLElement {
               ${this.relayHealthSection(current.info.relay)}
             </div>
 
+            ${this.entityShareSection()}
+
             <div class="h-page">Pending access requests ${pending.length ? `<span class="count">${pending.length}</span>` : ""}</div>
             ${pending.length ? pending.map((r) => this.requestCard(r)).join("") : '<p class="empty">No one is waiting for access right now.</p>'}
 
@@ -1369,6 +1497,26 @@ var VarcoPanel = class extends HTMLElement {
       this._grantStatusFilter = grantStatusFilter.value;
       this.applyGrantFilter();
     };
+    const shareEntity = this.querySelector("[data-share-entity]");
+    if (shareEntity) {
+      shareEntity.oninput = () => {
+        this._shareEntityId = shareEntity.value;
+        this.updateShareSuggestions(shareEntity);
+      };
+      shareEntity.onfocus = () => this.updateShareSuggestions(shareEntity);
+    }
+    const shareName = this.querySelector("[data-share-name]");
+    if (shareName) shareName.oninput = () => {
+      this._shareName = shareName.value;
+    };
+    const shareClaims = this.querySelector("[data-share-claims]");
+    if (shareClaims) shareClaims.oninput = () => {
+      this._shareClaims = shareClaims.value;
+    };
+    const createShare = this.querySelector("[data-create-entity-share]");
+    if (createShare) createShare.onclick = () => void this.createEntityShare();
+    const copyShare = this.querySelector("[data-copy-share-link]");
+    if (copyShare) copyShare.onclick = () => this.copyText(this._shareUrl);
     const dashboardSelect = this.querySelector("[data-dashboard-select]");
     if (dashboardSelect) dashboardSelect.onchange = () => void this.pickDashboard(dashboardSelect.value);
     const viewSelect = this.querySelector("[data-view-select]");

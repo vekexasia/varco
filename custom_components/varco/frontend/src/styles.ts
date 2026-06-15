@@ -59,6 +59,9 @@ export const styles = (): string => `
     input:focus, select:focus, textarea:focus { outline: 2px solid color-mix(in srgb, var(--varco-accent) 55%, transparent); outline-offset: 1px; border-color: var(--varco-accent); }
     label.field { display: block; font-size: 12px; font-weight: 700; color: var(--varco-muted); margin: 14px 0 5px; }
     code { background: var(--varco-surface-2); padding: 2px 6px; border-radius: 6px; font-size: .92em; word-break: break-all; }
+    .share-suggestions { display: grid; gap: 6px; margin-top: 6px; }
+    .share-suggestions button { justify-content: flex-start; background: var(--varco-surface-2); color: var(--varco-text); border-color: var(--varco-border); }
+    .share-suggestions span { color: var(--varco-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
     /* ---- cards ---- */
     .card { background: var(--varco-surface); border: 1px solid var(--varco-border); border-radius: var(--varco-radius); padding: 18px; margin: 12px 0; box-shadow: 0 1px 2px rgba(0,0,0,.04); }

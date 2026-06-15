@@ -13,7 +13,26 @@ export function createLocalHomeAssistantClient(hass: HassFrontend): VarcoConsume
       return { request_id: "local", pairing_code: "", status: "approved", mode: "home-assistant" };
     },
 
+    async claimShare() {
+      return this.getGrantInfo();
+    },
+
     async connect() {},
+
+    async getGrantInfo() {
+      return {
+        grant_id: "local",
+        manifest: {
+          name: "Local Home Assistant",
+          version: "local",
+          read_entities: Object.keys(currentHass.states),
+          subscriptions: Object.keys(currentHass.states),
+          history: [],
+          camera_snapshots: [],
+          actions: ["*"],
+        },
+      };
+    },
 
     async getStates(entityIds: string[]) {
       const states: Record<string, HassState | null> = {};

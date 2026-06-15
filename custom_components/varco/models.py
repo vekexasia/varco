@@ -98,7 +98,9 @@ class Grant:
     renewed_at: str | None = None
     last_used_at: str | None = None
     restrictions: list[dict[str, Any]] = field(default_factory=list)
-
+    name: str | None = None
+    share_id: str | None = None
+    note: str | None = None
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Grant":
         return cls(
@@ -113,7 +115,47 @@ class Grant:
             renewed_at=data.get("renewed_at"),
             last_used_at=data.get("last_used_at"),
             restrictions=[dict(item) for item in data.get("restrictions") or [] if isinstance(item, dict)],
+            name=data.get("name"),
+            share_id=data.get("share_id"),
+            note=data.get("note"),
         )
 
     def as_dict(self) -> dict[str, Any]:
         return dict(self.__dict__)
+
+@dataclass
+class Share:
+    share_id: str
+    name: str
+    manifest: dict[str, Any]
+    secret_hash: str
+    max_claims: int = 1
+    claims_used: int = 0
+    note: str | None = None
+    expires_at: str | None = None
+    revoked: bool = False
+    created_at: str = field(default_factory=utcnow)
+    restrictions: list[dict[str, Any]] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "Share":
+        return cls(
+            share_id=data["share_id"],
+            name=data.get("name") or "Shared access",
+            manifest=coerce_manifest(dict(data.get("manifest") or {})),
+            secret_hash=data["secret_hash"],
+            max_claims=int(data.get("max_claims", 1)),
+            claims_used=int(data.get("claims_used", 0)),
+            note=data.get("note"),
+            expires_at=data.get("expires_at"),
+            revoked=bool(data.get("revoked", False)),
+            created_at=data.get("created_at") or utcnow(),
+            restrictions=[dict(item) for item in data.get("restrictions") or [] if isinstance(item, dict)],
+        )
+
+    def as_dict(self, include_secret_hash: bool = True) -> dict[str, Any]:
+        data = dict(self.__dict__)
+        if not include_secret_hash:
+            data.pop("secret_hash", None)
+        return data
+

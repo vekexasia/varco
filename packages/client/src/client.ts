@@ -3,7 +3,7 @@ import type { ConsumerIdentity } from "./identity.js";
 import { attachDomainHelpers } from "./domain-helpers.js";
 import { RelayTransport } from "./transport.js";
 import { VarcoConnectionStrategy } from "./types.js";
-import type { HassState, VarcoClient, VarcoClientOptions, VarcoTransport, VarcoTransportStatus } from "./types.js";
+import type { GrantInfo, HassState, VarcoClient, VarcoClientOptions, VarcoTransport, VarcoTransportStatus } from "./types.js";
 
 function assertManifest(manifest: VarcoClientOptions["manifest"]): void {
   if (!manifest || typeof manifest.name !== "string" || !manifest.name) throw new Error("Varco manifest requires a non-empty name");
@@ -13,7 +13,7 @@ function assertManifest(manifest: VarcoClientOptions["manifest"]): void {
 
 export function createVarcoClient(options: VarcoClientOptions): VarcoClient {
   assertManifest(options.manifest);
-  let identity: ConsumerIdentity | null = loadIdentitySync(options.storage);
+  let identity: ConsumerIdentity | null = options.identity ?? loadIdentitySync(options.storage);
   const identityPromise = identity ? Promise.resolve(identity) : loadOrCreateIdentity(options.storage).then((resolved) => { identity = resolved; return resolved; });
   const createRelay = (): VarcoTransport => options.transport ?? new RelayTransport(options.bridgeUrl, options.authorityId);
   let relayTransport: VarcoTransport = createRelay();
@@ -21,6 +21,7 @@ export function createVarcoClient(options: VarcoClientOptions): VarcoClient {
   let transportStatus: VarcoTransportStatus = { mode: "relay", detail: "connected via relay" };
   let closedByUser = false;
   let reconnecting = false;
+  let grantInfo: GrantInfo | null = null;
   const subscriptions = new Map<string, { entityIds: string[]; cb: (event: any) => void; currentId: string }>();
   const callbacks = new Map<string, (event: any) => void>();
   const attachEvents = (transport: VarcoTransport) => transport.onEvent?.((event) => {
@@ -52,12 +53,13 @@ export function createVarcoClient(options: VarcoClientOptions): VarcoClient {
     const id = await identityPromise;
     const nonce = randomId(12);
     const binding = (await (relayTransport as { channelBinding?: () => Promise<string> }).channelBinding?.()) ?? "";
-    await relayTransport.request({
+    const auth = await relayTransport.request({
       type: "authenticate",
       consumer_pk: id.publicKey,
       nonce,
       signature: await signAuthenticate(id, nonce, binding),
     });
+    if (auth?.grant_id && auth?.manifest) grantInfo = { grant_id: String(auth.grant_id), manifest: auth.manifest };
     setStatus({ mode: "relay", detail: "relay authenticated" });
     const strategy = resolveStrategy();
     if (strategy === VarcoConnectionStrategy.Optimistic) {
@@ -139,8 +141,27 @@ export function createVarcoClient(options: VarcoClientOptions): VarcoClient {
       return { request_id: response.access_request_id, pairing_code: response.pairing_code, status: response.status };
     },
 
+    async claimShare(shareId: string, secret: string) {
+      const id = await identityPromise;
+      const response = await relayTransport.request({
+        type: "claim_share",
+        share_id: shareId,
+        secret,
+        consumer_pk: id.publicKey,
+      });
+      grantInfo = { grant_id: String(response.grant_id), manifest: response.manifest };
+      return grantInfo;
+    },
+
     async connect() {
       await establish();
+    },
+
+    async getGrantInfo() {
+      if (grantInfo) return grantInfo;
+      const response = await activeTransport.request({ type: "grant_info" });
+      grantInfo = { grant_id: String(response.grant_id), manifest: response.manifest };
+      return grantInfo;
     },
 
     async getStates(entityIds: string[]) {

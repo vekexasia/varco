@@ -111,7 +111,7 @@ async def _async_register_panel(hass) -> None:
         frontend_url_path="varco",
         sidebar_title="Varco",
         sidebar_icon="mdi:shield-home",
-        module_url=f"/{DOMAIN}_frontend/panel.js",
+        module_url=f"/{DOMAIN}_frontend/panel.js?v={int(os.path.getmtime(os.path.join(frontend_dir, 'panel.js')))}",
         embed_iframe=False,
         require_admin=True,
         config_panel_domain=DOMAIN,

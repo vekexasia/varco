@@ -70,6 +70,26 @@ async function authedAuthority(server, authority) {
   return ws;
 }
 
+test('node bridge serves the generic share page over HTTP', async () => {
+  const bridge = await startNodeBridge({ port: 0 });
+  try {
+    const response = await fetch(httpUrl(bridge.server, '/share/abc%3Cbad%3E'));
+    const text = await response.text();
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get('content-type'), /text\/html/);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    assert.match(text, /data-share-code="abc&lt;bad&gt;"/);
+    assert.doesNotMatch(text, /abc<bad>/);
+    assert.equal(await (await fetch(httpUrl(bridge.server, '/'))).text(), 'Varco opaque bridge');
+    const clientResponse = await fetch(httpUrl(bridge.server, '/varco-client.js'));
+    assert.equal(clientResponse.headers.get('cache-control'), 'no-store');
+    assert.match(await clientResponse.text(), /createVarcoClient/);
+  } finally {
+    await bridge.close();
+  }
+});
+
+
 test('node bridge reports health and offline/online presence', async () => {
   const bridge = await startNodeBridge({ port: 0 });
   try {

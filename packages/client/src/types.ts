@@ -35,6 +35,11 @@ export type StorageLike = {
   removeItem?(key: string): void;
 };
 
+export type ConsumerIdentityLike = {
+  publicKey: string;
+  sign(message: Uint8Array): Promise<string>;
+};
+
 export type VarcoTransportStatus = {
   mode: "relay" | "p2p";
   detail?: string;
@@ -57,6 +62,7 @@ export type VarcoClientOptions = {
   bridgeUrl: string;
   manifest: VarcoManifest;
   storage?: StorageLike;
+  identity?: ConsumerIdentityLike;
   transport?: VarcoTransport;
   warn?: (message: string) => void;
   /**
@@ -72,6 +78,7 @@ export type VarcoClientOptions = {
 };
 
 export type AccessResult = { request_id: string; pairing_code: string; status: string; mode?: "home-assistant" };
+export type GrantInfo = { grant_id: string; manifest: VarcoManifest };
 
 export type VarcoDomainHelpers = {
   entity: {
@@ -146,7 +153,9 @@ export type VarcoClient = VarcoDomainHelpers & {
   readonly consumerPublicKey: string;
   readonly transportStatus: VarcoTransportStatus;
   requestAccess(): Promise<AccessResult>;
+  claimShare(shareId: string, secret: string): Promise<GrantInfo>;
   connect(): Promise<void>;
+  getGrantInfo(): Promise<GrantInfo>;
   getStates(entityIds: string[]): Promise<Record<string, HassState | null>>;
   subscribeEntities(entityIds: string[], cb: (event: any) => void): Promise<string>;
   unsubscribe(subscriptionId: string): Promise<void>;

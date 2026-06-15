@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 import logging
 import time
 from dataclasses import dataclass, field
@@ -7,9 +9,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
 from . import audit
-from .crypto import new_id, pairing_code, verify_access_request, verify_authenticate
+from .crypto import generate_consumer_keypair, new_id, pairing_code, verify_access_request, verify_authenticate
 from .manifest import ManifestError, validate_manifest
-from .models import AccessRequest, Grant, hash_pin, utcnow
+from .models import AccessRequest, Grant, Share, hash_pin, utcnow
 from .policy import (
     action_allowed,
     camera_entities,
@@ -45,6 +47,13 @@ def _registry_modules():
 
     return area_registry, device_registry, entity_registry, label_registry
 
+
+def _secret_hash(secret: str) -> str:
+    return hashlib.sha256(secret.encode()).hexdigest()
+
+
+def _secret_matches(secret: str, encoded: str) -> bool:
+    return hmac.compare_digest(_secret_hash(secret), encoded)
 
 @dataclass
 class RuntimeSubscription:
@@ -99,12 +108,25 @@ class VarcoAuthority:
             expires = expires.replace(tzinfo=timezone.utc)
         return self.now_provider() >= expires
 
+    def _is_expired(self, expires_at: str | None) -> bool:
+        if not expires_at:
+            return False
+        try:
+            expires = datetime.fromisoformat(expires_at)
+        except (TypeError, ValueError):
+            return False
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        return self.now_provider() >= expires
+
     async def handle_plaintext(self, session_id: str, message: dict[str, Any], channel_binding: str | None = None) -> dict[str, Any]:
         typ = message.get("type")
         if typ == "access_request":
             return await self._access_request(session_id, message)
         if typ == "authenticate":
             return await self._authenticate(session_id, message, channel_binding)
+        if typ == "claim_share":
+            return await self._claim_share(session_id, message)
 
         grant = await self._require_grant(session_id, message.get("request_id"))
         if isinstance(grant, dict):
@@ -124,6 +146,8 @@ class VarcoAuthority:
             return await self._history_query(grant, message)
         if typ == "camera_snapshot":
             return await self._camera_snapshot(grant, message)
+        if typ == "grant_info":
+            return self._grant_info(grant, message)
         if typ == "call_service":
             return await self._call_service(grant, message)
         if typ == "webrtc_offer":
@@ -137,6 +161,31 @@ class VarcoAuthority:
         await self._dismiss_notification(request_id)
         await audit.async_log(self.store, "access_request_approved", grant.grant_id)
         return grant
+
+    async def create_preapproved_grant(self, manifest: dict[str, Any], expires_at: str | None = None, restrictions: list[dict[str, Any]] | None = None) -> tuple[Grant, dict[str, str]]:
+        manifest = validate_manifest(manifest)
+        identity = generate_consumer_keypair()
+        normalized_restrictions = [self._normalize_restriction(item) for item in restrictions or [] if isinstance(item, dict)]
+        grant = await self.store.async_create_preapproved_grant(identity["public_key"], manifest, expires_at=expires_at, restrictions=normalized_restrictions)
+        await audit.async_log(self.store, "grant_created", grant.grant_id, {"source": "preapproved_share", "manifest_name": manifest.get("name")})
+        return grant, identity
+
+    async def create_share(self, name: str, manifest: dict[str, Any], max_claims: int = 1, expires_at: str | None = None, restrictions: list[dict[str, Any]] | None = None, note: str | None = None) -> tuple[Share, str]:
+        manifest = validate_manifest(manifest)
+        secret = new_id(32)
+        share = Share(
+            share_id=new_id(16),
+            name=name or str(manifest.get("name") or "Shared access"),
+            manifest=manifest,
+            secret_hash=_secret_hash(secret),
+            max_claims=max(1, int(max_claims)),
+            expires_at=expires_at,
+            restrictions=[self._normalize_restriction(item) for item in restrictions or [] if isinstance(item, dict)],
+            note=note,
+        )
+        await self.store.async_upsert_share(share)
+        await audit.async_log(self.store, "share_created", share.share_id, {"name": share.name, "max_claims": share.max_claims})
+        return share, secret
 
     async def reject_request(self, request_id: str) -> AccessRequest:
         request = await self.store.async_reject_request(request_id)
@@ -292,6 +341,33 @@ class VarcoAuthority:
                 await result
         return {"type": "access_request_pending", "request_id": message.get("request_id"), "access_request_id": request.request_id, "pairing_code": request.pairing_code, "status": "pending"}
 
+    async def _claim_share(self, session_id: str, message: dict[str, Any]) -> dict[str, Any]:
+        share_id = str(message.get("share_id") or "")
+        secret = str(message.get("secret") or "")
+        consumer_pk = str(message.get("consumer_pk") or "")
+        share = await self.store.async_get_share(share_id)
+        if share is None or share.revoked or self._is_expired(share.expires_at):
+            return self._error(message.get("request_id"), "share_unavailable", "Share link is no longer available")
+        if not _secret_matches(secret, share.secret_hash):
+            await audit.async_log(self.store, "session_error", details={"reason": "bad_share_secret", "share_id": share_id})
+            return self._error(message.get("request_id"), "bad_share_secret", "Invalid share link")
+        existing = await self.store.async_get_grant_by_consumer(consumer_pk)
+        if existing is not None and not existing.revoked:
+            if existing.share_id == share_id:
+                self._session(session_id).consumer_pk = consumer_pk
+                return {"type": "share_claimed", "request_id": message.get("request_id"), "grant_id": existing.grant_id, "manifest": existing.manifest}
+            return self._error(message.get("request_id"), "consumer_already_claimed", "This browser already claimed a different share")
+        if share.claims_used >= share.max_claims:
+            return self._error(message.get("request_id"), "share_claims_exhausted", "Share link has already been claimed")
+        try:
+            grant = await self.store.async_claim_share(share, consumer_pk)
+        except ValueError:
+            return self._error(message.get("request_id"), "share_claims_exhausted", "Share link has already been claimed")
+        await audit.async_log(self.store, "share_claimed", share.share_id, {"grant_id": grant.grant_id, "claims_used": share.claims_used, "max_claims": share.max_claims})
+        self._session(session_id).consumer_pk = consumer_pk
+        return {"type": "share_claimed", "request_id": message.get("request_id"), "grant_id": grant.grant_id, "manifest": grant.manifest}
+
+
     async def _authenticate(self, session_id: str, message: dict[str, Any], channel_binding: str | None) -> dict[str, Any]:
         consumer_pk = str(message.get("consumer_pk") or "")
         nonce = str(message.get("nonce") or "")
@@ -335,6 +411,9 @@ class VarcoAuthority:
             session.closed = True
             return self._error(request_id, "grant_revoked", "Grant revoked")
         return grant
+
+    def _grant_info(self, grant: Grant, message: dict[str, Any]) -> dict[str, Any]:
+        return {"type": "grant_info", "request_id": message.get("request_id"), "grant_id": grant.grant_id, "manifest": grant.manifest}
 
     async def _get_states(self, grant: Grant, message: dict[str, Any]) -> dict[str, Any]:
         entity_ids = self._expand_entity_ids([str(entity) for entity in message.get("entity_ids") or []], read_entities(grant.manifest))

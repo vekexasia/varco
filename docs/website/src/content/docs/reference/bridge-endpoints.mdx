@@ -16,6 +16,7 @@ Implemented endpoints:
 | `GET /` | Plain text bridge identity response. |
 | `GET /health` or `/healthz` | JSON health check. |
 | `GET /presence/{authorityId}` | JSON presence check for an Authority room. |
+| `GET /share/{code}` | Generic Varco share page. The bridge serves the browser app shell; claim secrets or legacy private keys stay in the URL fragment and are read only by browser JavaScript. |
 | `WebSocket /authority/{authorityId}` | Home Assistant Authority outbound relay connection. |
 | `WebSocket /consumer/{authorityId}` | Consumer relay connection. |
 

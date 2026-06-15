@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 from typing import Any
 
 from .const import STORAGE_KEY, STORAGE_VERSION
-from .models import AccessRequest, AccessStatus, Grant, utcnow
+from .models import AccessRequest, AccessStatus, Grant, Share, utcnow
 from .policy import trim_manifest
 
 MAX_PENDING_ACCESS_REQUESTS = 50
@@ -12,11 +13,12 @@ MAX_PENDING_ACCESS_REQUESTS = 50
 
 class MemoryVarcoStore:
     def __init__(self) -> None:
-        self._data: dict[str, Any] = {"access_requests": {}, "grants": {}, "audit": []}
+        self._data: dict[str, Any] = {"access_requests": {}, "grants": {}, "shares": {}, "audit": []}
         # In-memory index: grant_id -> consumer_pk. Not persisted; rebuilt from
         # the stored grants mapping, which stays keyed by consumer_pk for
         # backward compatibility with existing installs.
         self._grant_index: dict[str, str] = {}
+        self._share_claim_lock = asyncio.Lock()
 
     def _rebuild_grant_index(self) -> None:
         self._grant_index = {
@@ -29,6 +31,7 @@ class MemoryVarcoStore:
         self._data.setdefault("access_requests", {})
         self._data.setdefault("grants", {})
         self._data.setdefault("audit", [])
+        self._data.setdefault("shares", {})
         return self._data
 
     async def async_save_data(self, data: dict[str, Any] | None = None) -> None:
@@ -101,6 +104,50 @@ class MemoryVarcoStore:
         await self.async_upsert_access_request(request)
         await self.async_upsert_grant(grant)
         return grant
+
+    async def async_create_preapproved_grant(self, consumer_pk: str, manifest: dict[str, Any], expires_at: str | None = None, restrictions: list[dict[str, Any]] | None = None, name: str | None = None, share_id: str | None = None, note: str | None = None) -> Grant:
+        grant = Grant(grant_id=consumer_pk, consumer_pk=consumer_pk, manifest=manifest, expires_at=expires_at, restrictions=restrictions or [], name=name, share_id=share_id, note=note)
+        await self.async_upsert_grant(grant)
+        return grant
+
+    async def async_upsert_share(self, share: Share) -> None:
+        data = await self.async_load_data()
+        data["shares"][share.share_id] = share.as_dict()
+        await self.async_save_data(data)
+
+    async def async_get_share(self, share_id: str) -> Share | None:
+        raw = (await self.async_load_data())["shares"].get(share_id)
+        return Share.from_dict(raw) if raw else None
+
+    async def async_list_shares(self) -> list[Share]:
+        return [Share.from_dict(item) for item in (await self.async_load_data())["shares"].values()]
+
+    async def async_claim_share(self, share: Share, consumer_pk: str) -> Grant:
+        async with self._share_claim_lock:
+            data = await self.async_load_data()
+            raw_share = data["shares"].get(share.share_id)
+            current = Share.from_dict(raw_share) if raw_share else None
+            if current is None or current.revoked or current.claims_used >= current.max_claims:
+                raise ValueError("share_claims_exhausted")
+            current.claims_used += 1
+            grant_name = current.name if current.max_claims == 1 else f"{current.name} #{current.claims_used}"
+            grant = Grant(
+                grant_id=consumer_pk,
+                consumer_pk=consumer_pk,
+                manifest=current.manifest,
+                expires_at=current.expires_at,
+                restrictions=current.restrictions,
+                name=grant_name,
+                share_id=current.share_id,
+                note=current.note,
+            )
+            data["shares"][current.share_id] = current.as_dict()
+            data["grants"][consumer_pk] = grant.as_dict()
+            self._grant_index[grant.grant_id] = consumer_pk
+            await self.async_save_data(data)
+            share.claims_used = current.claims_used
+            return grant
+
 
     async def async_purge_expired_grants(self, now: datetime | None = None) -> list[str]:
         now = now or datetime.now(timezone.utc)
@@ -178,7 +225,7 @@ class HomeAssistantVarcoStore(MemoryVarcoStore):
 
     async def async_load_data(self) -> dict[str, Any]:
         if not self._loaded:
-            self._data = await self._store.async_load() or {"access_requests": {}, "grants": {}, "audit": []}
+            self._data = await self._store.async_load() or {"access_requests": {}, "grants": {}, "shares": {}, "audit": []}
             self._rebuild_grant_index()
             self._loaded = True
         return await super().async_load_data()

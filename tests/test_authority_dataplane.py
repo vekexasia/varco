@@ -56,6 +56,112 @@ async def paired_authority(manifest):
     return authority, store, hass, grant
 
 
+def test_grant_info_returns_stored_manifest_after_authentication():
+    async def run():
+        manifest = {"name": "Shared gate", "version": "1", "read_entities": ["sensor.temp"], "subscriptions": ["sensor.temp"], "actions": ["cover.open_cover@cover.gate"]}
+        authority, _, _, grant = await paired_authority(manifest)
+        info = await authority.handle_plaintext("s1", {"type": "grant_info", "request_id": "info"})
+        assert info == {"type": "grant_info", "request_id": "info", "grant_id": grant.grant_id, "manifest": manifest}
+
+    asyncio.run(run())
+
+
+def test_preapproved_grant_authenticates_without_access_request():
+    async def run():
+        store = MemoryVarcoStore()
+        hass = FakeHass()
+        authority = VarcoAuthority(store=store, hass=hass)
+        manifest = {"name": "Shared gate", "version": "1", "read_entities": ["sensor.temp"]}
+        grant, identity = await authority.create_preapproved_grant(manifest)
+        auth = await authority.handle_plaintext("share", channel_binding=TEST_BINDING, message={
+            "type": "authenticate",
+            "consumer_pk": identity["public_key"],
+            "nonce": "auth-nonce",
+            "signature": sign_authenticate(identity["private_key"], "auth-nonce", TEST_BINDING),
+        })
+        assert auth["type"] == "authenticated"
+        assert auth["grant_id"] == grant.grant_id
+        assert auth["manifest"] == manifest
+
+    asyncio.run(run())
+
+
+def test_claim_share_mints_grants_until_max_claims():
+    async def run():
+        store = MemoryVarcoStore()
+        authority = VarcoAuthority(store=store, hass=FakeHass())
+        manifest = {"name": "Mario gate access", "version": "1", "read_entities": ["sensor.temp"]}
+        share, secret = await authority.create_share("Mario gate access", manifest, max_claims=1, note="Mario phone")
+        consumer = generate_consumer_keypair()
+        claimed = await authority.handle_plaintext("claim", {"type": "claim_share", "share_id": share.share_id, "secret": secret, "consumer_pk": consumer["public_key"]})
+        assert claimed["type"] == "share_claimed"
+        grant = await store.async_get_grant_by_consumer(consumer["public_key"])
+        assert grant.name == "Mario gate access"
+        assert grant.note == "Mario phone"
+        assert grant.share_id == share.share_id
+        other = generate_consumer_keypair()
+        denied = await authority.handle_plaintext("claim2", {"type": "claim_share", "share_id": share.share_id, "secret": secret, "consumer_pk": other["public_key"]})
+        assert denied["type"] == "error"
+        assert denied["code"] == "share_claims_exhausted"
+
+    asyncio.run(run())
+
+def test_same_consumer_can_reuse_claimed_share_link_after_exhaustion():
+    async def run():
+        store = MemoryVarcoStore()
+        authority = VarcoAuthority(store=store, hass=FakeHass())
+        manifest = {"name": "Reusable device", "version": "1", "read_entities": ["sensor.temp"]}
+        share, secret = await authority.create_share("Reusable device", manifest, max_claims=1)
+        consumer = generate_consumer_keypair()
+
+        first = await authority.handle_plaintext("claim", {"type": "claim_share", "share_id": share.share_id, "secret": secret, "consumer_pk": consumer["public_key"]})
+        second = await authority.handle_plaintext("claim-again", {"type": "claim_share", "share_id": share.share_id, "secret": secret, "consumer_pk": consumer["public_key"]})
+
+        assert first["type"] == "share_claimed"
+        assert second["type"] == "share_claimed"
+        assert second["grant_id"] == first["grant_id"]
+        assert (await store.async_get_share(share.share_id)).claims_used == 1
+
+    asyncio.run(run())
+
+def test_same_consumer_cannot_collapse_different_share_to_old_grant():
+    async def run():
+        store = MemoryVarcoStore()
+        authority = VarcoAuthority(store=store, hass=FakeHass())
+        first_share, first_secret = await authority.create_share("First", {"name": "First", "version": "1", "read_entities": ["sensor.temp"]}, max_claims=1)
+        second_share, second_secret = await authority.create_share("Second", {"name": "Second", "version": "1", "read_entities": ["light.cucina"]}, max_claims=1)
+        consumer = generate_consumer_keypair()
+
+        first = await authority.handle_plaintext("claim", {"type": "claim_share", "share_id": first_share.share_id, "secret": first_secret, "consumer_pk": consumer["public_key"]})
+        second = await authority.handle_plaintext("claim2", {"type": "claim_share", "share_id": second_share.share_id, "secret": second_secret, "consumer_pk": consumer["public_key"]})
+
+        assert first["type"] == "share_claimed"
+        assert second["type"] == "error"
+        assert second["code"] == "consumer_already_claimed"
+        assert (await store.async_get_share(second_share.share_id)).claims_used == 0
+
+    asyncio.run(run())
+
+
+def test_concurrent_claims_only_mint_max_claims():
+    async def run():
+        store = MemoryVarcoStore()
+        authority = VarcoAuthority(store=store, hass=FakeHass())
+        manifest = {"name": "One seat", "version": "1", "read_entities": ["sensor.temp"]}
+        share, secret = await authority.create_share("One seat", manifest, max_claims=1)
+        consumers = [generate_consumer_keypair() for _ in range(8)]
+
+        results = await asyncio.gather(*[
+            authority.handle_plaintext(f"claim-{idx}", {"type": "claim_share", "share_id": share.share_id, "secret": secret, "consumer_pk": consumer["public_key"]})
+            for idx, consumer in enumerate(consumers)
+        ])
+
+        assert sum(result["type"] == "share_claimed" for result in results) == 1
+        assert sum(result.get("code") == "share_claims_exhausted" for result in results) == 7
+        assert len(await store.async_list_grants()) == 1
+        assert (await store.async_get_share(share.share_id)).claims_used == 1
+
+    asyncio.run(run())
 def test_get_states_enforces_grant_and_redacts_audit_payloads():
     async def run():
         authority, store, _, _ = await paired_authority({"name": "Demo", "version": "1", "read_entities": ["sensor.temp"]})

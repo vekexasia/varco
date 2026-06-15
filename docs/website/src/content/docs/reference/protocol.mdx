@@ -12,7 +12,9 @@ Messages handled by the Authority:
 | Message type | Request fields | Response | Scope checked |
 | --- | --- | --- | --- |
 | `access_request` | `consumer_pk`, `manifest`, `nonce`, `signature` | `access_request_pending` (`access_request_id`, `pairing_code`) | Signature only; creates pending request. |
-| `authenticate` | `consumer_pk`, `nonce`, `signature` | `authenticated` | Active grant for consumer key. The signature covers `varco-authenticate-v1\0` + `nonce` + `\0` + the session channel binding, so it cannot be replayed in another encrypted session. |
+| `claim_share` | `share_id`, `secret`, `consumer_pk` | `share_claimed` (`grant_id`, `manifest`) | Claimable share exists, secret matches, and claims used is below `max_claims`; creates a grant for `consumer_pk`. |
+| `authenticate` | `consumer_pk`, `nonce`, `signature` | `authenticated` (`grant_id`, `manifest`) | Active grant for consumer key. The signature covers `varco-authenticate-v1\0` + `nonce` + `\0` + the session channel binding, so it cannot be replayed in another encrypted session. |
+| `grant_info` | none | `grant_info` (`grant_id`, `manifest`) | Authenticated session. Returns the stored manifest for generic clients that were not built with a manifest at development time. |
 | `get_states` | `entity_ids` | `states` | `read_entities`. |
 | `subscribe_states` | `entity_ids` | `state_snapshot`, then `state_delta` events | `subscriptions` plus `read_entities`. |
 | `unsubscribe_states` | `subscription_id` | `unsubscribed` | Authenticated session. |

@@ -21,6 +21,11 @@ function nobleIdentity(keys: { privateKey: string; publicKey: string }): Consume
   };
 }
 
+export function consumerIdentityFromPrivateKey(privateKey: string): ConsumerIdentity {
+  const privateBytes = b64urlDecode(privateKey);
+  return nobleIdentity({ privateKey, publicKey: b64urlEncode(ed25519.getPublicKey(privateBytes)) });
+}
+
 function createNobleIdentity(storage: StorageLike): ConsumerIdentity {
   const privateBytes = ed25519.utils.randomSecretKey();
   const keys = { privateKey: b64urlEncode(privateBytes), publicKey: b64urlEncode(ed25519.getPublicKey(privateBytes)) };

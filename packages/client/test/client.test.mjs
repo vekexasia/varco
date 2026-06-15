@@ -8,13 +8,15 @@ class FakeTransport {
   async request(message) {
     this.messages.push(message);
     if (message.type === 'access_request') return { type: 'access_request_pending', request_id: message.request_id, access_request_id: 'req1', pairing_code: '123456', status: 'pending' };
-    if (message.type === 'authenticate') return { type: 'authenticated', grant_id: 'req1' };
+    if (message.type === 'authenticate') return { type: 'authenticated', grant_id: 'req1', manifest: { name: 'Granted share', version: '1', read_entities: ['sensor.temp'] } };
     if (message.type === 'get_states') return { type: 'states', states: { 'sensor.temp': { entity_id: 'sensor.temp', state: '21', attributes: {} } } };
     if (message.type === 'subscribe_states') return { type: 'state_snapshot', subscription_id: 'sub1', states: {} };
     if (message.type === 'unsubscribe_states') return { type: 'unsubscribed' };
     if (message.type === 'history_query') return { type: 'history_result', history: { 'sensor.temp': [] } };
     if (message.type === 'camera_snapshot') return { type: 'camera_snapshot', content_type: 'image/jpeg', body: 'abc' };
     if (message.type === 'call_service') return { type: 'service_called', ok: true };
+    if (message.type === 'claim_share') return { type: 'share_claimed', grant_id: 'claim1', manifest: { name: 'Claimed share', version: '1', read_entities: ['sensor.temp'] } };
+    if (message.type === 'grant_info') return { type: 'grant_info', grant_id: 'req1', manifest: { name: 'Granted share', version: '1', read_entities: ['sensor.temp'] } };
     throw new Error(message.type);
   }
 }
@@ -38,6 +40,45 @@ test('consumer client uses explicit Home Assistant frontend session without rela
     'sensor.temp': { entity_id: 'sensor.temp', state: '21', attributes: {} },
     'sensor.missing': null,
   });
+});
+
+test('client exposes authenticated grant manifest', async () => {
+  const transport = new FakeTransport();
+  const client = createVarcoClient({
+    authorityId: 'auth',
+    bridgeUrl: 'wss://bridge',
+    manifest: { name: 'Requested', version: '1' },
+    transport,
+    connectionStrategy: VarcoConnectionStrategy.Relay,
+    storage: new MemoryStorage(),
+  });
+  await client.connect();
+  assert.deepEqual(await client.getGrantInfo(), {
+    grant_id: 'req1',
+    manifest: { name: 'Granted share', version: '1', read_entities: ['sensor.temp'] },
+  });
+  assert.equal(transport.messages.filter((message) => message.type === 'grant_info').length, 0);
+});
+
+test('client claims a share before authenticating', async () => {
+  const transport = new FakeTransport();
+  const client = createVarcoClient({
+    authorityId: 'auth',
+    bridgeUrl: 'wss://bridge',
+    manifest: { name: 'Requested', version: '1' },
+    transport,
+    connectionStrategy: VarcoConnectionStrategy.Relay,
+    storage: new MemoryStorage(),
+  });
+  const info = await client.claimShare('share1', 'secret1');
+  await client.connect();
+  assert.deepEqual(info, {
+    grant_id: 'claim1',
+    manifest: { name: 'Claimed share', version: '1', read_entities: ['sensor.temp'] },
+  });
+  assert.equal(transport.messages[0].type, 'claim_share');
+  assert.equal(transport.messages[0].share_id, 'share1');
+  assert.equal(transport.messages[0].secret, 'secret1');
 });
 
 test('local Home Assistant subscriptions emit relay-shaped snapshots and deltas', async () => {
