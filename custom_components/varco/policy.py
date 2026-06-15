@@ -92,7 +92,7 @@ def action_candidates(domain: str, service: str, entity_id: str | None) -> set[s
     if not entity_id:
         # Entity-less calls are domain-wide; only an explicit domain.* scope allows them.
         return {f"{domain}.*"}
-    candidates = {f"{domain}.{service}@{entity_id}", f"*@{entity_id}"}
+    candidates = {f"{domain}.{service}@{entity_id}", f"{domain}.*@{entity_id}", f"*@{entity_id}"}
     entity_domain = entity_id.split(".", 1)[0] if "." in entity_id else ""
     if entity_domain == domain:
         candidates.add(f"{domain}.*")

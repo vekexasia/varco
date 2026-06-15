@@ -1,236 +1,321 @@
 // src/styles.ts
 var styles = () => `
   <style>
-    :host {
-      display: block;
+    .varco-root {
       --varco-radius: 14px;
       --varco-radius-sm: 10px;
-      --varco-gap: 16px;
-      --varco-accent: var(--primary-color, #03a9f4);
-      --varco-ok: var(--success-color, #2e9b54);
-      --varco-warn: var(--warning-color, #f4a712);
-      --varco-danger: var(--error-color, #db4437);
-      --varco-surface: var(--card-background-color, #fff);
-      --varco-surface-2: var(--secondary-background-color, #f4f5f7);
-      --varco-border: var(--divider-color, rgba(0,0,0,.12));
-      --varco-text: var(--primary-text-color, #1c1c1c);
-      --varco-muted: var(--secondary-text-color, #6b6f76);
+      --bg: #0E1116; --bg-2: #0A0D11; --surface: #161B22; --surface-2: #1B2129; --elev: #222C37;
+      --border: #28323D; --border-soft: #1E242C;
+      --text: #E7EDF3; --text-2: #9BA7B3; --text-3: #697682;
+      --accent: #2DD4A7; --accent-ink: #04150F; --amber: #F2B45A; --red: #F2606A;
+      --primary: #7C8CFF; --primary-ink: #0A0E1F; --violet: #A98BFF; --coral: #FF8E6B;
+      --c-read: #7C8CFF; --c-live: #2DD4A7; --c-history: #F2B45A; --c-cameras: #A98BFF; --c-actions: #FF8E6B;
+      --shadow: 0 22px 50px rgba(0,0,0,.5);
+      /* compatibility aliases used by existing component rules */
+      --varco-surface: var(--surface); --varco-surface-2: var(--surface-2); --varco-border: var(--border);
+      --varco-text: var(--text); --varco-muted: var(--text-2); --varco-accent: var(--primary);
+      --varco-ok: var(--accent); --varco-warn: var(--amber); --varco-danger: var(--red);
+      display: block; background: var(--bg); color: var(--text);
+      font-family: 'Hanken Grotesk', system-ui, -apple-system, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    @media (prefers-color-scheme: light) {
+      .varco-root {
+        --bg: #EEF1F4; --bg-2: #E4E8EC; --surface: #FFFFFF; --surface-2: #F4F6F8; --elev: #FFFFFF;
+        --border: #E1E6EB; --border-soft: #ECEFF2;
+        --text: #15202B; --text-2: #566372; --text-3: #8A95A1;
+        --accent: #0E9F78; --accent-ink: #FFFFFF; --amber: #A8741A; --red: #D6454F;
+        --primary: #4858E0; --primary-ink: #FFFFFF; --violet: #7C5CE0; --coral: #CF5E37;
+        --c-read: #4858E0; --c-live: #0E9F78; --c-history: #A8741A; --c-cameras: #7C5CE0; --c-actions: #CF5E37;
+        --shadow: 0 22px 50px rgba(20,32,43,.16);
+      }
     }
 
-    .wrap { padding: 4px 4px 32px; color: var(--varco-text); }
+    .varco-root * { box-sizing: border-box; }
+    .varco-root .mono, .varco-root code { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+    .varco-root section[id] { scroll-margin-top: 124px; }
+    .wrap { padding: 0 22px 90px; }
 
-    /* ---- typography ---- */
-    .h-page { font-size: 13px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--varco-muted); margin: 28px 0 12px; display: flex; align-items: center; gap: 10px; }
-    .h-page:first-child { margin-top: 8px; }
-    .h-page .count { background: var(--varco-surface-2); border-radius: 999px; padding: 2px 9px; font-size: 11px; font-weight: 700; letter-spacing: .02em; color: var(--varco-muted); }
-    .eyebrow { color: var(--varco-muted); font-size: 11px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
-    .muted { color: var(--varco-muted); }
-    .empty { color: var(--varco-muted); padding: 14px 2px; }
+    @keyframes vToast { from { opacity: 0; transform: translate(-50%, 14px); } to { opacity: 1; transform: translate(-50%, 0); } }
+    @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+    /* ---- top bar ---- */
+    .vbar { position: sticky; top: 0; z-index: 50; display: flex; align-items: center; gap: 16px; height: 56px; padding: 0 22px; background: color-mix(in srgb, var(--bg) 86%, transparent); backdrop-filter: blur(14px); border-bottom: 1px solid var(--border); }
+    .vbrand { display: flex; align-items: center; gap: 11px; }
+    .vbrand .name { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
+    .vbrand .name .sub { color: var(--text-3); font-weight: 500; }
+    .vchip { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; flex-shrink: 0; font-size: 11.5px; font-weight: 600; border-radius: 999px; padding: 4px 10px; }
+    .vchip.ok { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); }
+    .vchip.off { color: var(--red); background: color-mix(in srgb, var(--red) 12%, transparent); border: 1px solid color-mix(in srgb, var(--red) 30%, transparent); }
+    .vchip .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+    .vspace { flex: 1; }
+    .seg { display: flex; gap: 3px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 3px; }
+    .seg button { font: inherit; font-size: 12.5px; font-weight: 600; border: none; border-radius: 7px; padding: 6px 12px; cursor: pointer; background: transparent; color: var(--text-2); }
+    .seg button.sel { background: var(--elev); color: var(--text); }
+
+    /* ---- sticky summary ---- */
+    .summary { position: sticky; top: 56px; z-index: 30; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(12px); padding: 16px 22px 12px; border-bottom: 1px solid var(--border); }
+    .summary-top { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 13px; }
+    .summary-id { flex: 1; min-width: 0; }
+    .summary-id .lab { font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--text-3); margin-bottom: 3px; }
+    .summary-id .copy { display: inline-flex; align-items: center; gap: 9px; cursor: pointer; }
+    .summary-id .copy:hover { opacity: .82; }
+    .summary-id .copy .val { font-size: 13px; }
+    .summary-id .copy .act { font-size: 10px; font-weight: 700; color: var(--text-3); letter-spacing: .05em; }
+    .summary-relay { text-align: right; }
+    .summary-relay .line { display: flex; align-items: center; gap: 7px; justify-content: flex-end; font-size: 12.5px; font-weight: 600; }
+    .summary-relay .line .dot { width: 7px; height: 7px; border-radius: 50%; }
+    .summary-relay .meta { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+    .anchor-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+    .atab { font-size: 12.5px; font-weight: 600; color: var(--text-2); background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 6px 13px; cursor: pointer; }
+    .atab:hover { color: var(--text); border-color: var(--text-3); }
+
+    /* ---- sections ---- */
+    section { padding-top: 40px; }
+    section:first-of-type { padding-top: 26px; }
+    .sec-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; color: var(--accent); margin-bottom: 6px; }
+    .sec-title { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+    .sec-title .badge { font-size: 12px; font-weight: 700; border-radius: 999px; padding: 2px 10px; }
+    .sec-title .badge.amber { color: var(--amber); background: color-mix(in srgb, var(--amber) 16%, transparent); }
+    .sec-title .badge.muted { color: var(--text-3); background: var(--surface-2); border: 1px solid var(--border); }
+    .sec-lead { font-size: 13px; color: var(--text-2); margin: -8px 0 18px; line-height: 1.5; }
+
+    /* ---- KPI strip ---- */
+    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 12px; }
+    .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 15px 17px; display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+    .kpi .head { display: flex; align-items: center; gap: 7px; }
+    .kpi .head .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .kpi .head .lab { font-size: 10.5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .kpi .val { font-size: 25px; font-weight: 700; letter-spacing: -0.015em; line-height: 1.05; }
+    .kpi .sub { font-size: 11.5px; color: var(--text-2); }
 
     /* ---- buttons ---- */
-    button {
-      font: inherit; font-weight: 650; cursor: pointer;
+    .varco-root button {
+      font: inherit; font-weight: 600; cursor: pointer;
       display: inline-flex; align-items: center; justify-content: center; gap: 7px;
-      border: 1px solid transparent; border-radius: 10px;
-      padding: 9px 16px; background: var(--varco-accent); color: var(--text-primary-color, #fff);
+      border: 1px solid transparent; border-radius: 10px; padding: 9px 16px;
+      background: var(--primary); color: var(--primary-ink);
       transition: filter .12s ease, background .12s ease, border-color .12s ease, transform .04s ease;
     }
-    button svg { width: 16px; height: 16px; flex: none; }
-    button:hover { filter: brightness(1.06); }
-    button:active { transform: translateY(1px); }
-    button[disabled] { opacity: .45; cursor: not-allowed; filter: none; transform: none; }
-    button.ghost { background: transparent; color: var(--varco-text); border-color: var(--varco-border); }
-    button.ghost:hover { background: var(--varco-surface-2); filter: none; }
-    button.subtle { background: var(--varco-surface-2); color: var(--varco-text); border-color: var(--varco-border); }
-    button.subtle:hover { filter: none; background: var(--varco-border); }
-    button.danger { background: transparent; color: var(--varco-danger); border-color: color-mix(in srgb, var(--varco-danger) 45%, transparent); }
-    button.danger:hover { background: color-mix(in srgb, var(--varco-danger) 12%, transparent); filter: none; }
+    .varco-root button svg { width: 16px; height: 16px; flex: none; }
+    .varco-root button:hover { filter: brightness(1.06); }
+    .varco-root button:active { transform: translateY(1px); }
+    .varco-root button[disabled] { opacity: .45; cursor: not-allowed; filter: none; transform: none; }
+    button.go { background: var(--accent); color: var(--accent-ink); }
+    button.ghost { background: transparent; color: var(--text); border-color: var(--border); }
+    button.ghost:hover { background: var(--surface-2); filter: none; }
+    button.subtle { background: var(--surface-2); color: var(--text); border-color: var(--border); }
+    button.subtle:hover { filter: none; background: var(--border); }
+    button.danger { background: transparent; color: var(--red); border-color: color-mix(in srgb, var(--red) 45%, transparent); }
+    button.danger:hover { background: color-mix(in srgb, var(--red) 12%, transparent); filter: none; }
     button.tiny { padding: 5px 11px; font-size: 12px; border-radius: 8px; }
     .btn-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
 
     /* ---- inputs ---- */
-    input, select, textarea {
-      font: inherit; color: var(--varco-text); background: var(--varco-surface);
-      border: 1px solid var(--varco-border); border-radius: 10px; padding: 9px 11px; width: 100%;
-      box-sizing: border-box;
+    .varco-root input, .varco-root select, .varco-root textarea {
+      font: inherit; color: var(--text); background: var(--surface-2);
+      border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; width: 100%;
     }
-    input:focus, select:focus, textarea:focus { outline: 2px solid color-mix(in srgb, var(--varco-accent) 55%, transparent); outline-offset: 1px; border-color: var(--varco-accent); }
-    label.field { display: block; font-size: 12px; font-weight: 700; color: var(--varco-muted); margin: 14px 0 5px; }
-    code { background: var(--varco-surface-2); padding: 2px 6px; border-radius: 6px; font-size: .92em; word-break: break-all; }
+    .varco-root input:focus, .varco-root select:focus, .varco-root textarea:focus { outline: none; border-color: var(--primary); }
+    .varco-root input::placeholder { color: var(--text-3); }
+    label.field { display: block; font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--text-3); margin: 14px 0 6px; }
+    code { background: var(--surface-2); padding: 2px 6px; border-radius: 6px; font-size: .92em; word-break: break-all; }
+    .muted { color: var(--text-2); }
+    .empty { color: var(--text-2); padding: 14px 2px; }
+    .eyebrow { color: var(--text-3); font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
     .share-suggestions { display: grid; gap: 6px; margin-top: 6px; }
-    .share-suggestions button { justify-content: flex-start; background: var(--varco-surface-2); color: var(--varco-text); border-color: var(--varco-border); }
-    .share-suggestions span { color: var(--varco-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .share-suggestions button { justify-content: flex-start; background: var(--surface-2); color: var(--text); border-color: var(--border); }
+    .share-suggestions span { color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-    /* ---- cards ---- */
-    .card { background: var(--varco-surface); border: 1px solid var(--varco-border); border-radius: var(--varco-radius); padding: 18px; margin: 12px 0; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
-    .card.flush { padding: 0; overflow: hidden; }
-    .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
-    .card-title { margin: 4px 0 0; font-size: 17px; font-weight: 750; }
+    /* ---- cards / panels ---- */
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 15px; padding: 22px; margin: 0; }
+    .panel { max-width: 540px; }
 
     /* ---- pills ---- */
-    .pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; font-size: 11px; font-weight: 800; letter-spacing: .03em; text-transform: uppercase; padding: 5px 11px; white-space: nowrap; }
-    .pill.ok { background: color-mix(in srgb, var(--varco-ok) 16%, transparent); color: var(--varco-ok); }
-    .pill.warn { background: color-mix(in srgb, var(--varco-warn) 20%, transparent); color: color-mix(in srgb, var(--varco-warn) 78%, #000); }
-    .pill.off { background: var(--varco-surface-2); color: var(--varco-muted); }
-    .pill.danger { background: color-mix(in srgb, var(--varco-danger) 16%, transparent); color: var(--varco-danger); }
+    .pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; padding: 5px 11px; white-space: nowrap; }
+    .pill.ok { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+    .pill.warn { background: color-mix(in srgb, var(--amber) 16%, transparent); color: var(--amber); }
+    .pill.off { background: var(--surface-2); color: var(--text-3); }
+    .pill.danger { background: color-mix(in srgb, var(--red) 14%, transparent); color: var(--red); }
     .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+
+    /* ---- permission chips & legend ---- */
+    .perm-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; color: var(--text-2); background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 5px 10px; font-family: 'JetBrains Mono', ui-monospace, monospace; }
+    .perm-chip .sw { width: 7px; height: 7px; border-radius: 2px; flex-shrink: 0; }
+    .perm-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .legend { display: flex; flex-wrap: wrap; gap: 12px; margin: -6px 0 16px; }
+    .legend .item { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; color: var(--text-3); letter-spacing: .04em; text-transform: uppercase; }
+    .legend .sw { width: 8px; height: 8px; border-radius: 2px; }
 
     /* ---- key/value meta ---- */
     .meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px 18px; margin: 16px 0 4px; }
-    .meta .k { color: var(--varco-muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; margin-bottom: 3px; }
-    .meta .v { font-weight: 600; }
-    details.tech { margin-top: 14px; border-top: 1px dashed var(--varco-border); padding-top: 10px; }
-    details.tech summary { cursor: pointer; color: var(--varco-muted); font-size: 12px; font-weight: 700; }
+    .meta .k { color: var(--text-3); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .09em; margin-bottom: 3px; }
+    .meta .v { font-weight: 600; font-size: 13px; }
+    details.tech { margin-top: 14px; border-top: 1px dashed var(--border); padding-top: 10px; }
+    details.tech summary { cursor: pointer; color: var(--text-2); font-size: 12px; font-weight: 700; }
     details.tech .meta { margin-top: 12px; }
 
-    /* ---- relay / authority header ---- */
-    .topbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: stretch; margin-bottom: 8px; }
-    .topbar .card { flex: 1 1 280px; margin: 0; }
-    .relay-line { display: flex; align-items: center; gap: 10px; }
-    .relay-guidance { margin-top: 12px; }
-
     /* ---- callouts ---- */
-    .callout { border-radius: var(--varco-radius-sm); padding: 12px 14px; margin: 12px 0; font-size: 14px; background: var(--varco-surface-2); }
-    .callout.warn { background: color-mix(in srgb, var(--varco-warn) 14%, transparent); border: 1px solid color-mix(in srgb, var(--varco-warn) 35%, transparent); }
-    .callout.danger { background: color-mix(in srgb, var(--varco-danger) 10%, transparent); border: 1px solid color-mix(in srgb, var(--varco-danger) 35%, transparent); }
+    .callout { border-radius: var(--varco-radius-sm); padding: 12px 14px; margin: 12px 0; font-size: 14px; background: var(--surface-2); }
+    .callout.warn { background: color-mix(in srgb, var(--amber) 14%, transparent); border: 1px solid color-mix(in srgb, var(--amber) 35%, transparent); }
+    .callout.danger { background: color-mix(in srgb, var(--red) 10%, transparent); border: 1px solid color-mix(in srgb, var(--red) 35%, transparent); }
 
     /* ---- pending request / wizard ---- */
-    .req { border: 1px solid var(--varco-border); border-left: 4px solid var(--varco-accent); border-radius: var(--varco-radius); background: var(--varco-surface); margin: 12px 0; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.05); }
-    .req-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 16px 18px; background: color-mix(in srgb, var(--varco-accent) 6%, var(--varco-surface)); }
+    .req { border: 1px solid var(--border); border-radius: 15px; background: var(--surface); margin: 12px 0; overflow: hidden; }
+    .req-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 16px 18px; background: var(--surface-2); }
     .req-id { display: flex; align-items: center; gap: 12px; }
-    .req-avatar { width: 42px; height: 42px; border-radius: 12px; background: color-mix(in srgb, var(--varco-accent) 18%, transparent); color: var(--varco-accent); display: grid; place-items: center; font-weight: 800; font-size: 18px; flex: none; }
-    .req-name { font-size: 17px; font-weight: 750; line-height: 1.2; }
-    .req-sub { color: var(--varco-muted); font-size: 13px; margin-top: 2px; }
+    .req-avatar { width: 42px; height: 42px; border-radius: 12px; background: var(--surface); border: 1px solid var(--border); color: var(--text-2); display: grid; place-items: center; font-weight: 700; font-size: 16px; flex: none; font-family: 'JetBrains Mono', ui-monospace, monospace; }
+    .req-name { font-size: 16px; font-weight: 700; line-height: 1.2; }
+    .req-sub { color: var(--text-2); font-size: 13px; margin-top: 2px; }
     .pair { text-align: right; }
-    .pair .lab { font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--varco-muted); }
-    .pair .code { font-size: 22px; font-weight: 850; letter-spacing: .14em; font-variant-numeric: tabular-nums; }
+    .pair .lab { font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); }
+    .pair .code { font-size: 22px; font-weight: 800; letter-spacing: .14em; font-variant-numeric: tabular-nums; font-family: 'JetBrains Mono', ui-monospace, monospace; }
 
     /* stepper */
     .steps { display: flex; align-items: center; gap: 0; padding: 14px 18px 0; }
-    .step { display: flex; align-items: center; gap: 9px; color: var(--varco-muted); font-size: 13px; font-weight: 700; }
-    .step .num { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 800; background: var(--varco-surface-2); color: var(--varco-muted); border: 1px solid var(--varco-border); flex: none; }
-    .step.active { color: var(--varco-text); }
-    .step.active .num { background: var(--varco-accent); color: #fff; border-color: transparent; }
-    .step.done .num { background: color-mix(in srgb, var(--varco-ok) 20%, transparent); color: var(--varco-ok); border-color: transparent; }
-    .step-bar { flex: 1; height: 2px; background: var(--varco-border); margin: 0 12px; border-radius: 2px; min-width: 16px; }
-    .step-bar.done { background: var(--varco-ok); }
+    .step { display: flex; align-items: center; gap: 9px; color: var(--text-3); font-size: 13px; font-weight: 700; }
+    .step .num { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 800; background: var(--surface-2); color: var(--text-3); border: 1px solid var(--border); flex: none; }
+    .step.active { color: var(--text); }
+    .step.active .num { background: var(--primary); color: var(--primary-ink); border-color: transparent; }
+    .step.done .num { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent); border-color: transparent; }
+    .step-bar { flex: 1; height: 2px; background: var(--border); margin: 0 12px; border-radius: 2px; min-width: 16px; }
+    .step-bar.done { background: var(--accent); }
 
     .req-body { padding: 8px 18px 18px; }
     .panes > .pane { display: none; }
     .panes > .pane.show { display: block; animation: fade .18s ease; }
-    @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
-
     .lead { font-size: 15px; line-height: 1.5; margin: 14px 0; }
-    .lead strong { font-weight: 750; }
+    .lead strong { font-weight: 700; }
 
-    /* permission groups */
-    .perm-group { border: 1px solid var(--varco-border); border-radius: var(--varco-radius-sm); margin: 10px 0; overflow: hidden; }
-    .perm-head { display: flex; align-items: center; gap: 12px; padding: 11px 14px; background: var(--varco-surface-2); }
-    .perm-ico { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; flex: none; background: var(--varco-surface); border: 1px solid var(--varco-border); }
+    /* permission groups (wizard) */
+    .perm-group { border: 1px solid var(--border); border-radius: var(--varco-radius-sm); margin: 10px 0; overflow: hidden; }
+    .perm-head { display: flex; align-items: center; gap: 12px; padding: 11px 14px; background: var(--surface-2); }
+    .perm-ico { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; flex: none; background: var(--surface); border: 1px solid var(--border); }
     .perm-ico svg { width: 17px; height: 17px; }
     .perm-meta { flex: 1; min-width: 0; }
     .perm-title { display: block; font-weight: 700; font-size: 14px; }
-    .perm-desc { display: block; color: var(--varco-muted); font-size: 12px; margin-top: 1px; }
-    .perm-count { font-size: 12px; font-weight: 700; color: var(--varco-muted); }
+    .perm-desc { display: block; color: var(--text-2); font-size: 12px; margin-top: 1px; }
+    .perm-count { font-size: 12px; font-weight: 700; color: var(--text-2); }
     .perm-items { list-style: none; margin: 0; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px; }
     .perm-items li { margin: 0; }
     .perm-items label { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 8px; cursor: pointer; }
-    .perm-items label:hover { background: var(--varco-surface-2); }
+    .perm-items label:hover { background: var(--surface-2); }
     .perm-items input { width: auto; }
-    .perm-empty { padding: 10px 14px; color: var(--varco-muted); font-size: 13px; }
+    .perm-empty { padding: 10px 14px; color: var(--text-2); font-size: 13px; }
     .perm-actions { display: flex; gap: 14px; margin: 4px 2px 0; }
-    .perm-actions a { color: var(--varco-accent); font-size: 12px; font-weight: 700; cursor: pointer; }
+    .perm-actions a { color: var(--primary); font-size: 12px; font-weight: 700; cursor: pointer; }
 
     /* duration chips */
     .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
-    .chip { border: 1px solid var(--varco-border); background: var(--varco-surface); border-radius: 999px; padding: 8px 16px; font-size: 13px; font-weight: 650; cursor: pointer; color: var(--varco-text); }
-    .chip:hover { background: var(--varco-surface-2); }
-    .chip.sel { background: var(--varco-accent); color: #fff; border-color: transparent; }
-    .summary-box { background: var(--varco-surface-2); border-radius: var(--varco-radius-sm); padding: 14px 16px; margin: 14px 0; font-size: 14px; line-height: 1.55; }
-    .summary-box b { font-weight: 750; }
+    .chip { border: 1px solid var(--border); background: var(--surface); border-radius: 999px; padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer; color: var(--text); }
+    .chip:hover { background: var(--surface-2); }
+    .chip.sel { background: var(--primary); color: var(--primary-ink); border-color: transparent; }
+    .summary-box { background: var(--surface-2); border-radius: var(--varco-radius-sm); padding: 14px 16px; margin: 14px 0; font-size: 14px; line-height: 1.55; }
+    .summary-box b { font-weight: 700; }
 
     .nav-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 18px; }
     .nav-row .left, .nav-row .right { display: flex; gap: 8px; }
 
     /* ---- grants ---- */
-    .controls { display: flex; flex-wrap: wrap; gap: 10px; margin: 4px 0 14px; }
+    .controls { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 14px; }
     .controls .search { flex: 1 1 240px; min-width: 180px; position: relative; }
-    .controls .search svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; color: var(--varco-muted); pointer-events: none; }
-    .controls .search input { padding-left: 36px; }
-    .controls select { max-width: 200px; }
+    .controls .search svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; color: var(--text-3); pointer-events: none; }
+    .controls .search input { padding-left: 36px; background: var(--surface); }
+    .controls .seg { flex: none; }
 
-    .grant { border: 1px solid var(--varco-border); border-radius: var(--varco-radius); background: var(--varco-surface); margin: 12px 0; box-shadow: 0 1px 2px rgba(0,0,0,.04); overflow: hidden; }
-    .grant.revoked, .grant.expired { opacity: .82; }
-    .grant.revoked { border-left: 4px solid var(--varco-muted); }
-    .grant.expired { border-left: 4px solid var(--varco-warn); }
-    .grant.active { border-left: 4px solid var(--varco-ok); }
-    .grant-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 15px 18px; }
+    .grant { border: 1px solid var(--border); border-radius: 15px; background: var(--surface); margin: 12px 0; overflow: hidden; }
+    .grant.revoked, .grant.expired { opacity: .7; }
+    .grant-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 18px; }
     .grant-head .l { display: flex; align-items: center; gap: 12px; min-width: 0; }
-    .grant-avatar { width: 38px; height: 38px; border-radius: 11px; background: var(--varco-surface-2); display: grid; place-items: center; font-weight: 800; flex: none; }
-    .grant-name { font-weight: 750; font-size: 16px; }
-    .grant-sub { color: var(--varco-muted); font-size: 12px; margin-top: 1px; }
+    .grant-avatar { width: 40px; height: 40px; border-radius: 11px; background: var(--surface-2); border: 1px solid var(--border); color: var(--text-2); display: grid; place-items: center; font-weight: 700; flex: none; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 14px; }
+    .grant-name { font-weight: 700; font-size: 15.5px; }
+    .grant-sub { color: var(--text-2); font-size: 12.5px; margin-top: 2px; }
     .grant-body { padding: 0 18px 16px; }
+    .grant-chips { padding: 0 18px 14px 72px; }
 
-    .sec { border-top: 1px solid var(--varco-border); }
+    .sec { border-top: 1px solid var(--border-soft); }
     .sec > summary { cursor: pointer; font-weight: 700; font-size: 14px; padding: 13px 18px; list-style: none; display: flex; align-items: center; gap: 8px; }
     .sec > summary::-webkit-details-marker { display: none; }
-    .sec > summary::before { content: '\u203A'; font-size: 18px; color: var(--varco-muted); transition: transform .15s ease; display: inline-block; }
+    .sec > summary::before { content: '\u203A'; font-size: 18px; color: var(--text-3); transition: transform .15s ease; display: inline-block; }
     .sec[open] > summary::before { transform: rotate(90deg); }
     .sec .sec-inner { padding: 0 18px 16px; }
-    .sec .count-tag { color: var(--varco-muted); font-weight: 600; }
+    .sec .count-tag { color: var(--text-3); font-weight: 600; }
 
     .scope-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
-    .scope-box { border: 1px solid var(--varco-border); border-radius: var(--varco-radius-sm); padding: 11px 13px; }
-    .scope-box .t { font-weight: 700; font-size: 13px; margin-bottom: 6px; }
-    .scope-box ul { margin: 0; padding-left: 16px; }
-    .scope-box li { margin: 3px 0; font-size: 13px; }
+    .scope-box { border: 1px solid var(--border); border-radius: var(--varco-radius-sm); padding: 11px 13px; }
+    .scope-box .t { font-weight: 700; font-size: 12px; margin-bottom: 6px; letter-spacing: .04em; text-transform: uppercase; display: flex; align-items: center; gap: 7px; }
+    .scope-box .t .sw { width: 8px; height: 8px; border-radius: 2px; }
+    .scope-box ul { margin: 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+    .scope-box li { margin: 0; font-size: 12px; }
 
     /* restrictions */
     .rest { display: flex; flex-direction: column; gap: 8px; }
-    .rest-row { background: var(--varco-surface-2); border-radius: var(--varco-radius-sm); padding: 10px 12px; }
+    .rest-row { background: var(--surface-2); border-radius: var(--varco-radius-sm); padding: 10px 12px; }
     .rest-row.disabled { opacity: .6; }
     .rest-main { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
     .rest-info { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
-    .rest-badge { background: color-mix(in srgb, var(--varco-accent) 16%, transparent); color: var(--varco-accent); border-radius: 6px; font-size: 11px; font-weight: 800; padding: 3px 8px; text-transform: uppercase; }
-    .rest-info small { color: var(--varco-muted); }
+    .rest-badge { background: color-mix(in srgb, var(--primary) 16%, transparent); color: var(--primary); border-radius: 6px; font-size: 11px; font-weight: 800; padding: 3px 8px; text-transform: uppercase; }
+    .rest-info small { color: var(--text-2); }
     .rest-actions { display: flex; gap: 6px; flex-wrap: wrap; }
-    .rest-tag { color: var(--varco-muted); font-size: 11px; font-weight: 700; text-transform: uppercase; }
-    .rest-edit { border-top: 1px solid var(--varco-border); margin-top: 10px; padding-top: 10px; }
-    .rest-add { border: 1px dashed var(--varco-border); border-radius: var(--varco-radius-sm); margin-top: 12px; padding: 14px; }
+    .rest-tag { color: var(--text-3); font-size: 11px; font-weight: 700; text-transform: uppercase; }
+    .rest-edit { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 10px; }
+    .rest-add { border: 1px dashed var(--border); border-radius: var(--varco-radius-sm); margin-top: 12px; padding: 14px; }
     .chk-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
     .chk-row label { display: inline-flex; align-items: center; gap: 6px; width: auto; }
     .chk-row input { width: auto; }
 
     /* inline confirm */
-    .confirm { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 10px; width: 100%; padding: 12px 14px; border-radius: var(--varco-radius-sm); background: color-mix(in srgb, var(--varco-danger) 8%, transparent); border: 1px solid color-mix(in srgb, var(--varco-danger) 30%, transparent); }
-    .confirm .msg { flex: 1 1 220px; font-size: 14px; }
+    .confirm { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 10px; width: 100%; padding: 12px 14px; border-radius: var(--varco-radius-sm); background: color-mix(in srgb, var(--red) 8%, transparent); border: 1px solid color-mix(in srgb, var(--red) 30%, transparent); }
+    .confirm .msg { flex: 1 1 220px; font-size: 13.5px; line-height: 1.5; }
     .confirm .acts { display: flex; gap: 8px; }
 
-    /* audit */
-    .audit-list { display: flex; flex-direction: column; gap: 4px; max-height: 460px; overflow: auto; }
-    .grant-activity .audit-list { max-height: 320px; margin-top: 4px; }
-    .audit-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px 12px; background: var(--varco-surface-2); border-radius: 9px; padding: 9px 12px; }
-    .audit-ico { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; flex: none; background: var(--varco-surface); border: 1px solid var(--varco-border); }
-    .audit-ico svg { width: 14px; height: 14px; }
+    /* ---- audit ---- */
+    .audit-card { background: var(--surface); border: 1px solid var(--border); border-radius: 15px; overflow: hidden; }
+    .audit-toolbar { padding: 15px 18px 13px; border-bottom: 1px solid var(--border-soft); }
+    .audit-toolbar .top { display: flex; align-items: center; gap: 9px; margin-bottom: 11px; }
+    .audit-toolbar .top .title { font-size: 13.5px; font-weight: 600; }
+    .audit-toolbar .top .ct { font-size: 11px; font-weight: 600; color: var(--text-3); background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 2px 9px; font-family: 'JetBrains Mono', ui-monospace, monospace; }
+    .audit-toolbar .top .note { display: inline-flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--text-3); }
+    .audit-toolbar .top .note .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+    .act-filters { display: flex; gap: 5px; flex-wrap: wrap; }
+    .afilter { font: inherit; font-size: 11.5px; font-weight: 600; border-radius: 999px; padding: 5px 12px; cursor: pointer; white-space: nowrap; color: var(--text-3); background: transparent; border: 1px solid var(--border-soft); }
+    .afilter.sel { color: var(--accent); background: color-mix(in srgb, var(--accent) 15%, transparent); border-color: color-mix(in srgb, var(--accent) 38%, transparent); }
+    .audit-list { display: flex; flex-direction: column; overflow: auto; max-height: 560px; }
+    .grant-activity .audit-list { max-height: 320px; border: 1px solid var(--border); border-radius: 12px; }
+    .audit-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px 13px; padding: 12px 18px; border-bottom: 1px solid var(--border-soft); }
+    .audit-ico { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; flex: none; border: 1.5px solid var(--text-3); color: var(--text-3); font-size: 12px; font-weight: 700; }
     .audit-mid { min-width: 0; }
-    .audit-type { font-weight: 700; font-size: 13px; }
-    .audit-detail { color: var(--varco-muted); font-size: 12px; margin-top: 1px; overflow: hidden; text-overflow: ellipsis; }
+    .audit-type { font-weight: 500; font-size: 13px; }
+    .audit-cat { font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; margin-left: 8px; }
+    .audit-detail { color: var(--text-2); font-size: 12px; margin-top: 1px; overflow: hidden; text-overflow: ellipsis; }
     .audit-meta { text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
-    .audit-ts { color: var(--varco-muted); font-size: 11px; white-space: nowrap; }
+    .audit-ts { color: var(--text-2); font-size: 11px; white-space: nowrap; font-family: 'JetBrains Mono', ui-monospace, monospace; }
     .audit-grant { font-size: 10px; }
-    .audit-row.kind-danger .audit-ico { background: color-mix(in srgb, var(--varco-danger) 12%, transparent); color: var(--varco-danger); border-color: transparent; }
-    .audit-row.kind-warn .audit-ico { background: color-mix(in srgb, var(--varco-warn) 16%, transparent); color: color-mix(in srgb, var(--varco-warn) 80%, #000); border-color: transparent; }
-    .audit-row.kind-ok .audit-ico { background: color-mix(in srgb, var(--varco-ok) 14%, transparent); color: var(--varco-ok); border-color: transparent; }
 
-    /* export */
-    .entity-list { border: 1px solid var(--varco-border); border-radius: var(--varco-radius-sm); max-height: 360px; overflow: auto; padding: 4px; margin-top: 10px; }
-    .entity-group + .entity-group { border-top: 1px solid var(--varco-border); }
-    .entity-group-title { color: var(--varco-muted); font-size: 11px; font-weight: 800; text-transform: uppercase; padding: 8px 8px 4px; }
+    /* ---- export ---- */
+    .entity-list { border: 1px solid var(--border); border-radius: var(--varco-radius-sm); max-height: 360px; overflow: auto; padding: 4px; margin-top: 10px; }
+    .entity-group + .entity-group { border-top: 1px solid var(--border); }
+    .entity-group-title { color: var(--text-3); font-size: 11px; font-weight: 800; text-transform: uppercase; padding: 8px 8px 4px; }
     .entity-row { display: flex; gap: 10px; align-items: flex-start; padding: 8px; border-radius: 8px; }
-    .entity-row:hover { background: var(--varco-surface-2); }
+    .entity-row:hover { background: var(--surface-2); }
     .entity-row input { width: auto; margin-top: 2px; }
-    .entity-row small { color: var(--varco-muted); display: block; margin-top: 2px; }
-    .export-summary { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; background: var(--varco-surface-2); border-radius: var(--varco-radius-sm); padding: 12px 14px; margin: 12px 0; font-size: 14px; }
+    .entity-row small { color: var(--text-2); display: block; margin-top: 2px; }
+    .export-summary { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; background: var(--surface-2); border-radius: var(--varco-radius-sm); padding: 12px 14px; margin: 12px 0; font-size: 14px; }
+
+    /* ---- revoke confirm modal ---- */
+    .modal-scrim { position: fixed; inset: 0; z-index: 70; background: rgba(4,7,11,.55); display: flex; align-items: center; justify-content: center; padding: 24px; animation: fade .18s ease; }
+    .modal { width: 420px; max-width: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow); padding: 24px; }
+    .modal .mhead { display: flex; align-items: center; gap: 11px; margin-bottom: 14px; }
+    .modal .micon { width: 34px; height: 34px; border-radius: 10px; background: color-mix(in srgb, var(--red) 14%, transparent); color: var(--red); display: grid; place-items: center; font-size: 18px; font-weight: 700; }
+    .modal .mtitle { font-size: 16px; font-weight: 700; }
+    .modal p { margin: 0 0 6px; font-size: 13.5px; color: var(--text); line-height: 1.5; }
+    .modal p.fine { margin: 0 0 20px; font-size: 12.5px; color: var(--text-2); }
+    .modal .macts { display: flex; gap: 10px; justify-content: flex-end; }
+
+    /* ---- toast ---- */
+    .toast { position: fixed; left: 50%; bottom: 28px; z-index: 80; display: flex; align-items: center; gap: 11px; background: var(--surface); border: 1px solid var(--border); border-radius: 11px; padding: 12px 18px; box-shadow: var(--shadow); animation: vToast .26s cubic-bezier(.2,.7,.2,1); }
+    .toast .ico { width: 18px; height: 18px; border-radius: 50%; color: var(--bg); display: grid; place-items: center; font-size: 11px; font-weight: 700; }
+    .toast .msg { font-size: 13px; font-weight: 600; }
   </style>`;
 
 // src/icons.ts
@@ -256,21 +341,45 @@ var icons = {
 
 // src/panel.ts
 var DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+var FONTS = `
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">`;
 var SCOPE_DEFS = [
-  { key: "read_entities", title: "Read entity states", desc: "See the current value of these entities", icon: "eye" },
-  { key: "subscriptions", title: "Live updates", desc: "Get notified when these entities change", icon: "live" },
-  { key: "history", title: "Query history", desc: "Read past values of these entities", icon: "history" },
-  { key: "camera_snapshots", title: "Camera snapshots", desc: "Capture still images from these cameras", icon: "camera" },
-  { key: "actions", title: "Control actions", desc: "Call these Home Assistant services", icon: "bolt" }
+  { key: "read_entities", title: "Read entity states", desc: "See the current value of these entities", icon: "eye", color: "var(--c-read)", short: "READ" },
+  { key: "subscriptions", title: "Live updates", desc: "Get notified when these entities change", icon: "live", color: "var(--c-live)", short: "LIVE" },
+  { key: "history", title: "Query history", desc: "Read past values of these entities", icon: "history", color: "var(--c-history)", short: "HISTORY" },
+  { key: "camera_snapshots", title: "Camera snapshots", desc: "Capture still images from these cameras", icon: "camera", color: "var(--c-cameras)", short: "CAMERAS" },
+  { key: "actions", title: "Control actions", desc: "Call these Home Assistant services", icon: "bolt", color: "var(--c-actions)", short: "ACTIONS" }
+];
+var CAT = {
+  connection: { label: "CONNECTION", color: "var(--accent)" },
+  share: { label: "SHARE", color: "var(--primary)" },
+  access: { label: "ACCESS", color: "var(--text-2)" },
+  control: { label: "CONTROL", color: "var(--coral)" },
+  admin: { label: "ADMIN", color: "var(--red)" }
+};
+var ANCHORS = [
+  ["sec-overview", "Overview"],
+  ["sec-share", "Share"],
+  ["sec-requests", "Requests"],
+  ["sec-grants", "Grants"],
+  ["sec-activity", "Activity"],
+  ["sec-export", "Export"]
 ];
 var VarcoPanel = class extends HTMLElement {
   _hass;
   _loaded = false;
   _lastState;
   _refreshTimer;
+  _toastTimer;
   _pendingSignature = "";
   _grantSearch = "";
   _grantStatusFilter = "all";
+  _activityFilter = "all";
+  _confirmRevoke = null;
+  _toast = null;
+  _authCopied = false;
   _shareEntityId = "";
   _shareName = "";
   _shareClaims = "1";
@@ -368,6 +477,15 @@ var VarcoPanel = class extends HTMLElement {
     this._loaded = false;
     await this.load();
   }
+  flash(msg, tone = "ok") {
+    this._toast = { msg, tone };
+    this.renderToast();
+    clearTimeout(this._toastTimer);
+    this._toastTimer = window.setTimeout(() => {
+      this._toast = null;
+      this.renderToast();
+    }, 2600);
+  }
   // ---------- helpers ----------
   escape(value) {
     return String(value ?? "").replace(/[&<>'"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[c]);
@@ -415,10 +533,15 @@ var VarcoPanel = class extends HTMLElement {
     const s = this.scopes(manifest);
     return `${s.read_entities.length} read, ${s.subscriptions.length} live, ${s.history.length} history, ${s.camera_snapshots.length} cameras, ${s.actions.length} actions`;
   }
+  // Coloured permission chips for the grant card header.
+  permChips(manifest) {
+    const s = this.scopes(manifest);
+    return SCOPE_DEFS.filter((def) => s[def.key].length).map((def) => `<span class="perm-chip"><span class="sw" style="background:${def.color}"></span>${s[def.key].length} ${def.short}</span>`).join("");
+  }
   shortKey(value) {
     const text = String(value || "");
     if (text.length <= 24) return text || "unknown";
-    return `${text.slice(0, 12)}...${text.slice(-8)}`;
+    return `${text.slice(0, 12)}\u2026${text.slice(-8)}`;
   }
   formatDate(value) {
     if (!value) return "unknown";
@@ -426,12 +549,55 @@ var VarcoPanel = class extends HTMLElement {
     if (Number.isNaN(date.getTime())) return String(value);
     return date.toLocaleString();
   }
+  formatTime(value) {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    return date.toLocaleTimeString();
+  }
   toLocalInput(iso) {
     if (!iso) return "";
     const date = new Date(iso);
     if (Number.isNaN(date.getTime())) return "";
     const pad = (n) => String(n).padStart(2, "0");
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+  // ---------- KPI strip ----------
+  kpiStrip() {
+    const state = this._lastState;
+    const grants = state.grants || [];
+    const active = grants.filter((g) => this.grantStatus(g) === "active");
+    const pending = state.requests.filter((r) => r.status === "pending").length;
+    const audit = Array.isArray(state.audit) ? state.audit : [];
+    const dayAgo = Date.now() - 24 * 3600 * 1e3;
+    const events24 = audit.filter((e) => {
+      const t = new Date(e.ts).getTime();
+      return !Number.isNaN(t) && t >= dayAgo;
+    }).length;
+    const ents = /* @__PURE__ */ new Set();
+    let actions = 0;
+    active.forEach((g) => {
+      const s = this.scopes(g.manifest);
+      [...s.read_entities, ...s.subscriptions, ...s.camera_snapshots].forEach((e) => ents.add(e));
+      actions += s.actions.length;
+    });
+    const connected = !!state.info.relay?.connected;
+    const kpis = [
+      { lab: "Active grants", val: String(active.length), sub: `of ${grants.length} total`, color: "var(--accent)" },
+      { lab: "Pending requests", val: String(pending), sub: pending ? "awaiting review" : "all clear", color: pending ? "var(--amber)" : "var(--text-3)" },
+      { lab: "Events \xB7 24h", val: String(events24), sub: `${audit.length} all time`, color: "var(--primary)" },
+      { lab: "Surface exposed", val: String(ents.size), sub: `${ents.size} entities \xB7 ${actions} actions`, color: "var(--violet)" },
+      { lab: "Relay", val: connected ? "Connected" : "Offline", sub: state.info.relay?.last_connected ? `last ${this.formatTime(state.info.relay.last_connected)}` : "never", color: connected ? "var(--accent)" : "var(--red)" }
+    ];
+    return `<div class="kpi-grid">${kpis.map((k) => `
+      <div class="kpi">
+        <div class="head"><span class="dot" style="background:${k.color}"></span><span class="lab">${this.escape(k.lab)}</span></div>
+        <div class="val">${this.escape(k.val)}</div>
+        <div class="sub">${this.escape(k.sub)}</div>
+      </div>`).join("")}</div>`;
+  }
+  legend() {
+    return `<div class="legend">${SCOPE_DEFS.map((d) => `<span class="item"><span class="sw" style="background:${d.color}"></span>${this.escape(d.short)}</span>`).join("")}</div>`;
   }
   // ---------- pending request wizard ----------
   requestCard(request) {
@@ -506,7 +672,7 @@ var VarcoPanel = class extends HTMLElement {
       return `
         <div class="perm-group">
           <div class="perm-head">
-            <span class="perm-ico">${icons[def.icon]}</span>
+            <span class="perm-ico" style="color:${def.color}">${icons[def.icon]}</span>
             <span class="perm-meta"><span class="perm-title">${this.escape(def.title)}</span><span class="perm-desc">${this.escape(def.desc)}</span></span>
             <span class="perm-count">${values.length}</span>
           </div>
@@ -548,7 +714,7 @@ var VarcoPanel = class extends HTMLElement {
           <div class="left"><button class="ghost" data-step-prev="${this.escape(id)}">Back</button></div>
           <div class="right">
             <button class="danger" data-reject="${this.escape(id)}">Reject</button>
-            <button data-approve="${this.escape(id)}">Approve access</button>
+            <button class="go" data-approve="${this.escape(id)}">Approve access</button>
           </div>
         </div>
       </div>`;
@@ -592,6 +758,7 @@ var VarcoPanel = class extends HTMLElement {
           </div>
           ${this.statusPill(status)}
         </div>
+        <div class="grant-chips"><div class="perm-chips">${this.permChips(grant.manifest)}</div></div>
         <div class="grant-body">
           <div class="meta">
             <div><div class="k">Version</div><div class="v">${this.escape(this.manifestVersion(grant))}</div></div>
@@ -602,10 +769,10 @@ var VarcoPanel = class extends HTMLElement {
           </div>
         </div>
         <details class="sec">
-          <summary>Permissions <span class="count-tag">&middot; ${this.escape(this.scopeSummary(grant.manifest))}</span></summary>
+          <summary>Scope \xB7 what this consumer may touch <span class="count-tag">&middot; ${this.escape(this.scopeSummary(grant.manifest))}</span></summary>
           <div class="sec-inner">
             <div class="scope-grid">
-              ${SCOPE_DEFS.map((def) => this.scopeBox(def.title, s[def.key])).join("")}
+              ${SCOPE_DEFS.map((def) => this.scopeBox(def, s[def.key])).join("")}
             </div>
           </div>
         </details>
@@ -613,16 +780,16 @@ var VarcoPanel = class extends HTMLElement {
         ${this.grantActivity(grant.grant_id)}
         <div class="grant-body">
           <div class="btn-row" style="margin-top:6px">
-            ${grant.revoked ? "" : `<button class="danger" data-revoke="${this.escape(grant.grant_id)}">${icons.ban} Revoke access</button>`}
+            ${grant.revoked ? "" : `<button class="danger" data-revoke="${this.escape(grant.grant_id)}" data-name="${this.escape(name)}">${icons.ban} Revoke access</button>`}
             <button class="danger" data-delete-grant="${this.escape(grant.grant_id)}" data-name="${this.escape(name)}">${icons.trash} Delete record</button>
           </div>
         </div>
       </div>`;
   }
-  scopeBox(title, values) {
+  scopeBox(def, values) {
     return `
       <div class="scope-box">
-        <div class="t">${this.escape(title)}</div>
+        <div class="t"><span class="sw" style="background:${def.color}"></span>${this.escape(def.short)}</div>
         ${values.length ? `<ul>${values.map((v) => `<li><code>${this.escape(v)}</code></li>`).join("")}</ul>` : '<div class="muted">None</div>'}
       </div>`;
   }
@@ -798,6 +965,7 @@ var VarcoPanel = class extends HTMLElement {
       access_request_received: "Access request received",
       access_request_approved: "Access request approved",
       access_request_rejected: "Access request rejected",
+      grant_created: "Grant created",
       grant_revoked: "Grant revoked",
       grant_deleted: "Grant deleted",
       grant_restrictions_updated: "Restrictions updated",
@@ -808,16 +976,23 @@ var VarcoPanel = class extends HTMLElement {
       restriction_denied: "Restriction denied",
       history_query_limited: "History query limited",
       session_error: "Session error",
+      share_created: "Share created",
+      share_claimed: "Share claimed",
       webrtc_fallback: "WebRTC fallback to relay",
       webrtc_answer: "WebRTC negotiated"
     };
     return labels[event] || String(event || "event");
   }
-  auditKind(event) {
-    if (["permission_error", "session_error", "grant_revoked", "grant_deleted", "restriction_denied"].includes(event)) return { cls: "kind-danger", icon: "alert" };
-    if (["rate_limited", "history_query_limited", "access_request_rejected"].includes(event)) return { cls: "kind-warn", icon: "alert" };
-    if (["access_request_approved", "consumer_connected"].includes(event)) return { cls: "kind-ok", icon: "check" };
-    return { cls: "", icon: "dot" };
+  // Map a raw audit event name to one of the five activity categories.
+  auditCategory(event) {
+    if (["consumer_connected", "webrtc_answer", "webrtc_fallback", "session_error"].includes(event)) return "connection";
+    if (["share_created", "share_claimed"].includes(event)) return "share";
+    if (event === "call_service") return "control";
+    if (["access_request_received", "access_request_approved", "access_request_rejected", "grant_created", "grant_revoked", "grant_deleted", "grant_restrictions_updated"].includes(event)) return "admin";
+    return "access";
+  }
+  auditSuccess(event) {
+    return ["access_request_approved", "grant_created", "consumer_connected", "call_service", "share_claimed", "webrtc_answer"].includes(event);
   }
   auditDetailSummary(details) {
     if (!details || typeof details !== "object") return "";
@@ -831,30 +1006,43 @@ var VarcoPanel = class extends HTMLElement {
   }
   auditRow(event) {
     const detail = this.auditDetailSummary(event.details);
-    const kind = this.auditKind(event.event);
+    const cat = this.auditCategory(event.event);
+    const color = CAT[cat].color;
+    const success = this.auditSuccess(event.event);
+    const markerStyle = success ? `background:${color};border-color:${color};color:var(--bg);` : `background:transparent;border-color:${color};color:${color};`;
     return `
-      <div class="audit-row ${kind.cls}" data-audit-event data-audit-grant="${this.escape(event.grant_id || "")}">
-        <span class="audit-ico">${icons[kind.icon]}</span>
+      <div class="audit-row" data-audit-event data-audit-grant="${this.escape(event.grant_id || "")}">
+        <span class="audit-ico" style="${markerStyle}">${success ? "\u2713" : ""}</span>
         <span class="audit-mid">
           <span class="audit-type" data-audit-type>${this.escape(this.auditEventLabel(event.event))}</span>
+          <span class="audit-cat" style="color:${color}">${CAT[cat].label}</span>
           ${detail ? `<span class="audit-detail">${detail}</span>` : ""}
         </span>
         <span class="audit-meta">
-          <span class="audit-ts">${this.escape(this.formatDate(event.ts))}</span>
+          <span class="audit-ts">${this.escape(this.formatTime(event.ts))}</span>
           ${event.grant_id ? `<code class="audit-grant">${this.escape(this.shortKey(event.grant_id))}</code>` : ""}
         </span>
       </div>`;
   }
   auditSection() {
     const events = Array.isArray(this._lastState?.audit) ? this._lastState.audit : [];
-    const recent = events.slice(-50).reverse();
+    const filter = this._activityFilter;
+    const filtered = (filter === "all" ? events : events.filter((e) => this.auditCategory(e.event) === filter)).slice().reverse().slice(0, 80);
+    const filterDefs = [["all", "All"], ["connection", "Connect"], ["share", "Share"], ["access", "Access"], ["control", "Control"], ["admin", "Admin"]];
+    const tabs = filterDefs.map(([k, l]) => `<button class="afilter ${filter === k ? "sel" : ""}" data-activity-filter="${k}">${l}</button>`).join("");
     return `
-      <div class="h-page">Activity <span class="count">${events.length}</span></div>
-      <div class="card audit-card">
-        <div class="eyebrow">Access oversight</div>
-        <p class="muted" style="margin:6px 0 12px">Recent Varco events. Sensitive payloads (states, snapshots, history) are never shown.</p>
+      <div class="audit-card">
+        <div class="audit-toolbar">
+          <div class="top">
+            <span class="title">Access oversight</span>
+            <span class="ct">${filtered.length}</span>
+            <span class="vspace"></span>
+            <span class="note"><span class="dot"></span>states, snapshots &amp; history are never logged</span>
+          </div>
+          <div class="act-filters">${tabs}</div>
+        </div>
         <div class="audit-list" data-audit-list>
-          ${recent.length ? recent.map((e) => this.auditRow(e)).join("") : '<p class="empty">No activity recorded yet.</p>'}
+          ${filtered.length ? filtered.map((e) => this.auditRow(e)).join("") : '<p class="empty" style="padding:18px">No activity recorded yet.</p>'}
         </div>
       </div>`;
   }
@@ -871,24 +1059,6 @@ var VarcoPanel = class extends HTMLElement {
         </div>
       </details>`;
   }
-  // ---------- relay ----------
-  relayHealthSection(relay) {
-    const info = relay || {};
-    const connected = !!info.connected;
-    return `
-      <div class="card" data-relay-status="${connected ? "connected" : "disconnected"}">
-        <div class="relay-line">
-          <span class="eyebrow">Relay</span>
-          ${connected ? '<span class="pill ok"><span class="dot"></span>connected</span>' : '<span class="pill danger"><span class="dot"></span>disconnected</span>'}
-        </div>
-        <div class="meta">
-          <div><div class="k">Bridge URL</div><div class="v" data-relay-bridge-url><code>${info.bridge_url ? this.escape(info.bridge_url) : "unknown"}</code></div></div>
-          <div><div class="k">Last connected</div><div class="v" data-relay-last-connected>${info.last_connected ? this.escape(this.formatDate(info.last_connected)) : "never"}</div></div>
-        </div>
-        ${info.last_error ? `<div class="callout danger" data-relay-last-error>Last error: ${this.escape(info.last_error)}</div>` : ""}
-        ${!connected ? `<div class="callout warn relay-guidance" data-relay-guidance>Check that the bridge URL above is reachable from Home Assistant and review the integration logs for connection errors.</div>` : ""}
-      </div>`;
-  }
   // ---------- entity share ----------
   shareEntities() {
     return Object.entries(this._hass?.states || {}).map(([id, state]) => ({ id, label: String(state.attributes?.friendly_name || id) })).sort((a, b) => a.id.localeCompare(b.id));
@@ -898,12 +1068,9 @@ var VarcoPanel = class extends HTMLElement {
   }
   entityShareSection() {
     return `
-      <div class="h-page">Create entity share</div>
-      <div class="card">
-        <div class="eyebrow">Claim link</div>
-        <p class="muted" style="margin:6px 0 12px">Create a share link for one Home Assistant entity.</p>
+      <div class="card panel">
         ${this._shareError ? `<p class="callout danger">${this.escape(this._shareError)}</p>` : ""}
-        ${this._shareUrl ? `<p class="callout"><b>Share created.</b><br><code>${this.escape(this._shareUrl)}</code></p><button data-copy-share-link>Copy link</button>` : ""}
+        ${this._shareUrl ? `<p class="callout"><b>Share created.</b><br><code>${this.escape(this._shareUrl)}</code></p><button class="subtle" data-copy-share-link>Copy link</button>` : ""}
         <label class="field">Entity</label>
         <input data-share-entity placeholder="Start typing a name or entity id" value="${this.escape(this._shareEntityId)}" autocomplete="off">
         <div class="share-suggestions" data-share-suggestions></div>
@@ -999,8 +1166,10 @@ var VarcoPanel = class extends HTMLElement {
         manifest: this.entityShareManifest(entityId, name)
       });
       this._shareUrl = this.localShareUrl(response.share_url);
+      this.flash("Share link minted", "ok");
     } catch (err) {
       this._shareError = err?.message || String(err);
+      this.flash("Could not create share", "danger");
     } finally {
       this._shareLoading = false;
       this.render(this._lastState);
@@ -1014,15 +1183,12 @@ var VarcoPanel = class extends HTMLElement {
     const result = this._exportResult;
     const selectedCount = this._selectedEntities?.size || 0;
     return `
-      <div class="h-page">Dashboard brief export</div>
-      <div class="card">
-        <div class="eyebrow">Manifest blueprint</div>
-        <p class="muted" style="margin:6px 0 12px">Harvest an existing Lovelace dashboard or view into a local zip for a coding agent. The zip contains <code>brief.md</code> and <code>manifest.json</code>; it does not create a grant.</p>
+      <div class="card panel">
         ${this._dashboardError ? `<p class="callout warn">${this.escape(this._dashboardError)}</p>` : ""}
         ${this._exportError ? `<p class="callout danger">${this.escape(this._exportError)}</p>` : ""}
         <label class="field">Dashboard</label>
         <select data-dashboard-select>
-          <option value="">Choose a dashboard...</option>
+          <option value="">Choose a dashboard\u2026</option>
           ${dashboards.map((item, index) => `<option value="${index}" ${index === this._selectedDashboardIndex ? "selected" : ""}>${this.escape(item.title)} (${this.escape(item.url_path || "default")})</option>`).join("")}
         </select>
         ${dashboard && views.length ? `
@@ -1034,7 +1200,7 @@ var VarcoPanel = class extends HTMLElement {
       return `<option value="${index}" ${String(index) === String(this._selectedViewIndex) ? "selected" : ""}>View: ${this.escape(v.title || v.path || `View ${index + 1}`)}</option>`;
     }).join("")}
           </select>` : ""}
-        ${this._exportLoading ? '<p class="muted">Harvesting dashboard...</p>' : ""}
+        ${this._exportLoading ? '<p class="muted" style="margin-top:12px">Harvesting dashboard\u2026</p>' : ""}
         ${result ? this.exportPreview(result, selectedCount) : ""}
       </div>`;
   }
@@ -1047,7 +1213,7 @@ var VarcoPanel = class extends HTMLElement {
         <span class="muted">${this.escape(this.scopeSummary(previewManifest))}</span>
       </div>
       ${result.warnings.length ? `
-        <details class="sec" style="border:1px solid var(--varco-border);border-radius:var(--varco-radius-sm)">
+        <details class="sec" style="border:1px solid var(--border);border-radius:var(--varco-radius-sm)">
           <summary>${result.warnings.length} unresolved or dynamic dashboard references</summary>
           <div class="sec-inner"><ul>${result.warnings.map((w) => `<li><code>${this.escape(w.path)}</code>: ${this.escape(w.message)}</li>`).join("")}</ul></div>
         </details>` : ""}
@@ -1059,7 +1225,7 @@ var VarcoPanel = class extends HTMLElement {
           </div>`).join("") : '<p class="empty">No entities were harvested from this selection.</p>'}
       </div>
       <div class="btn-row">
-        <button data-download-brief ${selectedCount ? "" : "disabled"}>Download agent brief zip</button>
+        <button class="go" data-download-brief ${selectedCount ? "" : "disabled"}>Download agent brief zip</button>
       </div>`;
   }
   groupExportEntities(entities) {
@@ -1180,6 +1346,7 @@ var VarcoPanel = class extends HTMLElement {
       this.downloadBlob(zip, `${name}.zip`);
       this._exportResult = exportResult;
       this._selectedEntities = new Set(exportResult.entities.filter((e) => e.selected).map((e) => e.entity_id));
+      this.flash(`Exported ${name}.zip`, "ok");
     } catch (err) {
       this._exportError = `Could not generate brief: ${err.message || err}`;
     } finally {
@@ -1202,7 +1369,7 @@ var VarcoPanel = class extends HTMLElement {
     const empty = this.querySelector("[data-grant-empty]");
     if (empty) empty.style.display = visible ? "none" : "";
   }
-  // ---------- inline confirm ----------
+  // ---------- inline confirm (delete) ----------
   showInlineConfirm(triggerEl, opts) {
     const row = triggerEl.closest(".btn-row") || triggerEl.parentElement;
     if (!row) {
@@ -1283,52 +1450,175 @@ var VarcoPanel = class extends HTMLElement {
     if (permsEl) permsEl.textContent = boxes.length ? this.plainSummary(fakeManifest) : this.plainSummary(this._lastState?.requests.find((r) => r.request_id === requestId)?.manifest);
     if (expiryEl) expiryEl.textContent = this.currentExpiry(requestId).label;
   }
+  // ---------- chrome fragments ----------
+  topBar(info) {
+    const connected = !!info.relay?.connected;
+    const brandSvg = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="5" height="18" rx="2" fill="var(--accent)"/><rect x="16" y="3" width="5" height="18" rx="2" fill="var(--text-3)"/><circle cx="12" cy="12" r="2.6" fill="var(--accent)"/></svg>';
+    return `
+      <div class="vbar">
+        <div class="vbrand">
+          ${brandSvg}
+          <span class="name">Varco <span class="sub">Authority</span></span>
+          <span class="vchip ${connected ? "ok" : "off"}"><span class="dot"></span>${connected ? "Relay connected" : "Relay offline"}</span>
+        </div>
+      </div>`;
+  }
+  summaryHeader(info) {
+    const connected = !!info.relay?.connected;
+    const bridge = info.relay?.bridge_url || "unknown";
+    const last = info.relay?.last_connected ? this.formatTime(info.relay.last_connected) : "never";
+    const tabs = ANCHORS.map(([id, label]) => `<button class="atab" data-anchor="${id}">${label}</button>`).join("");
+    return `
+      <div class="summary">
+        <div class="summary-top">
+          <div class="summary-id">
+            <div class="lab">Authority</div>
+            <div class="copy" data-copy-auth>
+              <span class="val mono">${this.escape(this.shortKey(info.authority_id))}</span>
+              <span class="act">${this._authCopied ? "COPIED" : "COPY"}</span>
+            </div>
+          </div>
+          <div class="summary-relay" data-relay-status="${connected ? "connected" : "disconnected"}">
+            <div class="line"><span class="dot" style="background:${connected ? "var(--accent)" : "var(--red)"}"></span>${connected ? "Relay connected" : "Relay offline"}</div>
+            <div class="meta mono"><span data-relay-bridge-url>${this.escape(bridge)}</span> &middot; last <span data-relay-last-connected>${this.escape(last)}</span></div>
+          </div>
+        </div>
+        <div class="anchor-tabs">${tabs}</div>
+      </div>`;
+  }
+  revokeModal() {
+    if (!this._confirmRevoke) return "";
+    const name = this._confirmRevoke.name;
+    return `
+      <div class="modal-scrim" data-revoke-cancel>
+        <div class="modal" data-revoke-stop>
+          <div class="mhead">
+            <span class="micon">&#9888;</span>
+            <span class="mtitle">Revoke access?</span>
+          </div>
+          <p>This ends access for <strong>${this.escape(name)}</strong> immediately.</p>
+          <p class="fine">Active and future sessions are cut by the Authority on the next check. The grant record stays for audit until you delete it.</p>
+          <div class="macts">
+            <button class="ghost" data-revoke-cancel>Cancel</button>
+            <button style="background:var(--red);color:#fff" data-revoke-confirm>Revoke access</button>
+          </div>
+        </div>
+      </div>`;
+  }
+  renderToast() {
+    const host = this.querySelector("[data-toast-host]");
+    if (!host) return;
+    if (!this._toast) {
+      host.innerHTML = "";
+      return;
+    }
+    const toneFg = { ok: "var(--accent)", danger: "var(--red)", warn: "var(--amber)" };
+    const icon = { ok: "\u2713", danger: "\u2715", warn: "!" };
+    const t = this._toast;
+    host.innerHTML = `
+      <div class="toast" style="border-color:color-mix(in srgb, ${toneFg[t.tone]} 40%, transparent)">
+        <span class="ico" style="background:${toneFg[t.tone]}">${icon[t.tone]}</span>
+        <span class="msg">${this.escape(t.msg)}</span>
+      </div>`;
+  }
   // ---------- render ----------
   render(state) {
     if (state) this._lastState = state;
     if (!this._lastState || this._lastState.loading) {
-      this.innerHTML = `<ha-card><div class="card-content">${styles()}<div class="wrap">Loading Varco\u2026</div></div></ha-card>`;
+      this.innerHTML = `${FONTS}<div class="varco-root">${styles()}<div class="wrap" style="padding:40px 22px">Loading Varco\u2026</div></div>`;
       return;
     }
     const current = this._lastState;
     const pending = current.requests.filter((r) => r.status === "pending");
+    const activeCount = current.grants.filter((g) => this.grantStatus(g) === "active").length;
     this.innerHTML = `
-      <ha-card header="Varco Authority">
-        <div class="card-content">${styles()}
-          <div class="wrap">
-            <div class="topbar">
-              <div class="card">
-                <div class="relay-line"><span class="eyebrow">Authority ID</span></div>
-                <div class="v" style="margin-top:8px"><code>${this.escape(current.info.authority_id)}</code></div>
-              </div>
-              ${this.relayHealthSection(current.info.relay)}
-            </div>
+      ${FONTS}
+      <div class="varco-root">
+        ${styles()}
+        ${this.topBar(current.info)}
+        ${this.summaryHeader(current.info)}
+        <div class="wrap">
 
+          <section id="sec-overview">
+            <div class="sec-eyebrow">Overview</div>
+            <div class="sec-title">At a glance</div>
+            ${this.legend()}
+            ${this.kpiStrip()}
+          </section>
+
+          <section id="sec-share">
+            <div class="sec-eyebrow">Create</div>
+            <div class="sec-title">Share an entity</div>
+            <div class="sec-lead">Mint a claim link for one Home Assistant entity. The consumer claims it, then asks you for a grant.</div>
             ${this.entityShareSection()}
+          </section>
 
-            <div class="h-page">Pending access requests ${pending.length ? `<span class="count">${pending.length}</span>` : ""}</div>
+          <section id="sec-requests">
+            <div class="sec-eyebrow">Consent</div>
+            <div class="sec-title">Pending access requests ${pending.length ? `<span class="badge amber mono">${pending.length}</span>` : ""}</div>
             ${pending.length ? pending.map((r) => this.requestCard(r)).join("") : '<p class="empty">No one is waiting for access right now.</p>'}
+          </section>
 
-            <div class="h-page">Grants ${current.grants.length ? `<span class="count">${current.grants.length}</span>` : ""}</div>
+          <section id="sec-grants">
+            <div class="sec-eyebrow">Access</div>
+            <div class="sec-title">Grants <span class="badge muted mono">${activeCount} active</span></div>
             ${current.grants.length ? `
               <div class="controls">
                 <div class="search">${icons.search}<input type="search" data-grant-search placeholder="Search by consumer name" value="${this.escape(this._grantSearch)}"></div>
-                <select data-grant-status-filter>
-                  ${["all", "active", "revoked", "expired"].map((v) => `<option value="${v}" ${(this._grantStatusFilter || "all") === v ? "selected" : ""}>${v === "all" ? "All statuses" : v.charAt(0).toUpperCase() + v.slice(1)}</option>`).join("")}
-                </select>
+                <div class="seg" data-grant-status-seg>
+                  ${["all", "active", "revoked", "expired"].map((v) => `<button data-grant-status="${v}" class="${(this._grantStatusFilter || "all") === v ? "sel" : ""}">${v === "all" ? "All" : v.charAt(0).toUpperCase() + v.slice(1)}</button>`).join("")}
+                </div>
               </div>` : ""}
             ${current.grants.length ? current.grants.map((g) => this.grantCard(g)).join("") : '<p class="empty">No grants yet.</p>'}
             ${current.grants.length ? '<p class="empty" data-grant-empty style="display:none">No grants match the current filter.</p>' : ""}
+          </section>
 
+          <section id="sec-activity">
+            <div class="sec-eyebrow">Audit</div>
+            <div class="sec-title">Activity</div>
             ${this.auditSection()}
+          </section>
 
+          <section id="sec-export">
+            <div class="sec-eyebrow">Handoff</div>
+            <div class="sec-title">Dashboard brief export</div>
+            <div class="sec-lead">Harvest an existing Lovelace dashboard or view into a local zip for a coding agent. The zip contains <code>brief.md</code> and <code>manifest.json</code>; it does not create a grant.</div>
             ${this.dashboardExportSection()}
-          </div>
+          </section>
+
         </div>
-      </ha-card>`;
+        ${this.revokeModal()}
+        <div data-toast-host></div>
+      </div>`;
+    this.renderToast();
     this.wireEvents();
   }
   wireEvents() {
+    const copyAuth = this.querySelector("[data-copy-auth]");
+    if (copyAuth) copyAuth.onclick = () => {
+      this.copyText(this._lastState.info.authority_id);
+      this._authCopied = true;
+      const act = copyAuth.querySelector(".act");
+      if (act) act.textContent = "COPIED";
+      window.setTimeout(() => {
+        this._authCopied = false;
+        const a = copyAuth.querySelector(".act");
+        if (a) a.textContent = "COPY";
+      }, 1500);
+    };
+    this.querySelectorAll("[data-anchor]").forEach((el) => {
+      el.onclick = () => {
+        this.querySelector(`#${el.dataset.anchor}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      };
+    });
+    this.querySelectorAll("[data-activity-filter]").forEach((el) => {
+      el.onclick = () => {
+        this._activityFilter = el.dataset.activityFilter;
+        const card = this.querySelector(".audit-card");
+        if (card) card.outerHTML = this.auditSection();
+        this.wireActivity();
+      };
+    });
     this.querySelectorAll("[data-step-next]").forEach((el) => {
       el.onclick = () => {
         const id = el.dataset.stepNext;
@@ -1396,28 +1686,44 @@ var VarcoPanel = class extends HTMLElement {
         } else if (expiry.value !== "none") {
           payload.expires_at = new Date(Date.now() + Number(expiry.value)).toISOString();
         }
-        void this.call("varco/approve_request", payload);
+        const name = this._lastState?.requests.find((r) => r.request_id === requestId)?.manifest?.name || "consumer";
+        void this.call("varco/approve_request", payload).then(() => this.flash(`Access granted to ${name}`, "ok"));
       };
     });
     this.querySelectorAll("[data-reject]").forEach((el) => {
-      el.onclick = () => void this.call("varco/reject_request", { request_id: el.dataset.reject });
+      el.onclick = () => void this.call("varco/reject_request", { request_id: el.dataset.reject }).then(() => this.flash("Request rejected", "danger"));
     });
     this.querySelectorAll("[data-revoke]").forEach((el) => {
-      el.onclick = () => this.showInlineConfirm(el, {
-        kind: "revoke",
-        message: "Revoke access? This immediately ends active sessions for this consumer.",
-        confirmLabel: "Revoke access",
-        onConfirm: () => void this.call("varco/revoke_grant", { grant_id: el.dataset.revoke })
-      });
+      el.onclick = () => {
+        this._confirmRevoke = { grantId: el.dataset.revoke, name: el.dataset.name || "this consumer" };
+        this.render(this._lastState);
+      };
     });
     this.querySelectorAll("[data-delete-grant]").forEach((el) => {
       el.onclick = () => this.showInlineConfirm(el, {
         kind: "delete",
         message: `Delete grant record for ${el.dataset.name}? This also removes active access for that consumer.`,
         confirmLabel: "Delete grant record",
-        onConfirm: () => void this.call("varco/delete_grant", { grant_id: el.dataset.deleteGrant })
+        onConfirm: () => void this.call("varco/delete_grant", { grant_id: el.dataset.deleteGrant }).then(() => this.flash("Grant record deleted", "warn"))
       });
     });
+    this.querySelectorAll("[data-revoke-cancel]").forEach((el) => {
+      el.onclick = (ev) => {
+        if (ev.target !== el) return;
+        this._confirmRevoke = null;
+        this.render(this._lastState);
+      };
+    });
+    const revokeStop = this.querySelector("[data-revoke-stop]");
+    if (revokeStop) revokeStop.onclick = (ev) => ev.stopPropagation();
+    const revokeConfirm = this.querySelector("[data-revoke-confirm]");
+    if (revokeConfirm && this._confirmRevoke) {
+      const { grantId, name } = this._confirmRevoke;
+      revokeConfirm.onclick = () => {
+        this._confirmRevoke = null;
+        void this.call("varco/revoke_grant", { grant_id: grantId }).then(() => this.flash(`Access revoked for ${name}`, "danger"));
+      };
+    }
     this.querySelectorAll("[data-rf-type]").forEach((sel) => {
       sel.onchange = () => {
         const grantId = sel.dataset.rfType;
@@ -1492,11 +1798,13 @@ var VarcoPanel = class extends HTMLElement {
       this._grantSearch = grantSearch.value;
       this.applyGrantFilter();
     };
-    const grantStatusFilter = this.querySelector("[data-grant-status-filter]");
-    if (grantStatusFilter) grantStatusFilter.onchange = () => {
-      this._grantStatusFilter = grantStatusFilter.value;
-      this.applyGrantFilter();
-    };
+    this.querySelectorAll("[data-grant-status]").forEach((el) => {
+      el.onclick = () => {
+        this._grantStatusFilter = el.dataset.grantStatus;
+        this.querySelectorAll("[data-grant-status]").forEach((b) => b.classList.toggle("sel", b.dataset.grantStatus === this._grantStatusFilter));
+        this.applyGrantFilter();
+      };
+    });
     const shareEntity = this.querySelector("[data-share-entity]");
     if (shareEntity) {
       shareEntity.oninput = () => {
@@ -1516,7 +1824,10 @@ var VarcoPanel = class extends HTMLElement {
     const createShare = this.querySelector("[data-create-entity-share]");
     if (createShare) createShare.onclick = () => void this.createEntityShare();
     const copyShare = this.querySelector("[data-copy-share-link]");
-    if (copyShare) copyShare.onclick = () => this.copyText(this._shareUrl);
+    if (copyShare) copyShare.onclick = () => {
+      this.copyText(this._shareUrl);
+      this.flash("Link copied", "ok");
+    };
     const dashboardSelect = this.querySelector("[data-dashboard-select]");
     if (dashboardSelect) dashboardSelect.onchange = () => void this.pickDashboard(dashboardSelect.value);
     const viewSelect = this.querySelector("[data-view-select]");
@@ -1527,6 +1838,17 @@ var VarcoPanel = class extends HTMLElement {
     const download = this.querySelector("[data-download-brief]");
     if (download) download.onclick = () => void this.downloadDashboardBrief();
     this.applyGrantFilter();
+  }
+  // Rewire just the activity filter buttons after an in-place audit re-render.
+  wireActivity() {
+    this.querySelectorAll("[data-activity-filter]").forEach((el) => {
+      el.onclick = () => {
+        this._activityFilter = el.dataset.activityFilter;
+        const card = this.querySelector(".audit-card");
+        if (card) card.outerHTML = this.auditSection();
+        this.wireActivity();
+      };
+    });
   }
   // ---------- zip (unchanged) ----------
   slugify(value) {

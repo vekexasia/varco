@@ -31,10 +31,18 @@ export function renderShareShell(shareCode: string): string {
     .varco-ctl--btn:hover { background: color-mix(in srgb, CanvasText 12%, transparent); }
     .varco-ctl--btn:active { transform: scale(.97); }
     .varco-ctl--btn:disabled { opacity: .5; cursor: progress; }
+    .varco-ctl--icon { display: inline-flex; align-items: center; justify-content: center; padding: 9px; width: 38px; height: 38px; }
+    .varco-ctl--icon svg { display: block; }
     .varco-ctl--range, .varco-ctl--select { display: flex; flex-direction: column; gap: 6px; flex: 1 1 100%; }
     .varco-ctl__row { display: flex; align-items: center; gap: 12px; }
     .varco-ctl__row input[type=range] { flex: 1; accent-color: var(--accent); }
     .varco-ctl__value { font-size: 13px; color: CanvasText; font-variant-numeric: tabular-nums; min-width: 3ch; text-align: right; }
+    .varco-ctl--toggle { display: inline-flex; align-items: center; }
+    .varco-ctl--toggle input { appearance: none; width: 44px; height: 26px; border-radius: 999px; background: var(--soft); position: relative; cursor: pointer; transition: background .15s; }
+    .varco-ctl--toggle input:checked { background: var(--accent); }
+    .varco-ctl--toggle input::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: Canvas; transition: transform .15s; }
+    .varco-ctl--toggle input:checked::after { transform: translateX(18px); }
+    .varco-ctl--toggle input:disabled { opacity: .5; cursor: progress; }
     select { font: inherit; padding: 9px 12px; border-radius: 12px; border: 1px solid var(--line); background: Canvas; color: CanvasText; }
   </style>
 </head>
@@ -104,6 +112,14 @@ export function renderShareShell(shareCode: string): string {
           button.disabled = true;
           try { await client.callService(button.dataset.domain, button.dataset.service, { entity_id: button.dataset.entity }); }
           finally { button.disabled = false; }
+        });
+        app.addEventListener('change', async (event) => {
+          const toggle = event.target.closest('input[data-toggle]');
+          if (!toggle) return;
+          toggle.disabled = true;
+          try { await client.callService(toggle.dataset.domain, toggle.checked ? 'turn_on' : 'turn_off', { entity_id: toggle.dataset.entity }); }
+          catch { toggle.checked = !toggle.checked; }
+          finally { toggle.disabled = false; }
         });
         app.addEventListener('input', (event) => {
           const range = event.target.closest('input[type=range][data-service]');

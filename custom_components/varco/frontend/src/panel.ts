@@ -17,29 +17,64 @@ import type {
 
 const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 
+const FONTS = `
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">`;
+
 interface ScopeDef {
   key: ScopeKey;
   title: string;
   desc: string;
   icon: IconName;
+  color: string;
+  short: string;
 }
 
 const SCOPE_DEFS: ScopeDef[] = [
-  { key: 'read_entities', title: 'Read entity states', desc: 'See the current value of these entities', icon: 'eye' },
-  { key: 'subscriptions', title: 'Live updates', desc: 'Get notified when these entities change', icon: 'live' },
-  { key: 'history', title: 'Query history', desc: 'Read past values of these entities', icon: 'history' },
-  { key: 'camera_snapshots', title: 'Camera snapshots', desc: 'Capture still images from these cameras', icon: 'camera' },
-  { key: 'actions', title: 'Control actions', desc: 'Call these Home Assistant services', icon: 'bolt' },
+  { key: 'read_entities', title: 'Read entity states', desc: 'See the current value of these entities', icon: 'eye', color: 'var(--c-read)', short: 'READ' },
+  { key: 'subscriptions', title: 'Live updates', desc: 'Get notified when these entities change', icon: 'live', color: 'var(--c-live)', short: 'LIVE' },
+  { key: 'history', title: 'Query history', desc: 'Read past values of these entities', icon: 'history', color: 'var(--c-history)', short: 'HISTORY' },
+  { key: 'camera_snapshots', title: 'Camera snapshots', desc: 'Capture still images from these cameras', icon: 'camera', color: 'var(--c-cameras)', short: 'CAMERAS' },
+  { key: 'actions', title: 'Control actions', desc: 'Call these Home Assistant services', icon: 'bolt', color: 'var(--c-actions)', short: 'ACTIONS' },
 ];
+
+// Audit category -> label + colour, used by the activity filter tabs and markers.
+const CAT: Record<string, { label: string; color: string }> = {
+  connection: { label: 'CONNECTION', color: 'var(--accent)' },
+  share: { label: 'SHARE', color: 'var(--primary)' },
+  access: { label: 'ACCESS', color: 'var(--text-2)' },
+  control: { label: 'CONTROL', color: 'var(--coral)' },
+  admin: { label: 'ADMIN', color: 'var(--red)' },
+};
+
+const ANCHORS: Array<[string, string]> = [
+  ['sec-overview', 'Overview'],
+  ['sec-share', 'Share'],
+  ['sec-requests', 'Requests'],
+  ['sec-grants', 'Grants'],
+  ['sec-activity', 'Activity'],
+  ['sec-export', 'Export'],
+];
+
+interface Toast {
+  msg: string;
+  tone: 'ok' | 'danger' | 'warn';
+}
 
 export class VarcoPanel extends HTMLElement {
   private _hass?: Hass;
   private _loaded = false;
   private _lastState?: PanelState;
   private _refreshTimer?: number;
+  private _toastTimer?: number;
   private _pendingSignature = '';
   private _grantSearch = '';
   private _grantStatusFilter = 'all';
+  private _activityFilter = 'all';
+  private _confirmRevoke: { grantId: string; name: string } | null = null;
+  private _toast: Toast | null = null;
+  private _authCopied = false;
   private _shareEntityId = '';
   private _shareName = '';
   private _shareClaims = '1';
@@ -148,6 +183,14 @@ export class VarcoPanel extends HTMLElement {
     await this.load();
   }
 
+
+  private flash(msg: string, tone: Toast['tone'] = 'ok'): void {
+    this._toast = { msg, tone };
+    this.renderToast();
+    clearTimeout(this._toastTimer);
+    this._toastTimer = window.setTimeout(() => { this._toast = null; this.renderToast(); }, 2600);
+  }
+
   // ---------- helpers ----------
 
   escape(value: unknown): string {
@@ -204,10 +247,19 @@ export class VarcoPanel extends HTMLElement {
     return `${s.read_entities.length} read, ${s.subscriptions.length} live, ${s.history.length} history, ${s.camera_snapshots.length} cameras, ${s.actions.length} actions`;
   }
 
+  // Coloured permission chips for the grant card header.
+  permChips(manifest: Manifest | undefined): string {
+    const s = this.scopes(manifest);
+    return SCOPE_DEFS
+      .filter((def) => s[def.key].length)
+      .map((def) => `<span class="perm-chip"><span class="sw" style="background:${def.color}"></span>${s[def.key].length} ${def.short}</span>`)
+      .join('');
+  }
+
   shortKey(value: unknown): string {
     const text = String(value || '');
     if (text.length <= 24) return text || 'unknown';
-    return `${text.slice(0, 12)}...${text.slice(-8)}`;
+    return `${text.slice(0, 12)}…${text.slice(-8)}`;
   }
 
   formatDate(value: unknown): string {
@@ -217,12 +269,58 @@ export class VarcoPanel extends HTMLElement {
     return date.toLocaleString();
   }
 
+  formatTime(value: unknown): string {
+    if (!value) return '';
+    const date = new Date(value as string);
+    if (Number.isNaN(date.getTime())) return String(value);
+    return date.toLocaleTimeString();
+  }
+
   toLocalInput(iso: unknown): string {
     if (!iso) return '';
     const date = new Date(iso as string);
     if (Number.isNaN(date.getTime())) return '';
     const pad = (n: number) => String(n).padStart(2, '0');
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+
+  // ---------- KPI strip ----------
+
+  private kpiStrip(): string {
+    const state = this._lastState!;
+    const grants = state.grants || [];
+    const active = grants.filter((g) => this.grantStatus(g) === 'active');
+    const pending = state.requests.filter((r) => r.status === 'pending').length;
+    const audit = Array.isArray(state.audit) ? state.audit : [];
+    const dayAgo = Date.now() - 24 * 3600 * 1000;
+    const events24 = audit.filter((e) => { const t = new Date(e.ts).getTime(); return !Number.isNaN(t) && t >= dayAgo; }).length;
+
+    const ents = new Set<string>();
+    let actions = 0;
+    active.forEach((g) => {
+      const s = this.scopes(g.manifest);
+      [...s.read_entities, ...s.subscriptions, ...s.camera_snapshots].forEach((e) => ents.add(e));
+      actions += s.actions.length;
+    });
+    const connected = !!state.info.relay?.connected;
+
+    const kpis = [
+      { lab: 'Active grants', val: String(active.length), sub: `of ${grants.length} total`, color: 'var(--accent)' },
+      { lab: 'Pending requests', val: String(pending), sub: pending ? 'awaiting review' : 'all clear', color: pending ? 'var(--amber)' : 'var(--text-3)' },
+      { lab: 'Events · 24h', val: String(events24), sub: `${audit.length} all time`, color: 'var(--primary)' },
+      { lab: 'Surface exposed', val: String(ents.size), sub: `${ents.size} entities · ${actions} actions`, color: 'var(--violet)' },
+      { lab: 'Relay', val: connected ? 'Connected' : 'Offline', sub: state.info.relay?.last_connected ? `last ${this.formatTime(state.info.relay.last_connected)}` : 'never', color: connected ? 'var(--accent)' : 'var(--red)' },
+    ];
+    return `<div class="kpi-grid">${kpis.map((k) => `
+      <div class="kpi">
+        <div class="head"><span class="dot" style="background:${k.color}"></span><span class="lab">${this.escape(k.lab)}</span></div>
+        <div class="val">${this.escape(k.val)}</div>
+        <div class="sub">${this.escape(k.sub)}</div>
+      </div>`).join('')}</div>`;
+  }
+
+  private legend(): string {
+    return `<div class="legend">${SCOPE_DEFS.map((d) => `<span class="item"><span class="sw" style="background:${d.color}"></span>${this.escape(d.short)}</span>`).join('')}</div>`;
   }
 
   // ---------- pending request wizard ----------
@@ -308,7 +406,7 @@ export class VarcoPanel extends HTMLElement {
       return `
         <div class="perm-group">
           <div class="perm-head">
-            <span class="perm-ico">${icons[def.icon]}</span>
+            <span class="perm-ico" style="color:${def.color}">${icons[def.icon]}</span>
             <span class="perm-meta"><span class="perm-title">${this.escape(def.title)}</span><span class="perm-desc">${this.escape(def.desc)}</span></span>
             <span class="perm-count">${values.length}</span>
           </div>
@@ -354,7 +452,7 @@ export class VarcoPanel extends HTMLElement {
           <div class="left"><button class="ghost" data-step-prev="${this.escape(id)}">Back</button></div>
           <div class="right">
             <button class="danger" data-reject="${this.escape(id)}">Reject</button>
-            <button data-approve="${this.escape(id)}">Approve access</button>
+            <button class="go" data-approve="${this.escape(id)}">Approve access</button>
           </div>
         </div>
       </div>`;
@@ -403,6 +501,7 @@ export class VarcoPanel extends HTMLElement {
           </div>
           ${this.statusPill(status)}
         </div>
+        <div class="grant-chips"><div class="perm-chips">${this.permChips(grant.manifest)}</div></div>
         <div class="grant-body">
           <div class="meta">
             <div><div class="k">Version</div><div class="v">${this.escape(this.manifestVersion(grant))}</div></div>
@@ -413,10 +512,10 @@ export class VarcoPanel extends HTMLElement {
           </div>
         </div>
         <details class="sec">
-          <summary>Permissions <span class="count-tag">&middot; ${this.escape(this.scopeSummary(grant.manifest))}</span></summary>
+          <summary>Scope · what this consumer may touch <span class="count-tag">&middot; ${this.escape(this.scopeSummary(grant.manifest))}</span></summary>
           <div class="sec-inner">
             <div class="scope-grid">
-              ${SCOPE_DEFS.map((def) => this.scopeBox(def.title, s[def.key])).join('')}
+              ${SCOPE_DEFS.map((def) => this.scopeBox(def, s[def.key])).join('')}
             </div>
           </div>
         </details>
@@ -424,17 +523,17 @@ export class VarcoPanel extends HTMLElement {
         ${this.grantActivity(grant.grant_id)}
         <div class="grant-body">
           <div class="btn-row" style="margin-top:6px">
-            ${grant.revoked ? '' : `<button class="danger" data-revoke="${this.escape(grant.grant_id)}">${icons.ban} Revoke access</button>`}
+            ${grant.revoked ? '' : `<button class="danger" data-revoke="${this.escape(grant.grant_id)}" data-name="${this.escape(name)}">${icons.ban} Revoke access</button>`}
             <button class="danger" data-delete-grant="${this.escape(grant.grant_id)}" data-name="${this.escape(name)}">${icons.trash} Delete record</button>
           </div>
         </div>
       </div>`;
   }
 
-  private scopeBox(title: string, values: string[]): string {
+  private scopeBox(def: ScopeDef, values: string[]): string {
     return `
       <div class="scope-box">
-        <div class="t">${this.escape(title)}</div>
+        <div class="t"><span class="sw" style="background:${def.color}"></span>${this.escape(def.short)}</div>
         ${values.length ? `<ul>${values.map((v) => `<li><code>${this.escape(v)}</code></li>`).join('')}</ul>` : '<div class="muted">None</div>'}
       </div>`;
   }
@@ -607,6 +706,7 @@ export class VarcoPanel extends HTMLElement {
       access_request_received: 'Access request received',
       access_request_approved: 'Access request approved',
       access_request_rejected: 'Access request rejected',
+      grant_created: 'Grant created',
       grant_revoked: 'Grant revoked',
       grant_deleted: 'Grant deleted',
       grant_restrictions_updated: 'Restrictions updated',
@@ -617,17 +717,25 @@ export class VarcoPanel extends HTMLElement {
       restriction_denied: 'Restriction denied',
       history_query_limited: 'History query limited',
       session_error: 'Session error',
+      share_created: 'Share created',
+      share_claimed: 'Share claimed',
       webrtc_fallback: 'WebRTC fallback to relay',
       webrtc_answer: 'WebRTC negotiated',
     };
     return labels[event] || String(event || 'event');
   }
 
-  private auditKind(event: string): { cls: string; icon: IconName } {
-    if (['permission_error', 'session_error', 'grant_revoked', 'grant_deleted', 'restriction_denied'].includes(event)) return { cls: 'kind-danger', icon: 'alert' };
-    if (['rate_limited', 'history_query_limited', 'access_request_rejected'].includes(event)) return { cls: 'kind-warn', icon: 'alert' };
-    if (['access_request_approved', 'consumer_connected'].includes(event)) return { cls: 'kind-ok', icon: 'check' };
-    return { cls: '', icon: 'dot' };
+  // Map a raw audit event name to one of the five activity categories.
+  auditCategory(event: string): keyof typeof CAT {
+    if (['consumer_connected', 'webrtc_answer', 'webrtc_fallback', 'session_error'].includes(event)) return 'connection';
+    if (['share_created', 'share_claimed'].includes(event)) return 'share';
+    if (event === 'call_service') return 'control';
+    if (['access_request_received', 'access_request_approved', 'access_request_rejected', 'grant_created', 'grant_revoked', 'grant_deleted', 'grant_restrictions_updated'].includes(event)) return 'admin';
+    return 'access';
+  }
+
+  private auditSuccess(event: string): boolean {
+    return ['access_request_approved', 'grant_created', 'consumer_connected', 'call_service', 'share_claimed', 'webrtc_answer'].includes(event);
   }
 
   auditDetailSummary(details: Record<string, unknown> | null | undefined): string {
@@ -643,16 +751,22 @@ export class VarcoPanel extends HTMLElement {
 
   auditRow(event: AuditEvent): string {
     const detail = this.auditDetailSummary(event.details);
-    const kind = this.auditKind(event.event);
+    const cat = this.auditCategory(event.event);
+    const color = CAT[cat].color;
+    const success = this.auditSuccess(event.event);
+    const markerStyle = success
+      ? `background:${color};border-color:${color};color:var(--bg);`
+      : `background:transparent;border-color:${color};color:${color};`;
     return `
-      <div class="audit-row ${kind.cls}" data-audit-event data-audit-grant="${this.escape(event.grant_id || '')}">
-        <span class="audit-ico">${icons[kind.icon]}</span>
+      <div class="audit-row" data-audit-event data-audit-grant="${this.escape(event.grant_id || '')}">
+        <span class="audit-ico" style="${markerStyle}">${success ? '✓' : ''}</span>
         <span class="audit-mid">
           <span class="audit-type" data-audit-type>${this.escape(this.auditEventLabel(event.event))}</span>
+          <span class="audit-cat" style="color:${color}">${CAT[cat].label}</span>
           ${detail ? `<span class="audit-detail">${detail}</span>` : ''}
         </span>
         <span class="audit-meta">
-          <span class="audit-ts">${this.escape(this.formatDate(event.ts))}</span>
+          <span class="audit-ts">${this.escape(this.formatTime(event.ts))}</span>
           ${event.grant_id ? `<code class="audit-grant">${this.escape(this.shortKey(event.grant_id))}</code>` : ''}
         </span>
       </div>`;
@@ -660,14 +774,23 @@ export class VarcoPanel extends HTMLElement {
 
   auditSection(): string {
     const events = Array.isArray(this._lastState?.audit) ? this._lastState!.audit : [];
-    const recent = events.slice(-50).reverse();
+    const filter = this._activityFilter;
+    const filtered = (filter === 'all' ? events : events.filter((e) => this.auditCategory(e.event) === filter)).slice().reverse().slice(0, 80);
+    const filterDefs: Array<[string, string]> = [['all', 'All'], ['connection', 'Connect'], ['share', 'Share'], ['access', 'Access'], ['control', 'Control'], ['admin', 'Admin']];
+    const tabs = filterDefs.map(([k, l]) => `<button class="afilter ${filter === k ? 'sel' : ''}" data-activity-filter="${k}">${l}</button>`).join('');
     return `
-      <div class="h-page">Activity <span class="count">${events.length}</span></div>
-      <div class="card audit-card">
-        <div class="eyebrow">Access oversight</div>
-        <p class="muted" style="margin:6px 0 12px">Recent Varco events. Sensitive payloads (states, snapshots, history) are never shown.</p>
+      <div class="audit-card">
+        <div class="audit-toolbar">
+          <div class="top">
+            <span class="title">Access oversight</span>
+            <span class="ct">${filtered.length}</span>
+            <span class="vspace"></span>
+            <span class="note"><span class="dot"></span>states, snapshots &amp; history are never logged</span>
+          </div>
+          <div class="act-filters">${tabs}</div>
+        </div>
         <div class="audit-list" data-audit-list>
-          ${recent.length ? recent.map((e) => this.auditRow(e)).join('') : '<p class="empty">No activity recorded yet.</p>'}
+          ${filtered.length ? filtered.map((e) => this.auditRow(e)).join('') : '<p class="empty" style="padding:18px">No activity recorded yet.</p>'}
         </div>
       </div>`;
   }
@@ -686,26 +809,6 @@ export class VarcoPanel extends HTMLElement {
       </details>`;
   }
 
-  // ---------- relay ----------
-
-  relayHealthSection(relay: VarcoInfo['relay']): string {
-    const info = relay || {};
-    const connected = !!info.connected;
-    return `
-      <div class="card" data-relay-status="${connected ? 'connected' : 'disconnected'}">
-        <div class="relay-line">
-          <span class="eyebrow">Relay</span>
-          ${connected ? '<span class="pill ok"><span class="dot"></span>connected</span>' : '<span class="pill danger"><span class="dot"></span>disconnected</span>'}
-        </div>
-        <div class="meta">
-          <div><div class="k">Bridge URL</div><div class="v" data-relay-bridge-url><code>${info.bridge_url ? this.escape(info.bridge_url) : 'unknown'}</code></div></div>
-          <div><div class="k">Last connected</div><div class="v" data-relay-last-connected>${info.last_connected ? this.escape(this.formatDate(info.last_connected)) : 'never'}</div></div>
-        </div>
-        ${info.last_error ? `<div class="callout danger" data-relay-last-error>Last error: ${this.escape(info.last_error)}</div>` : ''}
-        ${!connected ? `<div class="callout warn relay-guidance" data-relay-guidance>Check that the bridge URL above is reachable from Home Assistant and review the integration logs for connection errors.</div>` : ''}
-      </div>`;
-  }
-
   // ---------- entity share ----------
 
   shareEntities(): Array<{ id: string; label: string }> {
@@ -718,16 +821,11 @@ export class VarcoPanel extends HTMLElement {
     return this.shareEntities().find((entity) => entity.id === entityId)?.label || entityId;
   }
 
-
-
   entityShareSection(): string {
     return `
-      <div class="h-page">Create entity share</div>
-      <div class="card">
-        <div class="eyebrow">Claim link</div>
-        <p class="muted" style="margin:6px 0 12px">Create a share link for one Home Assistant entity.</p>
+      <div class="card panel">
         ${this._shareError ? `<p class="callout danger">${this.escape(this._shareError)}</p>` : ''}
-        ${this._shareUrl ? `<p class="callout"><b>Share created.</b><br><code>${this.escape(this._shareUrl)}</code></p><button data-copy-share-link>Copy link</button>` : ''}
+        ${this._shareUrl ? `<p class="callout"><b>Share created.</b><br><code>${this.escape(this._shareUrl)}</code></p><button class="subtle" data-copy-share-link>Copy link</button>` : ''}
         <label class="field">Entity</label>
         <input data-share-entity placeholder="Start typing a name or entity id" value="${this.escape(this._shareEntityId)}" autocomplete="off">
         <div class="share-suggestions" data-share-suggestions></div>
@@ -819,14 +917,15 @@ export class VarcoPanel extends HTMLElement {
         manifest: this.entityShareManifest(entityId, name),
       });
       this._shareUrl = this.localShareUrl(response.share_url);
+      this.flash('Share link minted', 'ok');
     } catch (err) {
       this._shareError = (err as Error)?.message || String(err);
+      this.flash('Could not create share', 'danger');
     } finally {
       this._shareLoading = false;
       this.render(this._lastState!);
     }
   }
-
 
   // ---------- dashboard export ----------
 
@@ -837,15 +936,12 @@ export class VarcoPanel extends HTMLElement {
     const result = this._exportResult;
     const selectedCount = this._selectedEntities?.size || 0;
     return `
-      <div class="h-page">Dashboard brief export</div>
-      <div class="card">
-        <div class="eyebrow">Manifest blueprint</div>
-        <p class="muted" style="margin:6px 0 12px">Harvest an existing Lovelace dashboard or view into a local zip for a coding agent. The zip contains <code>brief.md</code> and <code>manifest.json</code>; it does not create a grant.</p>
+      <div class="card panel">
         ${this._dashboardError ? `<p class="callout warn">${this.escape(this._dashboardError)}</p>` : ''}
         ${this._exportError ? `<p class="callout danger">${this.escape(this._exportError)}</p>` : ''}
         <label class="field">Dashboard</label>
         <select data-dashboard-select>
-          <option value="">Choose a dashboard...</option>
+          <option value="">Choose a dashboard…</option>
           ${dashboards.map((item, index) => `<option value="${index}" ${index === this._selectedDashboardIndex ? 'selected' : ''}>${this.escape(item.title)} (${this.escape(item.url_path || 'default')})</option>`).join('')}
         </select>
         ${dashboard && views.length ? `
@@ -854,7 +950,7 @@ export class VarcoPanel extends HTMLElement {
             <option value="" ${this._selectedViewIndex === '' ? 'selected' : ''}>Whole dashboard</option>
             ${views.map((view, index) => { const v = view as { title?: string; path?: string }; return `<option value="${index}" ${String(index) === String(this._selectedViewIndex) ? 'selected' : ''}>View: ${this.escape(v.title || v.path || `View ${index + 1}`)}</option>`; }).join('')}
           </select>` : ''}
-        ${this._exportLoading ? '<p class="muted">Harvesting dashboard...</p>' : ''}
+        ${this._exportLoading ? '<p class="muted" style="margin-top:12px">Harvesting dashboard…</p>' : ''}
         ${result ? this.exportPreview(result, selectedCount) : ''}
       </div>`;
   }
@@ -868,7 +964,7 @@ export class VarcoPanel extends HTMLElement {
         <span class="muted">${this.escape(this.scopeSummary(previewManifest))}</span>
       </div>
       ${result.warnings.length ? `
-        <details class="sec" style="border:1px solid var(--varco-border);border-radius:var(--varco-radius-sm)">
+        <details class="sec" style="border:1px solid var(--border);border-radius:var(--varco-radius-sm)">
           <summary>${result.warnings.length} unresolved or dynamic dashboard references</summary>
           <div class="sec-inner"><ul>${result.warnings.map((w) => `<li><code>${this.escape(w.path)}</code>: ${this.escape(w.message)}</li>`).join('')}</ul></div>
         </details>` : ''}
@@ -880,7 +976,7 @@ export class VarcoPanel extends HTMLElement {
           </div>`).join('') : '<p class="empty">No entities were harvested from this selection.</p>'}
       </div>
       <div class="btn-row">
-        <button data-download-brief ${selectedCount ? '' : 'disabled'}>Download agent brief zip</button>
+        <button class="go" data-download-brief ${selectedCount ? '' : 'disabled'}>Download agent brief zip</button>
       </div>`;
   }
 
@@ -1010,6 +1106,7 @@ export class VarcoPanel extends HTMLElement {
       this.downloadBlob(zip, `${name}.zip`);
       this._exportResult = exportResult;
       this._selectedEntities = new Set(exportResult.entities.filter((e) => e.selected).map((e) => e.entity_id));
+      this.flash(`Exported ${name}.zip`, 'ok');
     } catch (err) {
       this._exportError = `Could not generate brief: ${(err as Error).message || err}`;
     } finally {
@@ -1035,7 +1132,7 @@ export class VarcoPanel extends HTMLElement {
     if (empty) empty.style.display = visible ? 'none' : '';
   }
 
-  // ---------- inline confirm ----------
+  // ---------- inline confirm (delete) ----------
 
   showInlineConfirm(triggerEl: HTMLElement, opts: { kind: string; message: string; confirmLabel: string; onConfirm: () => void }): void {
     const row = triggerEl.closest<HTMLElement>('.btn-row') || triggerEl.parentElement;
@@ -1113,54 +1210,178 @@ export class VarcoPanel extends HTMLElement {
     if (expiryEl) expiryEl.textContent = this.currentExpiry(requestId).label;
   }
 
+  // ---------- chrome fragments ----------
+
+  private topBar(info: VarcoInfo): string {
+    const connected = !!info.relay?.connected;
+    const brandSvg = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="5" height="18" rx="2" fill="var(--accent)"/><rect x="16" y="3" width="5" height="18" rx="2" fill="var(--text-3)"/><circle cx="12" cy="12" r="2.6" fill="var(--accent)"/></svg>';
+    return `
+      <div class="vbar">
+        <div class="vbrand">
+          ${brandSvg}
+          <span class="name">Varco <span class="sub">Authority</span></span>
+          <span class="vchip ${connected ? 'ok' : 'off'}"><span class="dot"></span>${connected ? 'Relay connected' : 'Relay offline'}</span>
+        </div>
+      </div>`;
+  }
+
+  private summaryHeader(info: VarcoInfo): string {
+    const connected = !!info.relay?.connected;
+    const bridge = info.relay?.bridge_url || 'unknown';
+    const last = info.relay?.last_connected ? this.formatTime(info.relay.last_connected) : 'never';
+    const tabs = ANCHORS.map(([id, label]) => `<button class="atab" data-anchor="${id}">${label}</button>`).join('');
+    return `
+      <div class="summary">
+        <div class="summary-top">
+          <div class="summary-id">
+            <div class="lab">Authority</div>
+            <div class="copy" data-copy-auth>
+              <span class="val mono">${this.escape(this.shortKey(info.authority_id))}</span>
+              <span class="act">${this._authCopied ? 'COPIED' : 'COPY'}</span>
+            </div>
+          </div>
+          <div class="summary-relay" data-relay-status="${connected ? 'connected' : 'disconnected'}">
+            <div class="line"><span class="dot" style="background:${connected ? 'var(--accent)' : 'var(--red)'}"></span>${connected ? 'Relay connected' : 'Relay offline'}</div>
+            <div class="meta mono"><span data-relay-bridge-url>${this.escape(bridge)}</span> &middot; last <span data-relay-last-connected>${this.escape(last)}</span></div>
+          </div>
+        </div>
+        <div class="anchor-tabs">${tabs}</div>
+      </div>`;
+  }
+
+  private revokeModal(): string {
+    if (!this._confirmRevoke) return '';
+    const name = this._confirmRevoke.name;
+    return `
+      <div class="modal-scrim" data-revoke-cancel>
+        <div class="modal" data-revoke-stop>
+          <div class="mhead">
+            <span class="micon">&#9888;</span>
+            <span class="mtitle">Revoke access?</span>
+          </div>
+          <p>This ends access for <strong>${this.escape(name)}</strong> immediately.</p>
+          <p class="fine">Active and future sessions are cut by the Authority on the next check. The grant record stays for audit until you delete it.</p>
+          <div class="macts">
+            <button class="ghost" data-revoke-cancel>Cancel</button>
+            <button style="background:var(--red);color:#fff" data-revoke-confirm>Revoke access</button>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  private renderToast(): void {
+    const host = this.querySelector<HTMLElement>('[data-toast-host]');
+    if (!host) return;
+    if (!this._toast) { host.innerHTML = ''; return; }
+    const toneFg: Record<Toast['tone'], string> = { ok: 'var(--accent)', danger: 'var(--red)', warn: 'var(--amber)' };
+    const icon: Record<Toast['tone'], string> = { ok: '✓', danger: '✕', warn: '!' };
+    const t = this._toast;
+    host.innerHTML = `
+      <div class="toast" style="border-color:color-mix(in srgb, ${toneFg[t.tone]} 40%, transparent)">
+        <span class="ico" style="background:${toneFg[t.tone]}">${icon[t.tone]}</span>
+        <span class="msg">${this.escape(t.msg)}</span>
+      </div>`;
+  }
+
   // ---------- render ----------
 
   render(state?: PanelState): void {
     if (state) this._lastState = state;
     if (!this._lastState || this._lastState.loading) {
-      this.innerHTML = `<ha-card><div class="card-content">${styles()}<div class="wrap">Loading Varco…</div></div></ha-card>`;
+      this.innerHTML = `${FONTS}<div class="varco-root">${styles()}<div class="wrap" style="padding:40px 22px">Loading Varco…</div></div>`;
       return;
     }
     const current = this._lastState;
     const pending = current.requests.filter((r) => r.status === 'pending');
+    const activeCount = current.grants.filter((g) => this.grantStatus(g) === 'active').length;
     this.innerHTML = `
-      <ha-card header="Varco Authority">
-        <div class="card-content">${styles()}
-          <div class="wrap">
-            <div class="topbar">
-              <div class="card">
-                <div class="relay-line"><span class="eyebrow">Authority ID</span></div>
-                <div class="v" style="margin-top:8px"><code>${this.escape(current.info.authority_id)}</code></div>
-              </div>
-              ${this.relayHealthSection(current.info.relay)}
-            </div>
+      ${FONTS}
+      <div class="varco-root">
+        ${styles()}
+        ${this.topBar(current.info)}
+        ${this.summaryHeader(current.info)}
+        <div class="wrap">
 
+          <section id="sec-overview">
+            <div class="sec-eyebrow">Overview</div>
+            <div class="sec-title">At a glance</div>
+            ${this.legend()}
+            ${this.kpiStrip()}
+          </section>
+
+          <section id="sec-share">
+            <div class="sec-eyebrow">Create</div>
+            <div class="sec-title">Share an entity</div>
+            <div class="sec-lead">Mint a claim link for one Home Assistant entity. The consumer claims it, then asks you for a grant.</div>
             ${this.entityShareSection()}
+          </section>
 
-            <div class="h-page">Pending access requests ${pending.length ? `<span class="count">${pending.length}</span>` : ''}</div>
+          <section id="sec-requests">
+            <div class="sec-eyebrow">Consent</div>
+            <div class="sec-title">Pending access requests ${pending.length ? `<span class="badge amber mono">${pending.length}</span>` : ''}</div>
             ${pending.length ? pending.map((r) => this.requestCard(r)).join('') : '<p class="empty">No one is waiting for access right now.</p>'}
+          </section>
 
-            <div class="h-page">Grants ${current.grants.length ? `<span class="count">${current.grants.length}</span>` : ''}</div>
+          <section id="sec-grants">
+            <div class="sec-eyebrow">Access</div>
+            <div class="sec-title">Grants <span class="badge muted mono">${activeCount} active</span></div>
             ${current.grants.length ? `
               <div class="controls">
                 <div class="search">${icons.search}<input type="search" data-grant-search placeholder="Search by consumer name" value="${this.escape(this._grantSearch)}"></div>
-                <select data-grant-status-filter>
-                  ${['all', 'active', 'revoked', 'expired'].map((v) => `<option value="${v}" ${(this._grantStatusFilter || 'all') === v ? 'selected' : ''}>${v === 'all' ? 'All statuses' : v.charAt(0).toUpperCase() + v.slice(1)}</option>`).join('')}
-                </select>
+                <div class="seg" data-grant-status-seg>
+                  ${['all', 'active', 'revoked', 'expired'].map((v) => `<button data-grant-status="${v}" class="${(this._grantStatusFilter || 'all') === v ? 'sel' : ''}">${v === 'all' ? 'All' : v.charAt(0).toUpperCase() + v.slice(1)}</button>`).join('')}
+                </div>
               </div>` : ''}
             ${current.grants.length ? current.grants.map((g) => this.grantCard(g)).join('') : '<p class="empty">No grants yet.</p>'}
             ${current.grants.length ? '<p class="empty" data-grant-empty style="display:none">No grants match the current filter.</p>' : ''}
+          </section>
 
+          <section id="sec-activity">
+            <div class="sec-eyebrow">Audit</div>
+            <div class="sec-title">Activity</div>
             ${this.auditSection()}
+          </section>
 
+          <section id="sec-export">
+            <div class="sec-eyebrow">Handoff</div>
+            <div class="sec-title">Dashboard brief export</div>
+            <div class="sec-lead">Harvest an existing Lovelace dashboard or view into a local zip for a coding agent. The zip contains <code>brief.md</code> and <code>manifest.json</code>; it does not create a grant.</div>
             ${this.dashboardExportSection()}
-          </div>
+          </section>
+
         </div>
-      </ha-card>`;
+        ${this.revokeModal()}
+        <div data-toast-host></div>
+      </div>`;
+    this.renderToast();
     this.wireEvents();
   }
 
   private wireEvents(): void {
+    // copy authority id
+    const copyAuth = this.querySelector<HTMLElement>('[data-copy-auth]');
+    if (copyAuth) copyAuth.onclick = () => {
+      this.copyText(this._lastState!.info.authority_id);
+      this._authCopied = true;
+      const act = copyAuth.querySelector<HTMLElement>('.act');
+      if (act) act.textContent = 'COPIED';
+      window.setTimeout(() => { this._authCopied = false; const a = copyAuth.querySelector<HTMLElement>('.act'); if (a) a.textContent = 'COPY'; }, 1500);
+    };
+    // anchor tabs
+    this.querySelectorAll<HTMLElement>('[data-anchor]').forEach((el) => {
+      el.onclick = () => { this.querySelector(`#${el.dataset.anchor}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+    });
+    // activity filter
+    this.querySelectorAll<HTMLElement>('[data-activity-filter]').forEach((el) => {
+      el.onclick = () => {
+        this._activityFilter = el.dataset.activityFilter!;
+        const card = this.querySelector('.audit-card');
+        if (card) card.outerHTML = this.auditSection();
+        // rewire filter buttons after replacement
+        this.wireActivity();
+      };
+    });
+
     // wizard step nav
     this.querySelectorAll<HTMLElement>('[data-step-next]').forEach((el) => {
       el.onclick = () => {
@@ -1225,30 +1446,37 @@ export class VarcoPanel extends HTMLElement {
         } else if (expiry.value !== 'none') {
           payload.expires_at = new Date(Date.now() + Number(expiry.value)).toISOString();
         }
-        void this.call('varco/approve_request', payload);
+        const name = this._lastState?.requests.find((r) => r.request_id === requestId)?.manifest?.name || 'consumer';
+        void this.call('varco/approve_request', payload).then(() => this.flash(`Access granted to ${name}`, 'ok'));
       };
     });
     this.querySelectorAll<HTMLElement>('[data-reject]').forEach((el) => {
-      el.onclick = () => void this.call('varco/reject_request', { request_id: el.dataset.reject! });
+      el.onclick = () => void this.call('varco/reject_request', { request_id: el.dataset.reject! }).then(() => this.flash('Request rejected', 'danger'));
     });
 
-    // revoke / delete with inline confirm
+    // revoke -> modal; delete -> inline confirm
     this.querySelectorAll<HTMLElement>('[data-revoke]').forEach((el) => {
-      el.onclick = () => this.showInlineConfirm(el, {
-        kind: 'revoke',
-        message: 'Revoke access? This immediately ends active sessions for this consumer.',
-        confirmLabel: 'Revoke access',
-        onConfirm: () => void this.call('varco/revoke_grant', { grant_id: el.dataset.revoke! }),
-      });
+      el.onclick = () => { this._confirmRevoke = { grantId: el.dataset.revoke!, name: el.dataset.name || 'this consumer' }; this.render(this._lastState!); };
     });
     this.querySelectorAll<HTMLElement>('[data-delete-grant]').forEach((el) => {
       el.onclick = () => this.showInlineConfirm(el, {
         kind: 'delete',
         message: `Delete grant record for ${el.dataset.name}? This also removes active access for that consumer.`,
         confirmLabel: 'Delete grant record',
-        onConfirm: () => void this.call('varco/delete_grant', { grant_id: el.dataset.deleteGrant! }),
+        onConfirm: () => void this.call('varco/delete_grant', { grant_id: el.dataset.deleteGrant! }).then(() => this.flash('Grant record deleted', 'warn')),
       });
     });
+    // revoke modal actions
+    this.querySelectorAll<HTMLElement>('[data-revoke-cancel]').forEach((el) => {
+      el.onclick = (ev) => { if (ev.target !== el) return; this._confirmRevoke = null; this.render(this._lastState!); };
+    });
+    const revokeStop = this.querySelector<HTMLElement>('[data-revoke-stop]');
+    if (revokeStop) revokeStop.onclick = (ev) => ev.stopPropagation();
+    const revokeConfirm = this.querySelector<HTMLElement>('[data-revoke-confirm]');
+    if (revokeConfirm && this._confirmRevoke) {
+      const { grantId, name } = this._confirmRevoke;
+      revokeConfirm.onclick = () => { this._confirmRevoke = null; void this.call('varco/revoke_grant', { grant_id: grantId }).then(() => this.flash(`Access revoked for ${name}`, 'danger')); };
+    }
 
     // add-restriction type selector
     this.querySelectorAll<HTMLSelectElement>('[data-rf-type]').forEach((sel) => {
@@ -1327,8 +1555,13 @@ export class VarcoPanel extends HTMLElement {
     // grant filter
     const grantSearch = this.querySelector<HTMLInputElement>('[data-grant-search]');
     if (grantSearch) grantSearch.oninput = () => { this._grantSearch = grantSearch.value; this.applyGrantFilter(); };
-    const grantStatusFilter = this.querySelector<HTMLSelectElement>('[data-grant-status-filter]');
-    if (grantStatusFilter) grantStatusFilter.onchange = () => { this._grantStatusFilter = grantStatusFilter.value; this.applyGrantFilter(); };
+    this.querySelectorAll<HTMLElement>('[data-grant-status]').forEach((el) => {
+      el.onclick = () => {
+        this._grantStatusFilter = el.dataset.grantStatus!;
+        this.querySelectorAll<HTMLElement>('[data-grant-status]').forEach((b) => b.classList.toggle('sel', b.dataset.grantStatus === this._grantStatusFilter));
+        this.applyGrantFilter();
+      };
+    });
 
     // entity share
     const shareEntity = this.querySelector<HTMLInputElement>('[data-share-entity]');
@@ -1343,7 +1576,7 @@ export class VarcoPanel extends HTMLElement {
     const createShare = this.querySelector<HTMLElement>('[data-create-entity-share]');
     if (createShare) createShare.onclick = () => void this.createEntityShare();
     const copyShare = this.querySelector<HTMLElement>('[data-copy-share-link]');
-    if (copyShare) copyShare.onclick = () => this.copyText(this._shareUrl);
+    if (copyShare) copyShare.onclick = () => { this.copyText(this._shareUrl); this.flash('Link copied', 'ok'); };
 
     // dashboard export
     const dashboardSelect = this.querySelector<HTMLSelectElement>('[data-dashboard-select]');
@@ -1355,6 +1588,18 @@ export class VarcoPanel extends HTMLElement {
     if (download) download.onclick = () => void this.downloadDashboardBrief();
 
     this.applyGrantFilter();
+  }
+
+  // Rewire just the activity filter buttons after an in-place audit re-render.
+  private wireActivity(): void {
+    this.querySelectorAll<HTMLElement>('[data-activity-filter]').forEach((el) => {
+      el.onclick = () => {
+        this._activityFilter = el.dataset.activityFilter!;
+        const card = this.querySelector('.audit-card');
+        if (card) card.outerHTML = this.auditSection();
+        this.wireActivity();
+      };
+    });
   }
 
   // ---------- zip (unchanged) ----------

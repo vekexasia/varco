@@ -1,7 +1,7 @@
 import type { HassState, VarcoManifest } from "./types.js";
 
 export type ShareControl = {
-  kind: "button" | "range" | "select";
+  kind: "button" | "range" | "select" | "toggle";
   label: string;
   domain: string;
   service: string;
@@ -12,6 +12,7 @@ export type ShareControl = {
   step?: number;
   value?: number | string;
   options?: string[];
+  on?: boolean;
 };
 
 export type ShareCard = {
@@ -27,7 +28,6 @@ export type ShareCard = {
 const CONTROL_LABELS: Record<string, string> = {
   turn_on: "Turn on",
   turn_off: "Turn off",
-  toggle: "Toggle",
   open_cover: "Open",
   close_cover: "Close",
   stop_cover: "Stop",
@@ -41,13 +41,25 @@ const CONTROL_LABELS: Record<string, string> = {
   set_preset_mode: "Preset",
 };
 
+// 24x24 SVG path data per service; buttons render the icon with the label kept as aria-label/title.
+const CONTROL_ICONS: Record<string, string> = {
+  open_cover: "M7 14l5-5 5 5z",
+  close_cover: "M7 10l5 5 5-5z",
+  stop_cover: "M7 7h10v10H7z",
+  lock: "M12 2a4 4 0 0 0-4 4v3H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2h-2V6a4 4 0 0 0-4-4zm-2 7V6a2 2 0 0 1 4 0v3z",
+  unlock: "M16 9V6a4 4 0 0 0-8 0h2a2 2 0 0 1 4 0v3H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2z",
+  open: "M16 9V6a4 4 0 0 0-8 0h2a2 2 0 0 1 4 0v3H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2z",
+};
+
 const DOMAIN_SERVICES: Record<string, string[]> = {
-  light: ["turn_on", "turn_off", "toggle"],
-  switch: ["turn_on", "turn_off", "toggle"],
+  light: ["turn_on", "turn_off"],
+  switch: ["turn_on", "turn_off"],
   cover: ["open_cover", "stop_cover", "close_cover", "set_cover_position"],
   lock: ["unlock", "lock", "open"],
   climate: ["turn_on", "turn_off", "set_temperature", "set_hvac_mode", "set_fan_mode", "set_preset_mode"],
 };
+
+const TOGGLE_DOMAINS = new Set(["light", "switch"]);
 
 export function buildShareCards(manifest: VarcoManifest, states: Record<string, HassState | null | undefined>): ShareCard[] {
   const entityIds = orderedEntities(manifest);
@@ -79,13 +91,16 @@ const INACTIVE_STATES = new Set(["off", "closed", "locked", "unavailable", "unkn
 export function renderShareCard(card: ShareCard): string {
   const controls = card.controls.map(renderControl).join("");
   const active = !INACTIVE_STATES.has(card.state.toLowerCase());
-  return `<section class="varco-card" data-entity="${esc(card.entityId)}" data-domain="${esc(card.domain)}" data-active="${active}"><div class="varco-card__head"><span class="varco-card__dot"></span><h2 class="varco-card__title">${esc(card.title)}</h2><span class="varco-card__state">${esc(card.displayValue)}</span></div>${controls ? `<div class="varco-card__controls">${controls}</div>` : ""}</section>`;
+  return `<section class="varco-card" data-entity="${esc(card.entityId)}" data-domain="${esc(card.domain)}" data-active="${active}"><div class="varco-card__head"><span class="varco-card__dot"></span><h2 class="varco-card__title">${esc(card.title)}</h2>${card.controls.length ? "" : `<span class="varco-card__state">${esc(card.displayValue)}</span>`}</div>${controls ? `<div class="varco-card__controls">${controls}</div>` : ""}</section>`;
 }
 
 function renderControl(control: ShareControl): string {
   const base = `data-entity="${esc(control.entityId)}" data-domain="${esc(control.domain)}" data-service="${esc(control.service)}"`;
   if (control.kind === "range") return `<label class="varco-ctl varco-ctl--range"><span class="varco-ctl__label">${esc(control.label)}</span><span class="varco-ctl__row"><input type="range" ${base} data-value-key="${esc(control.valueKey ?? "value")}" min="${esc(control.min ?? 0)}" max="${esc(control.max ?? 100)}" step="${esc(control.step ?? 1)}" value="${esc(control.value ?? 0)}"><output class="varco-ctl__value">${esc(control.value ?? 0)}</output></span></label>`;
   if (control.kind === "select") return `<label class="varco-ctl varco-ctl--select"><span class="varco-ctl__label">${esc(control.label)}</span><select ${base} data-value-key="${esc(control.valueKey ?? "value")}">${(control.options ?? []).map((option) => `<option value="${esc(option)}"${option === control.value ? " selected" : ""}>${esc(option)}</option>`).join("")}</select></label>`;
+  if (control.kind === "toggle") return `<label class="varco-ctl varco-ctl--toggle"><input type="checkbox" role="switch" data-toggle data-entity="${esc(control.entityId)}" data-domain="${esc(control.domain)}"${control.on ? " checked" : ""}></label>`;
+  const icon = CONTROL_ICONS[control.service];
+  if (icon) return `<button type="button" class="varco-ctl varco-ctl--btn varco-ctl--icon" ${base} aria-label="${esc(control.label)}" title="${esc(control.label)}"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="${esc(icon)}"/></svg></button>`;
   return `<button type="button" class="varco-ctl varco-ctl--btn" ${base}>${esc(control.label)}</button>`;
 }
 
@@ -103,7 +118,13 @@ function orderedEntities(manifest: VarcoManifest): string[] {
 
 function controlsForEntity(entityId: string, domain: string, state: HassState | null | undefined, manifest: VarcoManifest): ShareControl[] {
   const services = DOMAIN_SERVICES[domain] ?? [];
-  return services.filter((service) => actionAllowed(manifest, domain, service, entityId)).map((service) => controlForService(entityId, domain, service, state)).filter((control): control is ShareControl => Boolean(control));
+  const allowed = services.filter((service) => actionAllowed(manifest, domain, service, entityId));
+  if (TOGGLE_DOMAINS.has(domain) && allowed.includes("turn_on") && allowed.includes("turn_off")) {
+    const on = !INACTIVE_STATES.has(String(state?.state ?? "").toLowerCase());
+    const rest = allowed.filter((service) => service !== "turn_on" && service !== "turn_off");
+    return [{ kind: "toggle", label: "", domain, service: "turn_on", entityId, on }, ...rest.map((service) => controlForService(entityId, domain, service, state)).filter((control): control is ShareControl => Boolean(control))];
+  }
+  return allowed.map((service) => controlForService(entityId, domain, service, state)).filter((control): control is ShareControl => Boolean(control));
 }
 
 function controlForService(entityId: string, domain: string, service: string, state: HassState | null | undefined): ShareControl | null {
@@ -124,7 +145,7 @@ function selectControl(entityId: string, domain: string, service: string, valueK
 
 function actionAllowed(manifest: VarcoManifest, domain: string, service: string, entityId: string): boolean {
   const scopes = new Set(manifest.actions ?? []);
-  return scopes.has(`${domain}.${service}@${entityId}`) || scopes.has(`*@${entityId}`) || scopes.has(`${domain}.*`) || scopes.has("*");
+  return scopes.has(`${domain}.${service}@${entityId}`) || scopes.has(`${domain}.*@${entityId}`) || scopes.has(`*@${entityId}`) || scopes.has(`${domain}.*`) || scopes.has("*");
 }
 
 function displayValue(state: HassState | null | undefined): string {

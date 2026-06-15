@@ -191,19 +191,22 @@ def test_subscription_sends_initial_snapshot_then_only_authorized_deltas_until_u
     asyncio.run(run())
 
 
-def test_call_service_supports_three_action_scope_granularities_and_rejects_others():
+def test_call_service_supports_four_action_scope_granularities_and_rejects_others():
     async def run():
         authority, _, hass, _ = await paired_authority({
             "name": "Demo",
             "version": "1",
-            "actions": ["light.turn_on@light.cucina", "switch.*", "*@cover.tenda"],
+            "actions": ["light.turn_on@light.cucina", "switch.*", "*@cover.tenda", "fan.*@fan.studio"],
         })
         assert (await authority.handle_plaintext("s1", {"type": "call_service", "domain": "light", "service": "turn_on", "target": {"entity_id": "light.cucina"}}))["type"] == "service_called"
         assert (await authority.handle_plaintext("s1", {"type": "call_service", "domain": "switch", "service": "turn_off", "target": {"entity_id": "switch.pc"}}))["type"] == "service_called"
         assert (await authority.handle_plaintext("s1", {"type": "call_service", "domain": "cover", "service": "open_cover", "target": {"entity_id": "cover.tenda"}}))["type"] == "service_called"
+        assert (await authority.handle_plaintext("s1", {"type": "call_service", "domain": "fan", "service": "set_percentage", "target": {"entity_id": "fan.studio"}}))["type"] == "service_called"
         denied = await authority.handle_plaintext("s1", {"type": "call_service", "domain": "lock", "service": "unlock", "target": {"entity_id": "lock.porta"}})
         assert denied["code"] == "permission_denied"
-        assert len(hass.services.calls) == 3
+        cross_domain = await authority.handle_plaintext("s1", {"type": "call_service", "domain": "homeassistant", "service": "toggle", "target": {"entity_id": "fan.studio"}})
+        assert cross_domain["code"] == "permission_denied"
+        assert len(hass.services.calls) == 4
     asyncio.run(run())
 
 

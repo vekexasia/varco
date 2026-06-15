@@ -37,11 +37,11 @@ try {
   console.log(`Seeded panel e2e grant: ${seededGrantId}`);
 
   await openVarcoPanel(page, config);
-  await page.getByText('Authority ID').waitFor({ timeout: 60_000 });
-  await page.locator('varco-panel .h-page', { hasText: /^Grants/ }).waitFor({ timeout: 20_000 });
+  await page.getByText('Authority', { exact: true }).first().waitFor({ timeout: 60_000 });
+  await page.locator('varco-panel .sec-title', { hasText: /^Grants/ }).waitFor({ timeout: 20_000 });
 
   // --- #60: audit/activity section ---
-  await page.locator('varco-panel .h-page', { hasText: /^Activity/ }).waitFor({ timeout: 20_000 });
+  await page.locator('varco-panel .sec-title', { hasText: /^Activity/ }).waitFor({ timeout: 20_000 });
   const auditList = page.locator('varco-panel .audit-card [data-audit-list]');
   await auditList.waitFor({ timeout: 20_000 });
   const auditRows = auditList.locator('[data-audit-event]');
@@ -59,7 +59,7 @@ try {
   // --- #65: filter + expired pill correctness ---
   const search = page.locator('varco-panel [data-grant-search]');
   await search.waitFor({ timeout: 20_000 });
-  await page.locator('varco-panel [data-grant-status-filter]').waitFor({ timeout: 20_000 });
+  await page.locator('varco-panel [data-grant-status-seg]').waitFor({ timeout: 20_000 });
   const totalCards = await page.locator('varco-panel .grant').count();
   assert(totalCards > 0, 'Expected grant cards to be present');
   await search.fill('Guest Stay');
@@ -79,10 +79,10 @@ try {
   if ((await revokeBtn.count()) > 0) {
     await revokeBtn.scrollIntoViewIfNeeded();
     await revokeBtn.click();
-    const confirmRow = page.locator('varco-panel [data-confirm-revoke]').first();
-    await confirmRow.waitFor({ timeout: 5_000 });
-    await page.locator('varco-panel [data-cancel-confirm]').first().click();
-    await confirmRow.waitFor({ state: 'detached', timeout: 5_000 });
+    const confirmModal = page.locator('varco-panel [data-revoke-confirm]').first();
+    await confirmModal.waitFor({ timeout: 5_000 });
+    await page.locator('varco-panel .modal-scrim [data-revoke-cancel]').first().click();
+    await confirmModal.waitFor({ state: 'detached', timeout: 5_000 });
   }
 
   // --- #62: live refresh of pending requests (no manual reload) ---

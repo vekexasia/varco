@@ -29,7 +29,8 @@ test('share UI builds entity cards from the granted manifest and states', () => 
     ['cover.gate', 'cover', 'Front gate'],
     ['sensor.temp', 'sensor', 'Outside temperature'],
   ]);
-  assert.deepEqual(cards[0].controls.map((control) => control.service), ['turn_on', 'turn_off']);
+  assert.deepEqual(cards[0].controls.map((control) => control.kind), ['toggle']);
+  assert.equal(cards[0].controls[0].on, true);
   assert.equal(cards[0].attributes.brightnessPct, 50);
   assert.deepEqual(cards[1].controls.map((control) => control.service), ['open_cover', 'stop_cover', 'close_cover']);
   assert.equal(cards[2].controls.length, 0);
@@ -39,8 +40,8 @@ test('share UI builds entity cards from the granted manifest and states', () => 
 test('share UI renderer exposes accessible controls for granted entity actions only', () => {
   const html = renderShareCards(buildShareCards(manifest, states));
   assert.match(html, /<section[^>]+data-entity="light\.porch"/);
-  assert.match(html, /<button[^>]+data-service="turn_off"[^>]*>Turn off<\/button>/);
-  assert.match(html, /<button[^>]+data-service="open_cover"[^>]*>Open<\/button>/);
+  assert.match(html, /<input[^>]+type="checkbox"[^>]+role="switch"[^>]+data-toggle[^>]+checked>/);
+  assert.match(html, /<button[^>]+data-service="open_cover"[^>]+aria-label="Open"[^>]*><svg/);
   assert.match(html, /Outside temperature/);
   assert.doesNotMatch(html, /data-service="unlock"/);
 });
