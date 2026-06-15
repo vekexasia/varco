@@ -8,5 +8,5 @@
   "iot_class": "cloud_push",
   "issue_tracker": "https://github.com/vekexasia/varco/issues",
   "requirements": ["aiortc>=1.9.0", "cryptography>=44.0.0"],
-  "version": "0.4.1"
+  "version": "0.4.2"
 }

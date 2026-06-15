@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import { randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
@@ -25,6 +23,7 @@ import {
 } from "./logic.js";
 import { renderShareShell } from "./share.js";
 import { VERSION } from "./version.js";
+import { VARCO_CLIENT_BUNDLE } from "./varco-client-bundle.js";
 
 export type NodeBridgeEnv = Record<string, string | undefined>;
 export type StartNodeBridgeOptions = { port?: number; host?: string; env?: NodeBridgeEnv };
@@ -40,7 +39,6 @@ type NodeBridgeLimits = {
 };
 
 const AUTH_DEADLINE_MS = 30_000;
-const CLIENT_BUNDLE_PATH = resolve(dirname(fileURLToPath(import.meta.url)), "../../packages/client/dist/varco-client.js");
 
 function randomId(bytes = 16): string { return b64urlEncode(randomBytes(bytes)); }
 function sendJson(ws: WsSocket, value: unknown): void { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(value)); }
@@ -199,7 +197,7 @@ export async function startNodeBridge(options: StartNodeBridgeOptions = {}): Pro
     if (path[0] === "health" || path[0] === "healthz") { writeJson(res, 200, { ok: true, version: VERSION }, corsHeaders(policy, reqOrigin)); return; }
     if (path[0] === "varco-client.js") {
       res.writeHead(200, { "Content-Type": "application/javascript; charset=utf-8", "Cache-Control": "no-store" });
-      res.end(readFileSync(CLIENT_BUNDLE_PATH));
+      res.end(VARCO_CLIENT_BUNDLE);
       return;
     }
     if (path[0] === "share" && path[1]) {
