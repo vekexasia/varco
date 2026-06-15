@@ -8,6 +8,7 @@ FROM node:22-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json tsconfig.base.json ./
 COPY bridge bridge
+COPY packages/client packages/client
 RUN npm ci
 RUN npm --workspace @varco/bridge run build
 
