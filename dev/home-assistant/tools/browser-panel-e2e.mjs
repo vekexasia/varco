@@ -87,7 +87,7 @@ try {
 
   // --- #62: live refresh of pending requests (no manual reload) ---
   const liveRefresh = await page.locator('varco-panel').evaluate(async (panel) => {
-    if (!panel._refreshTimer) return { ok: false, reason: 'no refresh timer' };
+    if (panel._refreshTimer) return { ok: false, reason: 'poll timer still exists' };
     const fakeId = `e2e-fake-${Date.now()}`;
     const original = panel._hass.connection.sendMessagePromise.bind(panel._hass.connection);
     let reloaded = false;
@@ -98,8 +98,9 @@ try {
       }
       return original(msg);
     };
-    await panel.refreshPending();
-    const surfaced = !!panel.querySelector('[data-request-card]');
+    panel._loaded = false;
+    await panel.load();
+    const surfaced = !!panel.querySelector(`[data-request-card="${fakeId}"]`);
     panel._hass.connection.sendMessagePromise = original;
     panel._loaded = false;
     await panel.load();

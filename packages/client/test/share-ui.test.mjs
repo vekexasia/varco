@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildShareCards, renderShareCards } from '../dist/index.js';
+import { buildShareCards, callShareAction, renderShareCards } from '../dist/index.js';
 
 const manifest = {
   name: 'Shared home',
@@ -44,4 +44,21 @@ test('share UI renderer exposes accessible controls for granted entity actions o
   assert.match(html, /<button[^>]+data-service="open_cover"[^>]+aria-label="Open"[^>]*><svg/);
   assert.match(html, /Outside temperature/);
   assert.doesNotMatch(html, /data-service="unlock"/);
+});
+
+test('share UI action prompts for a PIN and retries PIN-restricted service calls', async () => {
+  const calls = [];
+  const client = {
+    async callService(domain, service, data) {
+      calls.push([domain, service, data]);
+      if (calls.length === 1) throw Object.assign(new Error('Restriction denied: pin_required'), { code: 'permission_denied' });
+    },
+  };
+
+  await callShareAction(client, { domain: 'lock', service: 'unlock', entityId: 'lock.front_door' }, () => '1234');
+
+  assert.deepEqual(calls, [
+    ['lock', 'unlock', { entity_id: 'lock.front_door' }],
+    ['lock', 'unlock', { entity_id: 'lock.front_door', pin: '1234' }],
+  ]);
 });

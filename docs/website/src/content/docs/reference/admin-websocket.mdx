@@ -18,6 +18,10 @@ Source: `custom_components/varco/websocket_api.py`.
 | `varco/revoke_grant` | `grant_id` (required) | The revoked grant. |
 | `varco/delete_grant` | `grant_id` (required) | The deleted grant. |
 | `varco/update_grant_restrictions` | `grant_id` (required), `restrictions` (required list) | The updated grant. |
+| `varco/shares` | none | List of unexpired shares, without secret hashes. Expired shares are purged first. |
+| `varco/create_share` | `name` (required), `manifest` (required), `max_claims`, `expires_at`, `restrictions`, `note` (optional) | The created share without its secret hash, plus `share_url`. |
+| `varco/revoke_share` | `share_id` (required) | The revoked share without its secret hash. |
+| `varco/delete_share` | `share_id` (required) | The deleted share without its secret hash. |
 | `varco/dashboard_export` | `config` (required dict), `selected_entities`, `dashboard_title`, `dashboard_url_path`, `view_index` (optional) | Dashboard brief export payload. |
 
 Example call over the Home Assistant WebSocket API:

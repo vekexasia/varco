@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import voluptuous as vol
 from homeassistant.components import websocket_api
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 
 from .const import DOMAIN
 from .dashboard_export import build_dashboard_export
 from .manifest import ManifestError
 from .share_links import build_bearer_share_link, build_claim_share_link
+from .storage import SIGNAL_VARCO_STORAGE_CHANGED
 
 
 def _relay(hass: HomeAssistant):
@@ -32,8 +33,12 @@ def async_setup(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, websocket_delete_grant)
     websocket_api.async_register_command(hass, websocket_update_grant_restrictions)
     websocket_api.async_register_command(hass, websocket_create_preapproved_grant)
+    websocket_api.async_register_command(hass, websocket_shares)
     websocket_api.async_register_command(hass, websocket_create_share)
+    websocket_api.async_register_command(hass, websocket_revoke_share)
+    websocket_api.async_register_command(hass, websocket_delete_share)
     websocket_api.async_register_command(hass, websocket_dashboard_export)
+    websocket_api.async_register_command(hass, websocket_subscribe)
 
 
 @websocket_api.websocket_command({vol.Required("type"): "varco/info"})
@@ -42,6 +47,20 @@ def async_setup(hass: HomeAssistant) -> None:
 async def websocket_info(hass: HomeAssistant, connection, msg) -> None:
     relay = _relay(hass)
     connection.send_result(msg["id"], {"authority_id": relay.authority_id, "relay": relay.status})
+
+
+@websocket_api.websocket_command({vol.Required("type"): "varco/subscribe"})
+@websocket_api.require_admin
+@callback
+def websocket_subscribe(hass: HomeAssistant, connection, msg) -> None:
+    from homeassistant.helpers.dispatcher import async_dispatcher_connect
+
+    @callback
+    def forward(event: dict) -> None:
+        connection.send_event(msg["id"], event)
+
+    connection.subscriptions[msg["id"]] = async_dispatcher_connect(hass, SIGNAL_VARCO_STORAGE_CHANGED, forward)
+    connection.send_result(msg["id"])
 
 
 @websocket_api.websocket_command({vol.Required("type"): "varco/access_requests"})
@@ -113,6 +132,14 @@ async def websocket_create_preapproved_grant(hass: HomeAssistant, connection, ms
     connection.send_result(msg["id"], {"grant": grant.as_dict(), "consumer_private_key": identity["private_key"], "consumer_public_key": identity["public_key"], "share_url": share_url})
 
 
+@websocket_api.websocket_command({vol.Required("type"): "varco/shares"})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def websocket_shares(hass: HomeAssistant, connection, msg) -> None:
+    shares = await _authority(hass).list_shares()
+    connection.send_result(msg["id"], [share.as_dict(include_secret_hash=False) for share in shares])
+
+
 @websocket_api.websocket_command({vol.Required("type"): "varco/create_share", vol.Required("name"): str, vol.Required("manifest"): dict, vol.Optional("max_claims", default=1): int, vol.Optional("expires_at"): vol.Any(None, str), vol.Optional("restrictions", default=[]): list, vol.Optional("note"): vol.Any(None, str)})
 @websocket_api.require_admin
 @websocket_api.async_response
@@ -125,6 +152,22 @@ async def websocket_create_share(hass: HomeAssistant, connection, msg) -> None:
     relay = _relay(hass)
     share_url = build_claim_share_link(relay.bridge_ws_url, relay.authority_id, share.share_id, secret)
     connection.send_result(msg["id"], {"share": share.as_dict(include_secret_hash=False), "share_url": share_url})
+
+
+@websocket_api.websocket_command({vol.Required("type"): "varco/revoke_share", vol.Required("share_id"): str})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def websocket_revoke_share(hass: HomeAssistant, connection, msg) -> None:
+    share = await _authority(hass).revoke_share(msg["share_id"])
+    connection.send_result(msg["id"], share.as_dict(include_secret_hash=False))
+
+
+@websocket_api.websocket_command({vol.Required("type"): "varco/delete_share", vol.Required("share_id"): str})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def websocket_delete_share(hass: HomeAssistant, connection, msg) -> None:
+    share = await _authority(hass).delete_share(msg["share_id"])
+    connection.send_result(msg["id"], share.as_dict(include_secret_hash=False))
 
 
 @websocket_api.websocket_command({vol.Required("type"): "varco/update_grant_restrictions", vol.Required("grant_id"): str, vol.Required("restrictions"): list})

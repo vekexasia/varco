@@ -1,4 +1,4 @@
-import type { HassState, VarcoManifest } from "./types.js";
+import type { HassState, VarcoClient, VarcoManifest } from "./types.js";
 
 export type ShareControl = {
   kind: "button" | "range" | "select" | "toggle";
@@ -24,6 +24,15 @@ export type ShareCard = {
   attributes: Record<string, unknown>;
   controls: ShareControl[];
 };
+
+export type ShareAction = {
+  domain: string;
+  service: string;
+  entityId: string;
+  data?: Record<string, unknown>;
+};
+
+export type PinPrompt = (message: string) => string | null | undefined;
 
 const CONTROL_LABELS: Record<string, string> = {
   turn_on: "Turn on",
@@ -86,6 +95,18 @@ export function renderShareCards(cards: ShareCard[]): string {
   return `<div class="varco-share-cards">${cards.map(renderShareCard).join("")}</div>`;
 }
 
+export async function callShareAction(client: Pick<VarcoClient, "callService">, action: ShareAction, promptPin: PinPrompt = defaultPinPrompt): Promise<void> {
+  const data = { entity_id: action.entityId, ...(action.data ?? {}) };
+  try {
+    await client.callService(action.domain, action.service, data);
+  } catch (err) {
+    if (!isPinDenial(err)) throw err;
+    const pin = promptPin("Enter PIN");
+    if (!pin) throw err;
+    await client.callService(action.domain, action.service, { ...data, pin });
+  }
+}
+
 const INACTIVE_STATES = new Set(["off", "closed", "locked", "unavailable", "unknown", "idle", "standby", "none", ""]);
 
 export function renderShareCard(card: ShareCard): string {
@@ -102,6 +123,15 @@ function renderControl(control: ShareControl): string {
   const icon = CONTROL_ICONS[control.service];
   if (icon) return `<button type="button" class="varco-ctl varco-ctl--btn varco-ctl--icon" ${base} aria-label="${esc(control.label)}" title="${esc(control.label)}"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="${esc(icon)}"/></svg></button>`;
   return `<button type="button" class="varco-ctl varco-ctl--btn" ${base}>${esc(control.label)}</button>`;
+}
+
+function defaultPinPrompt(message: string): string | null {
+  return globalThis.prompt?.(message) ?? null;
+}
+
+function isPinDenial(err: unknown): boolean {
+  const error = err as { code?: unknown; message?: unknown };
+  return error?.code === "permission_denied" && /\b(pin_required|invalid_pin)\b/.test(String(error.message ?? ""));
 }
 
 function orderedEntities(manifest: VarcoManifest): string[] {

@@ -162,6 +162,42 @@ def test_concurrent_claims_only_mint_max_claims():
         assert (await store.async_get_share(share.share_id)).claims_used == 1
 
     asyncio.run(run())
+
+
+def test_unclaimed_share_can_be_revoked_and_deleted():
+    async def run():
+        store = MemoryVarcoStore()
+        authority = VarcoAuthority(store=store, hass=FakeHass())
+        share, secret = await authority.create_share("One seat", {"name": "One seat", "version": "1", "read_entities": ["sensor.temp"]})
+
+        revoked = await authority.revoke_share(share.share_id)
+        denied = await authority.handle_plaintext("claim", {"type": "claim_share", "share_id": share.share_id, "secret": secret, "consumer_pk": generate_consumer_keypair()["public_key"]})
+        deleted = await authority.delete_share(share.share_id)
+
+        assert revoked.revoked is True
+        assert denied["code"] == "share_unavailable"
+        assert deleted.share_id == share.share_id
+        assert await store.async_get_share(share.share_id) is None
+
+    asyncio.run(run())
+
+
+def test_expired_shares_are_purged():
+    async def run():
+        store = MemoryVarcoStore()
+        authority = VarcoAuthority(store=store, hass=FakeHass())
+        expired, _ = await authority.create_share("Expired", {"name": "Expired", "version": "1", "read_entities": ["sensor.temp"]}, expires_at="2000-01-01T00:00:00+00:00")
+        live, _ = await authority.create_share("Live", {"name": "Live", "version": "1", "read_entities": ["sensor.temp"]}, expires_at="2999-01-01T00:00:00+00:00")
+
+        purged = await authority.purge_expired_shares()
+
+        assert purged == [expired.share_id]
+        assert await store.async_get_share(expired.share_id) is None
+        assert (await store.async_get_share(live.share_id)).share_id == live.share_id
+
+    asyncio.run(run())
+
+
 def test_get_states_enforces_grant_and_redacts_audit_payloads():
     async def run():
         authority, store, _, _ = await paired_authority({"name": "Demo", "version": "1", "read_entities": ["sensor.temp"]})

@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Callable
 
 from .const import STORAGE_KEY, STORAGE_VERSION
 from .models import AccessRequest, AccessStatus, Grant, Share, utcnow
 from .policy import trim_manifest
 
 MAX_PENDING_ACCESS_REQUESTS = 50
+SIGNAL_VARCO_STORAGE_CHANGED = "varco_storage_changed"
 
 
 class MemoryVarcoStore:
@@ -18,7 +19,21 @@ class MemoryVarcoStore:
         # the stored grants mapping, which stays keyed by consumer_pk for
         # backward compatibility with existing installs.
         self._grant_index: dict[str, str] = {}
+        self._listeners: list[Callable[[dict[str, Any]], None]] = []
         self._share_claim_lock = asyncio.Lock()
+
+    def async_listen_changes(self, listener: Callable[[dict[str, Any]], None]) -> Callable[[], None]:
+        self._listeners.append(listener)
+
+        def unsubscribe() -> None:
+            if listener in self._listeners:
+                self._listeners.remove(listener)
+
+        return unsubscribe
+
+    def _notify_change(self, event: dict[str, Any]) -> None:
+        for listener in list(self._listeners):
+            listener(event)
 
     def _rebuild_grant_index(self) -> None:
         self._grant_index = {
@@ -34,10 +49,11 @@ class MemoryVarcoStore:
         self._data.setdefault("shares", {})
         return self._data
 
-    async def async_save_data(self, data: dict[str, Any] | None = None) -> None:
+    async def async_save_data(self, data: dict[str, Any] | None = None, kind: str = "data") -> None:
         if data is not None:
             self._data = data
             self._rebuild_grant_index()
+        self._notify_change({"kind": kind})
 
     async def async_upsert_access_request(self, request: AccessRequest) -> None:
         data = await self.async_load_data()
@@ -122,6 +138,44 @@ class MemoryVarcoStore:
     async def async_list_shares(self) -> list[Share]:
         return [Share.from_dict(item) for item in (await self.async_load_data())["shares"].values()]
 
+    async def async_revoke_share(self, share_id: str) -> Share:
+        share = await self.async_get_share(share_id)
+        if share is None:
+            raise KeyError(share_id)
+        share.revoked = True
+        await self.async_upsert_share(share)
+        return share
+
+    async def async_delete_share(self, share_id: str) -> Share:
+        share = await self.async_get_share(share_id)
+        if share is None:
+            raise KeyError(share_id)
+        data = await self.async_load_data()
+        data["shares"].pop(share_id, None)
+        await self.async_save_data(data)
+        return share
+
+    async def async_purge_expired_shares(self, now: datetime | None = None) -> list[str]:
+        now = now or datetime.now(timezone.utc)
+        data = await self.async_load_data()
+        deleted: list[str] = []
+        for share_id, raw in list(data["shares"].items()):
+            expires_at = raw.get("expires_at")
+            if not expires_at:
+                continue
+            try:
+                expires = datetime.fromisoformat(expires_at)
+            except (TypeError, ValueError):
+                continue
+            if expires.tzinfo is None:
+                expires = expires.replace(tzinfo=timezone.utc)
+            if now >= expires:
+                deleted.append(share_id)
+                data["shares"].pop(share_id, None)
+        if deleted:
+            await self.async_save_data(data)
+        return deleted
+
     async def async_claim_share(self, share: Share, consumer_pk: str) -> Grant:
         async with self._share_claim_lock:
             data = await self.async_load_data()
@@ -202,7 +256,7 @@ class MemoryVarcoStore:
         data = await self.async_load_data()
         data["audit"].append(event)
         data["audit"] = data["audit"][-1000:]
-        await self.async_save_data(data)
+        await self.async_save_data(data, kind="audit")
 
     async def async_audit_events(self) -> list[dict[str, Any]]:
         return list((await self.async_load_data())["audit"])
@@ -220,8 +274,14 @@ class HomeAssistantVarcoStore(MemoryVarcoStore):
     def __init__(self, hass) -> None:
         super().__init__()
         from homeassistant.helpers.storage import Store
+        self.hass = hass
         self._store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
         self._loaded = False
+
+    def _notify_change(self, event: dict[str, Any]) -> None:
+        super()._notify_change(event)
+        from homeassistant.helpers.dispatcher import async_dispatcher_send
+        async_dispatcher_send(self.hass, SIGNAL_VARCO_STORAGE_CHANGED, event)
 
     async def async_load_data(self) -> dict[str, Any]:
         if not self._loaded:
@@ -230,6 +290,6 @@ class HomeAssistantVarcoStore(MemoryVarcoStore):
             self._loaded = True
         return await super().async_load_data()
 
-    async def async_save_data(self, data: dict[str, Any] | None = None) -> None:
-        await super().async_save_data(data)
+    async def async_save_data(self, data: dict[str, Any] | None = None, kind: str = "data") -> None:
+        await super().async_save_data(data, kind=kind)
         await self._store.async_save(self._data)

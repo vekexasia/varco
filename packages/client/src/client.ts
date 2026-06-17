@@ -231,6 +231,7 @@ export function createVarcoClient(options: VarcoClientOptions): VarcoClient {
 class DataChannelTransport implements VarcoTransport {
   private pending = new Map<string, { resolve: (value: any) => void; reject: (err: Error) => void; timer: ReturnType<typeof setTimeout> }>();
   private eventHandler: ((event: any) => void) | null = null;
+  private closeHandler: (() => void) | null = null;
 
   constructor(private pc: RTCPeerConnection, private channel: RTCDataChannel, private requestTimeoutMs = 30_000) {
     this.channel.addEventListener("message", (event) => {
@@ -240,11 +241,16 @@ class DataChannelTransport implements VarcoTransport {
         this.failPending(err instanceof Error ? err : new Error(String(err)));
       }
     });
-    this.channel.addEventListener("close", () => this.failPending(new Error("Varco transport closed")));
-    this.channel.addEventListener("error", () => this.failPending(new Error("Varco data channel error")));
+    this.channel.addEventListener("close", () => this.handleClose(new Error("Varco transport closed")));
+    this.channel.addEventListener("error", () => this.handleClose(new Error("Varco data channel error")));
+    this.pc.addEventListener("connectionstatechange", () => {
+      if (["disconnected", "failed", "closed"].includes(this.pc.connectionState)) this.handleClose(new Error(`Varco peer connection ${this.pc.connectionState}`));
+    });
   }
 
   onEvent(handler: (event: any) => void): void { this.eventHandler = handler; }
+
+  onClose(handler: () => void): void { this.closeHandler = handler; }
 
   async request(message: Record<string, unknown>): Promise<any> {
     const requestId = (message.request_id as string | undefined) ?? randomId(8);
@@ -264,6 +270,11 @@ class DataChannelTransport implements VarcoTransport {
     this.channel.close();
     this.pc.close();
     this.failPending(new Error("Varco transport closed"));
+  }
+
+  private handleClose(err: Error): void {
+    this.failPending(err);
+    this.closeHandler?.();
   }
 
   private failPending(err: Error): void {

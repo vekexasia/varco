@@ -1,8 +1,9 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { mkdirSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { chromium } from '@playwright/test';
 import { haConfig } from './lib/ha-admin.mjs';
+import { createHomeAssistantAdmin } from './lib/varco-dev.mjs';
 
 const config = haConfig();
 const base = config.url.replace(/\/$/, '');
@@ -15,12 +16,12 @@ const browser = await chromium.launch({ headless: process.env.HEADLESS !== 'fals
 const page = await browser.newPage({ acceptDownloads: true, viewport: { width: 1440, height: 1100 } });
 const tokens = await fetchBrowserTokens(config);
 await page.addInitScript((authData) => localStorage.setItem('hassTokens', JSON.stringify(authData)), tokens);
-
+let createdShareId = null;
 try {
   await page.goto(panelUrl, { waitUntil: 'domcontentloaded' });
   await loginIfNeeded(page, config.username, config.password);
 
-  await page.getByText('Dashboard brief export').waitFor({ timeout: 60_000 });
+  await page.getByText('Dashboard export and build').waitFor({ timeout: 60_000 });
 
   const dashboardSelect = page.locator('varco-panel [data-dashboard-select]');
   await dashboardSelect.waitFor({ timeout: 20_000 });
@@ -47,6 +48,20 @@ try {
   await page.getByText(/\d+ of \d+ harvested entities selected/).waitFor({ timeout: 10_000 });
 
   mkdirSync(artifactDir, { recursive: true });
+  await page.locator('varco-panel [data-build-share-link]').waitFor({ timeout: 10_000 });
+  const shareUses = page.locator('varco-panel [data-export-share-uses]');
+  await shareUses.fill('1e3');
+  await page.locator('varco-panel [data-build-share-link]').click();
+  await page.getByText('Allowed link uses must be a whole number from 1 to 100.').waitFor({ timeout: 10_000 });
+
+  await shareUses.fill('2');
+  await page.locator('varco-panel [data-build-share-link]').click();
+  const shareCreated = page.locator('varco-panel').getByText('Share created.');
+  await shareCreated.waitFor({ timeout: 20_000 });
+  const shareUrl = await page.locator('varco-panel .callout code').last().innerText();
+  createdShareId = new URL(shareUrl).pathname.split('/').filter(Boolean).pop();
+  assert(createdShareId, `Could not parse created share id from ${shareUrl}`);
+
   const downloadPromise = page.waitForEvent('download');
   await page.locator('varco-panel [data-download-brief]').click();
   const download = await downloadPromise;
@@ -68,9 +83,21 @@ try {
   assert(brief.includes(tokens.hassUrl) === false, 'Brief should not embed Home Assistant URL');
   assert(brief.includes('createVarcoConsumerClient'), 'Brief should include @varco/client bootstrap');
 
-  console.log(`Varco dashboard export browser e2e passed. Zip: ${zipPath}. Screenshot: ${screenshotPath}`);
+  console.log(`Varco dashboard export/build browser e2e passed. Zip: ${zipPath}. Screenshot: ${screenshotPath}`);
 } finally {
   await browser.close();
+  if (createdShareId) {
+    let admin;
+    try {
+      admin = await createHomeAssistantAdmin({ ...config });
+      await admin.command('varco/delete_share', { share_id: createdShareId });
+      console.log(`Cleaned up dashboard e2e share: ${createdShareId}`);
+    } catch (err) {
+      console.warn(`Failed to clean up dashboard e2e share ${createdShareId}: ${err?.message || err}`);
+    } finally {
+      admin?.close?.();
+    }
+  }
 }
 
 function assert(condition, message) {

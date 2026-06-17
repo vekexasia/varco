@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "esbuild src/panel.ts --bundle --format=esm --target=es2022 --outfile=panel.js --legal-comments=none",
+    "test": "npm run build && node --test src/*.test.mjs",
     "check": "tsc -p tsconfig.json --noEmit",
     "watch": "esbuild src/panel.ts --bundle --format=esm --target=es2022 --outfile=panel.js --watch"
   },

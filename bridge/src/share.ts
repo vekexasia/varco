@@ -54,7 +54,7 @@ export function renderShareShell(shareCode: string): string {
     </div>
   </main>
   <script type="module">
-    import { createVarcoClient, consumerIdentityFromPrivateKey, buildShareCards, renderShareCards, VarcoConnectionStrategy } from '/varco-client.js';
+    import { createVarcoClient, consumerIdentityFromPrivateKey, buildShareCards, callShareAction, renderShareCards, VarcoConnectionStrategy } from '/varco-client.js';
 
     const app = document.getElementById('app');
     const shareCode = document.querySelector('main').dataset.shareCode;
@@ -105,19 +105,20 @@ export function renderShareShell(shareCode: string): string {
         app.innerHTML = '<h1></h1><div id="cards"></div>';
         app.querySelector('h1').textContent = grant.manifest.name || 'Varco share';
         const render = () => { app.querySelector('#cards').innerHTML = renderShareCards(buildShareCards(grant.manifest, states)); };
+        const call = (el, service = el.dataset.service, data = {}) => callShareAction(client, { domain: el.dataset.domain, service, entityId: el.dataset.entity, data });
         render();
         app.addEventListener('click', async (event) => {
           const button = event.target.closest('button[data-service]');
           if (!button) return;
           button.disabled = true;
-          try { await client.callService(button.dataset.domain, button.dataset.service, { entity_id: button.dataset.entity }); }
+          try { await call(button); }
           finally { button.disabled = false; }
         });
         app.addEventListener('change', async (event) => {
           const toggle = event.target.closest('input[data-toggle]');
           if (!toggle) return;
           toggle.disabled = true;
-          try { await client.callService(toggle.dataset.domain, toggle.checked ? 'turn_on' : 'turn_off', { entity_id: toggle.dataset.entity }); }
+          try { await call(toggle, toggle.checked ? 'turn_on' : 'turn_off'); }
           catch { toggle.checked = !toggle.checked; }
           finally { toggle.disabled = false; }
         });
@@ -131,7 +132,7 @@ export function renderShareShell(shareCode: string): string {
           const input = event.target.closest('[data-service][data-value-key]');
           if (!input) return;
           input.disabled = true;
-          try { await client.callService(input.dataset.domain, input.dataset.service, { entity_id: input.dataset.entity, [input.dataset.valueKey]: input.type === 'range' ? Number(input.value) : input.value }); }
+          try { await call(input, input.dataset.service, { [input.dataset.valueKey]: input.type === 'range' ? Number(input.value) : input.value }); }
           finally { input.disabled = false; }
         });
         if (entities.length) {

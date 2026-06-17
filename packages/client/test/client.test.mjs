@@ -9,6 +9,7 @@ class FakeTransport {
     this.messages.push(message);
     if (message.type === 'access_request') return { type: 'access_request_pending', request_id: message.request_id, access_request_id: 'req1', pairing_code: '123456', status: 'pending' };
     if (message.type === 'authenticate') return { type: 'authenticated', grant_id: 'req1', manifest: { name: 'Granted share', version: '1', read_entities: ['sensor.temp'] } };
+    if (message.type === 'webrtc_offer') return { type: 'webrtc_answer', sdp_type: 'answer', sdp: 'ok' };
     if (message.type === 'get_states') return { type: 'states', states: { 'sensor.temp': { entity_id: 'sensor.temp', state: '21', attributes: {} } } };
     if (message.type === 'subscribe_states') return { type: 'state_snapshot', subscription_id: 'sub1', states: {} };
     if (message.type === 'unsubscribe_states') return { type: 'unsubscribed' };
@@ -20,6 +21,61 @@ class FakeTransport {
     throw new Error(message.type);
   }
 }
+
+class FakeEventTarget {
+  constructor() { this.listeners = new Map(); }
+  addEventListener(type, handler) {
+    const handlers = this.listeners.get(type) ?? [];
+    handlers.push(handler);
+    this.listeners.set(type, handlers);
+  }
+  removeEventListener(type, handler) {
+    this.listeners.set(type, (this.listeners.get(type) ?? []).filter((item) => item !== handler));
+  }
+  emit(type, event = {}) { for (const handler of this.listeners.get(type) ?? []) handler(event); }
+}
+
+class FakeDataChannel extends FakeEventTarget {
+  constructor() { super(); this.readyState = 'open'; this.sent = []; }
+  send(data) { this.sent.push(data); }
+  close() { this.readyState = 'closed'; this.emit('close'); }
+}
+
+class FakePeerConnection extends FakeEventTarget {
+  constructor() { super(); this.iceGatheringState = 'complete'; this.connectionState = 'connected'; this.channel = new FakeDataChannel(); FakePeerConnection.last = this; }
+  createDataChannel() { return this.channel; }
+  async createOffer() { return { type: 'offer', sdp: 'offer' }; }
+  async setLocalDescription(description) { this.localDescription = description; }
+  async setRemoteDescription(description) { this.remoteDescription = description; }
+  close() { this.connectionState = 'closed'; this.emit('connectionstatechange'); }
+}
+
+test('WebRTC data channel close schedules reconnect', async () => {
+  const originalPeer = globalThis.RTCPeerConnection;
+  globalThis.RTCPeerConnection = FakePeerConnection;
+  const statuses = [];
+  try {
+    const client = createVarcoClient({
+      authorityId: 'auth',
+      bridgeUrl: 'wss://bridge',
+      manifest: { name: 'Requested', version: '1' },
+      transport: new FakeTransport(),
+      connectionStrategy: VarcoConnectionStrategy.WebrtcFirst,
+      storage: new MemoryStorage(),
+      reconnect: true,
+      onTransportStatus: (status) => statuses.push(status),
+    });
+    await client.connect();
+    assert.equal(client.transportStatus.mode, 'p2p');
+
+    FakePeerConnection.last.channel.close();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    assert.ok(statuses.some((status) => status.detail?.startsWith('reconnecting')));
+  } finally {
+    globalThis.RTCPeerConnection = originalPeer;
+  }
+});
 
 test('consumer client uses explicit Home Assistant frontend session without relay options', async () => {
   const hass = {

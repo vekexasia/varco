@@ -193,6 +193,26 @@ class VarcoAuthority:
         await self._dismiss_notification(request_id)
         return request
 
+    async def list_shares(self) -> list[Share]:
+        await self.purge_expired_shares()
+        return await self.store.async_list_shares()
+
+    async def revoke_share(self, share_id: str) -> Share:
+        share = await self.store.async_revoke_share(share_id)
+        await audit.async_log(self.store, "share_revoked", share.share_id)
+        return share
+
+    async def delete_share(self, share_id: str) -> Share:
+        share = await self.store.async_delete_share(share_id)
+        await audit.async_log(self.store, "share_deleted", share.share_id)
+        return share
+
+    async def purge_expired_shares(self) -> list[str]:
+        deleted = await self.store.async_purge_expired_shares()
+        for share_id in deleted:
+            await audit.async_log(self.store, "share_expired", share_id)
+        return deleted
+
     async def revoke_grant(self, grant_id: str) -> Grant:
         grant = await self.store.async_revoke_grant(grant_id)
         for session in self.sessions.values():

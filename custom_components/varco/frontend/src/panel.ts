@@ -1,5 +1,7 @@
 import { styles } from './styles.js';
 import { icons, type IconName } from './icons.js';
+export { parseShareClaims, SHARE_MAX_CLAIMS } from './share.js';
+import { parseShareClaims, SHARE_MAX_CLAIMS } from './share.js';
 import type {
   AccessRequest,
   AuditEvent,
@@ -66,9 +68,9 @@ export class VarcoPanel extends HTMLElement {
   private _hass?: Hass;
   private _loaded = false;
   private _lastState?: PanelState;
-  private _refreshTimer?: number;
   private _toastTimer?: number;
-  private _pendingSignature = '';
+  private _eventUnsub?: () => void;
+  private _subscribePromise?: Promise<void>;
   private _grantSearch = '';
   private _grantStatusFilter = 'all';
   private _activityFilter = 'all';
@@ -91,6 +93,8 @@ export class VarcoPanel extends HTMLElement {
   private _exportLoading = false;
   private _exportConfig: { views?: unknown[] } | null = null;
   private _exportResult: ExportResult | null = null;
+  private _exportShareUses = '1';
+  private _exportShareUrl = '';
   private _selectedDashboardIndex?: number;
   private _selectedViewIndex: string | number = '';
   private _selectedEntities = new Set<string>();
@@ -99,22 +103,19 @@ export class VarcoPanel extends HTMLElement {
   set hass(hass: Hass) {
     this._hass = hass;
     if (!this._loaded) void this.load();
+    void this.subscribe();
   }
 
   connectedCallback(): void {
     this.render({ loading: true } as PanelState);
     this.addEventListener('click', this._onDelegatedClick);
-    if (!this._refreshTimer) {
-      const interval = Number(this.dataset.pollInterval) || 8000;
-      this._refreshTimer = window.setInterval(() => void this.refreshPending(), interval);
-    }
+    void this.subscribe();
   }
 
   disconnectedCallback(): void {
-    if (this._refreshTimer) {
-      clearInterval(this._refreshTimer);
-      this._refreshTimer = undefined;
-    }
+    this._eventUnsub?.();
+    this._eventUnsub = undefined;
+    this._subscribePromise = undefined;
   }
 
   // Delegated handler for the dynamically-injected "Save restriction" button.
@@ -135,18 +136,18 @@ export class VarcoPanel extends HTMLElement {
     }
   };
 
-  async refreshPending(): Promise<void> {
-    if (!this._hass || !this._loaded) return;
-    try {
-      const requests = await this._hass.connection.sendMessagePromise<AccessRequest[]>({ type: 'varco/access_requests' });
-      const signature = requests.filter((r) => r.status === 'pending').map((r) => `${r.request_id}:${r.pairing_code}:${JSON.stringify(r.manifest)}`).sort().join(',');
-      if (signature !== this._pendingSignature) {
-        this._loaded = false;
-        await this.load();
-      }
-    } catch {
-      // transient ws error; next tick retries
-    }
+  private async subscribe(): Promise<void> {
+    if (!this._hass || this._eventUnsub || this._subscribePromise) return;
+    const subscribeMessage = this._hass.connection.subscribeMessage;
+    if (!subscribeMessage) return;
+    this._subscribePromise = subscribeMessage.call(this._hass.connection, async () => {
+      this._loaded = false;
+      await this.load();
+    }, { type: 'varco/subscribe' })
+      .then((unsub) => { this._eventUnsub = unsub; })
+      .catch(() => undefined)
+      .finally(() => { this._subscribePromise = undefined; });
+    await this._subscribePromise;
   }
 
   async load(): Promise<void> {
@@ -159,7 +160,6 @@ export class VarcoPanel extends HTMLElement {
       this._hass.connection.sendMessagePromise<AuditEvent[]>({ type: 'varco/audit' }).catch(() => [] as AuditEvent[]),
     ]);
     await this.loadDashboards();
-    this._pendingSignature = requests.filter((r) => r.status === 'pending').map((r) => `${r.request_id}:${r.pairing_code}:${JSON.stringify(r.manifest)}`).sort().join(',');
     this.render({ info, requests, grants, audit });
   }
 
@@ -831,8 +831,8 @@ export class VarcoPanel extends HTMLElement {
         <div class="share-suggestions" data-share-suggestions></div>
         <label class="field">Share name</label>
         <input data-share-name placeholder="Mario living room light" value="${this.escape(this._shareName)}">
-        <label class="field">Allowed devices / claims</label>
-        <input data-share-claims type="number" min="1" value="${this.escape(this._shareClaims)}">
+        <label class="field">Allowed link uses</label>
+        <input data-share-claims type="number" min="1" max="${SHARE_MAX_CLAIMS}" step="1" value="${this.escape(this._shareClaims)}">
         <div class="btn-row"><button data-create-entity-share ${this._shareLoading ? 'disabled' : ''}>${this._shareLoading ? 'Creating…' : 'Create share link'}</button></div>
       </div>`;
   }
@@ -902,11 +902,11 @@ export class VarcoPanel extends HTMLElement {
   async createEntityShare(): Promise<void> {
     const entityId = this._shareEntityId.trim();
     const name = this._shareName.trim() || entityId;
-    const maxClaims = Number(this._shareClaims || '1');
+    const maxClaims = parseShareClaims(this._shareClaims);
     this._shareError = '';
     this._shareUrl = '';
     if (!/^\w+\.[\w-]+$/.test(entityId)) { this._shareError = 'Enter an entity id like light.kitchen.'; this.render(this._lastState!); return; }
-    if (!Number.isInteger(maxClaims) || maxClaims < 1) { this._shareError = 'Allowed devices must be a positive number.'; this.render(this._lastState!); return; }
+    if (maxClaims === null) { this._shareError = `Allowed link uses must be a whole number from 1 to ${SHARE_MAX_CLAIMS}.`; this.render(this._lastState!); return; }
     this._shareLoading = true;
     this.render(this._lastState!);
     try {
@@ -968,6 +968,7 @@ export class VarcoPanel extends HTMLElement {
           <summary>${result.warnings.length} unresolved or dynamic dashboard references</summary>
           <div class="sec-inner"><ul>${result.warnings.map((w) => `<li><code>${this.escape(w.path)}</code>: ${this.escape(w.message)}</li>`).join('')}</ul></div>
         </details>` : ''}
+      ${this._exportShareUrl ? `<p class="callout"><b>Share created.</b><br><code>${this.escape(this._exportShareUrl)}</code></p><button class="subtle" data-copy-export-share-link>Copy link</button>` : ''}
       <div class="entity-list">
         ${groups.length ? groups.map((group) => `
           <div class="entity-group">
@@ -975,8 +976,11 @@ export class VarcoPanel extends HTMLElement {
             ${group.entities.map((entity) => this.entityCheckbox(entity)).join('')}
           </div>`).join('') : '<p class="empty">No entities were harvested from this selection.</p>'}
       </div>
+      <label class="field">Allowed link uses</label>
+      <input data-export-share-uses type="number" min="1" max="${SHARE_MAX_CLAIMS}" step="1" value="${this.escape(this._exportShareUses)}">
       <div class="btn-row">
-        <button class="go" data-download-brief ${selectedCount ? '' : 'disabled'}>Download agent brief zip</button>
+        <button class="go" data-download-brief ${selectedCount && !this._exportLoading ? '' : 'disabled'}>Download agent brief zip</button>
+        <button data-build-share-link ${selectedCount && !this._exportLoading ? '' : 'disabled'}>${this._exportLoading ? 'Building…' : 'Build share link'}</button>
       </div>`;
   }
 
@@ -1000,6 +1004,10 @@ export class VarcoPanel extends HTMLElement {
       camera_snapshots: selected.filter((e) => e.scopes.camera_snapshots).map((e) => e.entity_id),
       actions: [],
     };
+  }
+
+  exportShareName(result: ExportResult): string {
+    return String(result.manifest?.name || result.dashboard?.view_title || 'Dashboard share');
   }
 
   entityCheckbox(entity: ExportEntity): string {
@@ -1067,6 +1075,7 @@ export class VarcoPanel extends HTMLElement {
   async refreshExportPreview(): Promise<void> {
     const result = await this.requestDashboardExport();
     this._exportResult = result;
+    this._exportShareUrl = '';
     this._selectedEntities = new Set(result.entities.filter((e) => e.selected).map((e) => e.entity_id));
   }
 
@@ -1090,6 +1099,7 @@ export class VarcoPanel extends HTMLElement {
     if (this._exportResult) {
       this._exportResult.entities = this._exportResult.entities.map((e) => (e.entity_id === entityId ? { ...e, selected: checked } : e));
     }
+    this._exportShareUrl = '';
     this.render(this._lastState!);
   }
 
@@ -1109,6 +1119,32 @@ export class VarcoPanel extends HTMLElement {
       this.flash(`Exported ${name}.zip`, 'ok');
     } catch (err) {
       this._exportError = `Could not generate brief: ${(err as Error).message || err}`;
+    } finally {
+      this._exportLoading = false;
+      this.render(this._lastState!);
+    }
+  }
+
+  async buildDashboardShareLink(): Promise<void> {
+    if (!this._exportResult) return;
+    const maxClaims = parseShareClaims(this._exportShareUses);
+    if (maxClaims === null) { this._exportError = `Allowed link uses must be a whole number from 1 to ${SHARE_MAX_CLAIMS}.`; this.render(this._lastState!); return; }
+    this._exportLoading = true;
+    this._exportError = '';
+    this._exportShareUrl = '';
+    this.render(this._lastState!);
+    try {
+      const name = this.exportShareName(this._exportResult);
+      const response = await this._hass!.connection.sendMessagePromise<{ share_url: string }>({
+        type: 'varco/create_share',
+        name,
+        max_claims: maxClaims,
+        manifest: { ...this.previewManifest(this._exportResult), name, version: '0.1.0' },
+      });
+      this._exportShareUrl = this.localShareUrl(response.share_url);
+      this.flash('Share link minted', 'ok');
+    } catch (err) {
+      this._exportError = `Could not build share link: ${(err as Error).message || err}`;
     } finally {
       this._exportLoading = false;
       this.render(this._lastState!);
@@ -1316,36 +1352,38 @@ export class VarcoPanel extends HTMLElement {
             ${this.entityShareSection()}
           </section>
 
+          ${pending.length ? `
           <section id="sec-requests">
             <div class="sec-eyebrow">Consent</div>
-            <div class="sec-title">Pending access requests ${pending.length ? `<span class="badge amber mono">${pending.length}</span>` : ''}</div>
-            ${pending.length ? pending.map((r) => this.requestCard(r)).join('') : '<p class="empty">No one is waiting for access right now.</p>'}
-          </section>
+            <div class="sec-title">Pending access requests <span class="badge amber mono">${pending.length}</span></div>
+            ${pending.map((r) => this.requestCard(r)).join('')}
+          </section>` : ''}
 
+          ${current.grants.length ? `
           <section id="sec-grants">
             <div class="sec-eyebrow">Access</div>
             <div class="sec-title">Grants <span class="badge muted mono">${activeCount} active</span></div>
-            ${current.grants.length ? `
               <div class="controls">
                 <div class="search">${icons.search}<input type="search" data-grant-search placeholder="Search by consumer name" value="${this.escape(this._grantSearch)}"></div>
                 <div class="seg" data-grant-status-seg>
                   ${['all', 'active', 'revoked', 'expired'].map((v) => `<button data-grant-status="${v}" class="${(this._grantStatusFilter || 'all') === v ? 'sel' : ''}">${v === 'all' ? 'All' : v.charAt(0).toUpperCase() + v.slice(1)}</button>`).join('')}
                 </div>
-              </div>` : ''}
-            ${current.grants.length ? current.grants.map((g) => this.grantCard(g)).join('') : '<p class="empty">No grants yet.</p>'}
-            ${current.grants.length ? '<p class="empty" data-grant-empty style="display:none">No grants match the current filter.</p>' : ''}
-          </section>
+              </div>
+            ${current.grants.map((g) => this.grantCard(g)).join('')}
+            <p class="empty" data-grant-empty style="display:none">No grants match the current filter.</p>
+          </section>` : ''}
 
+          ${(Array.isArray(current.audit) ? current.audit.length : 0) ? `
           <section id="sec-activity">
             <div class="sec-eyebrow">Audit</div>
             <div class="sec-title">Activity</div>
             ${this.auditSection()}
-          </section>
+          </section>` : ''}
 
           <section id="sec-export">
             <div class="sec-eyebrow">Handoff</div>
-            <div class="sec-title">Dashboard brief export</div>
-            <div class="sec-lead">Harvest an existing Lovelace dashboard or view into a local zip for a coding agent. The zip contains <code>brief.md</code> and <code>manifest.json</code>; it does not create a grant.</div>
+            <div class="sec-title">Dashboard export and build</div>
+            <div class="sec-lead">Export a coding-agent brief, or build a read-only share link from the same harvested dashboard entities.</div>
             ${this.dashboardExportSection()}
           </section>
 
@@ -1584,8 +1622,14 @@ export class VarcoPanel extends HTMLElement {
     const viewSelect = this.querySelector<HTMLSelectElement>('[data-view-select]');
     if (viewSelect) viewSelect.onchange = () => void this.pickView(viewSelect.value);
     this.querySelectorAll<HTMLInputElement>('[data-export-entity]').forEach((el) => { el.onchange = () => this.toggleEntity(el.dataset.exportEntity!, el.checked); });
+    const exportShareUses = this.querySelector<HTMLInputElement>('[data-export-share-uses]');
+    if (exportShareUses) exportShareUses.oninput = () => { this._exportShareUses = exportShareUses.value; };
     const download = this.querySelector<HTMLElement>('[data-download-brief]');
     if (download) download.onclick = () => void this.downloadDashboardBrief();
+    const buildShare = this.querySelector<HTMLElement>('[data-build-share-link]');
+    if (buildShare) buildShare.onclick = () => void this.buildDashboardShareLink();
+    const copyExportShare = this.querySelector<HTMLElement>('[data-copy-export-share-link]');
+    if (copyExportShare) copyExportShare.onclick = () => { this.copyText(this._exportShareUrl); this.flash('Link copied', 'ok'); };
 
     this.applyGrantFilter();
   }
