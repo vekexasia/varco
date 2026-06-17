@@ -21,6 +21,10 @@ Varco is not in the HACS default store. Install it as a custom repository:
 
 HACS default-store inclusion is future work. Until then, use the custom repository URL above. Release artifacts also include `varco-home-assistant.zip` for manual installs.
 
+:::caution[Updating Varco]
+After every HACS or manual Varco update, restart Home Assistant and hard-refresh `/varco`. Without restart, Home Assistant continues running the previously loaded Python integration; without hard refresh, the browser may keep the old panel bundle.
+:::
+
 ## Manual install
 
 1. Copy the integration into your Home Assistant config directory:

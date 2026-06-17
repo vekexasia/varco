@@ -26,6 +26,10 @@ This path is for the Home Assistant owner.
 
 Only one Varco Authority can be configured in a Home Assistant instance. Varco can also be installed through HACS as a custom repository or configured via YAML; see [Install Home Assistant](../../guides/install-home-assistant/).
 
+:::caution[After updates]
+After every Varco update, restart Home Assistant and hard-refresh `/varco`. Home Assistant keeps the old Python integration and panel JavaScript in memory until restart/browser refresh.
+:::
+
 ## Find the Authority ID
 
 Open the **Varco** sidebar panel or browse to:

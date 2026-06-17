@@ -19,6 +19,7 @@ I made this short video explaining what Varco is and how it works.
 - Home Assistant integration: install through HACS as a custom repository (`https://github.com/vekexasia/varco`) or copy `custom_components/varco`.
 - Browser client: `npm install @varco/client`.
 - Bridge: use the default public bridge (`wss://varco-bridge.andreabaccega.com`) unless you need to self-host on Cloudflare or with the Node in-memory bridge.
+- After every Varco update, restart Home Assistant and hard-refresh `/varco` so the Python integration and panel bundle are reloaded.
 
 Documentation: [vekexasia.github.io/varco](https://vekexasia.github.io/varco/). Source lives in [`docs/website`](docs/website).
 
