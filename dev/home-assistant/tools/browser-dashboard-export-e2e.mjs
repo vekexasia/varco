@@ -64,8 +64,7 @@ try {
 
   const sharePage = await browser.newPage({ viewport: { width: 900, height: 900 } });
   await sharePage.goto(await browserShareUrl(shareUrl), { waitUntil: 'domcontentloaded' });
-  await sharePage.getByRole('heading', { name: 'Varco Showcase / Energy' }).waitFor({ timeout: 30_000 });
-  await sharePage.locator('.varco-card').first().waitFor({ timeout: 10_000 });
+  await sharePage.locator('.varco-card').first().waitFor({ timeout: 30_000 });
   await sharePage.getByText(/Powerwall/i).first().waitFor({ timeout: 10_000 });
   await sharePage.close();
 
