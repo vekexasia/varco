@@ -56,6 +56,7 @@ def build_dashboard_export(
         "history": sorted(entity for entity in harvest["history"] if entity in selected_set),
         "camera_snapshots": sorted(entity for entity in harvest["camera_snapshots"] if entity in selected_set),
         "actions": [],
+        "dashboard": _dashboard_manifest(dashboard_title, dashboard_url_path, harvest["view_title"], harvest["cards"], selected_set),
     }
     catalog = entity_catalog(selected, harvest["references"], hass=hass)
     export = {
@@ -100,6 +101,7 @@ def harvest_lovelace_config(config: dict[str, Any], *, view_index: int | None = 
     history: set[str] = set()
     cameras: set[str] = set()
     warnings: list[dict[str, str]] = []
+    cards: list[dict[str, Any]] = []
 
     views = config.get("views") if isinstance(config, dict) else []
     if not isinstance(views, list):
@@ -121,7 +123,7 @@ def harvest_lovelace_config(config: dict[str, Any], *, view_index: int | None = 
             continue
         view_title = str(view.get("title") or view.get("path") or f"View {index + 1}")
         for card_index, card in enumerate(_as_list(view.get("cards"))):
-            _walk_card(
+            card_entities = _walk_card(
                 card,
                 path=f"views[{index}].cards[{card_index}]",
                 view_title=view_title,
@@ -132,11 +134,12 @@ def harvest_lovelace_config(config: dict[str, Any], *, view_index: int | None = 
                 cameras=cameras,
                 warnings=warnings,
             )
+            _append_dashboard_card(cards, card, card_entities)
         for section_index, section in enumerate(_as_list(view.get("sections"))):
             if not isinstance(section, dict):
                 continue
             for card_index, card in enumerate(_as_list(section.get("cards"))):
-                _walk_card(
+                card_entities = _walk_card(
                     card,
                     path=f"views[{index}].sections[{section_index}].cards[{card_index}]",
                     view_title=view_title,
@@ -147,8 +150,9 @@ def harvest_lovelace_config(config: dict[str, Any], *, view_index: int | None = 
                     cameras=cameras,
                     warnings=warnings,
                 )
+                _append_dashboard_card(cards, card, card_entities, fallback_title=str(section.get("title") or f"Section {section_index + 1}"))
         for badge_index, badge in enumerate(_as_list(view.get("badges"))):
-            _walk_card(
+            card_entities = _walk_card(
                 badge,
                 path=f"views[{index}].badges[{badge_index}]",
                 view_title=view_title,
@@ -159,6 +163,7 @@ def harvest_lovelace_config(config: dict[str, Any], *, view_index: int | None = 
                 cameras=cameras,
                 warnings=warnings,
             )
+            _append_dashboard_card(cards, badge, card_entities, fallback_title="Badges")
 
     all_entities = set(read_entities) | set(history) | set(cameras)
     single_view_title = None
@@ -174,6 +179,7 @@ def harvest_lovelace_config(config: dict[str, Any], *, view_index: int | None = 
         "references": {entity: contexts for entity, contexts in refs.items()},
         "warnings": warnings,
         "view_title": single_view_title,
+        "cards": cards,
     }
 
 
@@ -259,6 +265,28 @@ These items may require a user conversation because Varco did not deeply resolve
 """
 
 
+def _dashboard_manifest(dashboard_title: str | None, dashboard_url_path: str | None, view_title: str | None, cards: list[dict[str, Any]], selected_set: set[str]) -> dict[str, Any]:
+    return {
+        "title": dashboard_title or "Home Assistant dashboard",
+        "url_path": dashboard_url_path,
+        "view_title": view_title,
+        "cards": [
+            {**card, "entities": [entity for entity in card["entities"] if entity in selected_set]}
+            for card in cards
+            if any(entity in selected_set for entity in card["entities"])
+        ],
+    }
+
+
+def _append_dashboard_card(cards: list[dict[str, Any]], card: Any, entities: set[str], *, fallback_title: str | None = None) -> None:
+    if not entities or not isinstance(card, dict):
+        return
+    card_type = str(card.get("type") or "unknown")
+    fallback = card_type.replace("-", " ")
+    title = str(card.get("title") or card.get("name") or fallback_title or fallback[:1].upper() + fallback[1:])
+    cards.append({"type": card_type, "title": title, "entities": sorted(entities)})
+
+
 def entity_catalog(entity_ids: list[str], references: dict[str, list[dict[str, Any]]], *, hass: Any | None = None) -> list[dict[str, Any]]:
     return [_catalog_entry(entity_id, references.get(entity_id, []), hass=hass) for entity_id in sorted(entity_ids)]
 
@@ -278,16 +306,17 @@ def _walk_card(
     history: set[str],
     cameras: set[str],
     warnings: list[dict[str, str]],
-) -> None:
+) -> set[str]:
     if not isinstance(card, dict):
         warnings.append({"path": path, "message": "Card config is not an object."})
-        return
+        return set()
 
     card_type = str(card.get("type") or "unknown")
     _warn_dynamic_card(card, path, card_type, warnings)
     context = {"view": view_title, "card_type": card_type, "path": path}
 
     direct_entities = _entity_refs_from_named_keys(card, warnings, path)
+    card_entities = set(direct_entities)
     for entity_id in direct_entities:
         read_entities.add(entity_id)
         subscriptions.add(entity_id)
@@ -303,11 +332,12 @@ def _walk_card(
         for entity_id in camera_refs:
             if domain_of(entity_id) == "camera":
                 cameras.add(entity_id)
+                card_entities.add(entity_id)
                 _add_reference(refs, entity_id, context)
 
     for key in ("cards", "elements"):
         for index, child in enumerate(_as_list(card.get(key))):
-            _walk_card(
+            child_entities = _walk_card(
                 child,
                 path=f"{path}.{key}[{index}]",
                 view_title=view_title,
@@ -318,8 +348,9 @@ def _walk_card(
                 cameras=cameras,
                 warnings=warnings,
             )
+            card_entities.update(child_entities)
     for index, child in enumerate(_as_list(card.get("card"))):
-        _walk_card(
+        child_entities = _walk_card(
             child,
             path=f"{path}.card[{index}]",
             view_title=view_title,
@@ -330,6 +361,8 @@ def _walk_card(
             cameras=cameras,
             warnings=warnings,
         )
+        card_entities.update(child_entities)
+    return card_entities
 
 
 def _entity_refs_from_named_keys(card: dict[str, Any], warnings: list[dict[str, str]], path: str) -> list[str]:

@@ -23,6 +23,8 @@ export type ShareCard = {
   displayValue: string;
   attributes: Record<string, unknown>;
   controls: ShareControl[];
+  sourceTitle?: string;
+  sourceType?: string;
 };
 
 export type ShareAction = {
@@ -71,11 +73,13 @@ const DOMAIN_SERVICES: Record<string, string[]> = {
 const TOGGLE_DOMAINS = new Set(["light", "switch"]);
 
 export function buildShareCards(manifest: VarcoManifest, states: Record<string, HassState | null | undefined>): ShareCard[] {
-  const entityIds = orderedEntities(manifest);
-  return entityIds.map((entityId) => buildShareCard(entityId, states[entityId], manifest)).filter((card): card is ShareCard => Boolean(card));
+  const allowed = orderedEntities(manifest);
+  const sources = dashboardSources(manifest, new Set(allowed));
+  const entityIds = sources.length ? [...sources.map((source) => source.entityId), ...allowed.filter((entityId) => !sources.some((source) => source.entityId === entityId))] : allowed;
+  return entityIds.map((entityId) => buildShareCard(entityId, states[entityId], manifest, sources.find((source) => source.entityId === entityId))).filter((card): card is ShareCard => Boolean(card));
 }
 
-export function buildShareCard(entityId: string, state: HassState | null | undefined, manifest: VarcoManifest): ShareCard | null {
+export function buildShareCard(entityId: string, state: HassState | null | undefined, manifest: VarcoManifest, source?: { title?: string; type?: string }): ShareCard | null {
   const domain = entityId.split(".", 1)[0] || "entity";
   const attrs = state?.attributes ?? {};
   const title = typeof attrs.friendly_name === "string" ? attrs.friendly_name : entityId;
@@ -88,11 +92,23 @@ export function buildShareCard(entityId: string, state: HassState | null | undef
     displayValue: displayValue(state),
     attributes: cardAttributes(domain, attrs),
     controls,
+    sourceTitle: source?.title,
+    sourceType: source?.type,
   };
 }
 
 export function renderShareCards(cards: ShareCard[]): string {
-  return `<div class="varco-share-cards">${cards.map(renderShareCard).join("")}</div>`;
+  if (!cards.some((card) => card.sourceTitle)) return `<div class="varco-share-cards">${cards.map(renderShareCard).join("")}</div>`;
+  const groups: string[] = [];
+  let currentTitle = "";
+  for (const card of cards) {
+    const title = card.sourceTitle || "Other";
+    if (title !== currentTitle) {
+      currentTitle = title;
+      groups.push(`<section class="varco-card-group" data-title="${esc(title)}"><h2>${esc(title)}</h2><div class="varco-share-cards">${renderShareCard(card)}`);
+    } else groups[groups.length - 1] += renderShareCard(card);
+  }
+  return groups.map((group) => `${group}</div></section>`).join("");
 }
 
 export async function callShareAction(client: Pick<VarcoClient, "callService">, action: ShareAction, promptPin: PinPrompt = defaultPinPrompt): Promise<void> {
@@ -132,6 +148,16 @@ function defaultPinPrompt(message: string): string | null {
 function isPinDenial(err: unknown): boolean {
   const error = err as { code?: unknown; message?: unknown };
   return error?.code === "permission_denied" && /\b(pin_required|invalid_pin)\b/.test(String(error.message ?? ""));
+}
+
+function dashboardSources(manifest: VarcoManifest, allowed: Set<string>): Array<{ entityId: string; title?: string; type?: string }> {
+  const out: Array<{ entityId: string; title?: string; type?: string }> = [];
+  for (const card of manifest.dashboard?.cards ?? []) {
+    for (const entityId of card.entities ?? []) {
+      if (isEntityId(entityId) && allowed.has(entityId) && !out.some((source) => source.entityId === entityId)) out.push({ entityId, title: card.title, type: card.type });
+    }
+  }
+  return out;
 }
 
 function orderedEntities(manifest: VarcoManifest): string[] {

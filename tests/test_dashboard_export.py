@@ -87,6 +87,16 @@ def test_build_export_prunes_manifest_and_includes_trimmed_catalog_and_brief_boo
         "history": ["sensor.temp"],
         "camera_snapshots": ["camera.door"],
         "actions": [],
+        "dashboard": {
+            "title": "Casa",
+            "url_path": "lovelace",
+            "view_title": "Main",
+            "cards": [
+                {"type": "entities", "title": "Entities", "entities": ["sensor.temp"]},
+                {"type": "history-graph", "title": "History graph", "entities": ["sensor.temp"]},
+                {"type": "picture-glance", "title": "Picture glance", "entities": ["camera.door"]},
+            ],
+        },
     }
     catalog = {entry["entity_id"]: entry for entry in export["catalog"]}
     assert catalog["sensor.temp"]["friendly_name"] == "Kitchen temperature"

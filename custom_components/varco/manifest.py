@@ -33,6 +33,7 @@ _MANIFEST_SCHEMA = vol.Schema(
         vol.Optional("camera_snapshots"): _SCOPE_LIST,
         vol.Optional("cameraSnapshots"): _SCOPE_LIST,
         vol.Optional("actions"): _SCOPE_LIST,
+        vol.Optional("dashboard"): dict,
     },
     extra=vol.ALLOW_EXTRA,
 )
@@ -69,7 +70,7 @@ def coerce_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
 
 def _canonicalize(manifest: dict[str, Any]) -> dict[str, Any]:
     result: dict[str, Any] = {}
-    for key in ("name", "version", "icon"):
+    for key in ("name", "version", "icon", "dashboard"):
         if key in manifest:
             result[key] = manifest[key]
     for canonical, alias in _SCOPE_ALIASES.items():

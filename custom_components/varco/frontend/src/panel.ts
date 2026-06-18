@@ -997,13 +997,19 @@ export class VarcoPanel extends HTMLElement {
 
   previewManifest(result: ExportResult): Manifest {
     const selected = result.entities.filter((e) => e.selected);
-    return {
+    const manifest: Manifest = {
       read_entities: selected.filter((e) => e.scopes.read).map((e) => e.entity_id),
       subscriptions: selected.filter((e) => e.scopes.subscriptions).map((e) => e.entity_id),
       history: selected.filter((e) => e.scopes.history).map((e) => e.entity_id),
       camera_snapshots: selected.filter((e) => e.scopes.camera_snapshots).map((e) => e.entity_id),
       actions: [],
     };
+    if (result.manifest?.dashboard && typeof result.manifest.dashboard === 'object') {
+      const selectedIds = new Set(selected.map((entity) => entity.entity_id));
+      const dashboard = result.manifest.dashboard as { cards?: Array<{ entities?: string[]; [key: string]: unknown }>; [key: string]: unknown };
+      manifest.dashboard = { ...dashboard, cards: (dashboard.cards || []).map((card) => ({ ...card, entities: (card.entities || []).filter((entity) => selectedIds.has(entity)) })).filter((card) => card.entities.length) };
+    }
+    return manifest;
   }
 
   exportShareName(result: ExportResult): string {

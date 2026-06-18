@@ -18,6 +18,8 @@ export function renderShareShell(shareCode: string): string {
     .muted { color: var(--muted); }
     .error { color: #d93025; }
     .varco-share-cards { display: grid; gap: 12px; }
+    .varco-card-group { display: grid; gap: 10px; }
+    .varco-card-group h2 { margin: 6px 0 0; font-size: 13px; color: var(--muted); font-weight: 650; text-transform: uppercase; letter-spacing: .06em; }
     .varco-card { border: 1px solid var(--line); border-radius: 18px; padding: 18px; background: Canvas; transition: border-color .2s, box-shadow .2s; }
     .varco-card[data-active="true"] { border-color: color-mix(in srgb, var(--accent) 45%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent); }
     .varco-card__head { display: flex; align-items: center; gap: 10px; }

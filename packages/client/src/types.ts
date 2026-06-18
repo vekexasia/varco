@@ -1,9 +1,12 @@
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 
+export type VarcoDashboardCard = { type?: string; title?: string; entities?: string[] };
+
 export type VarcoManifest = {
   name: string;
   icon?: string;
   version: string;
+  dashboard?: { title?: string; url_path?: string | null; view_title?: string | null; cards?: VarcoDashboardCard[] };
   read_entities?: string[];
   /** @deprecated Use `read_entities`. Do not set both: the Authority rejects conflicting aliases. */
   readEntities?: string[];

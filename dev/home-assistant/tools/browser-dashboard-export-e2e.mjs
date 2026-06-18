@@ -62,6 +62,14 @@ try {
   createdShareId = new URL(shareUrl).pathname.split('/').filter(Boolean).pop();
   assert(createdShareId, `Could not parse created share id from ${shareUrl}`);
 
+  const sharePage = await browser.newPage({ viewport: { width: 900, height: 900 } });
+  await sharePage.goto(publicShareUrl(shareUrl), { waitUntil: 'domcontentloaded' });
+  await sharePage.getByRole('heading', { name: 'Varco Showcase / Energy' }).waitFor({ timeout: 30_000 });
+  await sharePage.locator('.varco-card').first().waitFor({ timeout: 10_000 });
+  await sharePage.getByText(/Powerwall/i).first().waitFor({ timeout: 10_000 });
+  await sharePage.close();
+
+
   const downloadPromise = page.waitForEvent('download');
   await page.locator('varco-panel [data-download-brief]').click();
   const download = await downloadPromise;
@@ -102,6 +110,16 @@ try {
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
+}
+
+function publicShareUrl(rawUrl) {
+  const url = new URL(rawUrl);
+  if (url.hostname === '127.0.0.1' && url.port === '8787') {
+    url.protocol = 'https:';
+    url.hostname = 'varco-bridge.andreabaccega.com';
+    url.port = '';
+  }
+  return url.toString();
 }
 
 async function fetchBrowserTokens(config) {

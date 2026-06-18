@@ -46,6 +46,31 @@ test('share UI renderer exposes accessible controls for granted entity actions o
   assert.doesNotMatch(html, /data-service="unlock"/);
 });
 
+test('share UI keeps harvested dashboard card groups and order', () => {
+  const dashboardManifest = {
+    ...manifest,
+    dashboard: {
+      title: 'Casa',
+      view_title: 'Main',
+      cards: [
+        { type: 'entities', title: 'Kitchen', entities: ['sensor.temp', 'light.porch'] },
+        { type: 'cover', title: 'Entry', entities: ['cover.gate'] },
+      ],
+    },
+  };
+  const cards = buildShareCards(dashboardManifest, states);
+  assert.deepEqual(cards.map((card) => [card.entityId, card.sourceTitle]), [
+    ['sensor.temp', 'Kitchen'],
+    ['light.porch', 'Kitchen'],
+    ['cover.gate', 'Entry'],
+  ]);
+
+  const html = renderShareCards(cards);
+  assert.match(html, /varco-card-group/);
+  assert.match(html, /Kitchen/);
+  assert.ok(html.indexOf('Outside temperature') < html.indexOf('Porch light'));
+});
+
 test('share UI action prompts for a PIN and retries PIN-restricted service calls', async () => {
   const calls = [];
   const client = {
