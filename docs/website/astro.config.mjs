@@ -55,6 +55,7 @@ export default defineConfig({
             { label: "Build a consumer dashboard", slug: "guides/build-consumer-dashboard" },
             { label: "Export a dashboard brief", slug: "guides/export-dashboard-brief" },
             { label: "Self-host the bridge", slug: "guides/self-host-bridge" },
+            { label: "Server-side and webhooks", slug: "guides/server-and-webhooks" },
             { label: "Troubleshooting", slug: "guides/troubleshooting" },
           ],
         },
@@ -62,6 +63,7 @@ export default defineConfig({
           label: "Reference",
           items: [
             { label: "Client API", slug: "reference/client-api" },
+            { label: "Server API", slug: "reference/server-api" },
             { label: "Manifest", slug: "reference/manifest" },
             { label: "Protocol messages", slug: "reference/protocol" },
             { label: "Bridge endpoints", slug: "reference/bridge-endpoints" },

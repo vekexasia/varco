@@ -1,0 +1,120 @@
+---
+title: Server API
+description: Public @varco/server entry points for server-side and webhook access.
+---
+
+`@varco/server` runs a long-lived Varco **Server Consumer** from a developer-supplied private key and exposes it over HTTP through declarative **Routes** and code **Handlers**.
+
+It is just another Consumer: no Home Assistant token leaves Home Assistant, the bridge stays opaque, and Home Assistant stays the Authority. The trust model is unchanged.
+
+Inside this repository it is the `packages/server` workspace:
+
+```bash
+npm install
+npm --workspace @varco/server run build
+```
+
+It requires Node 22 or newer (for the global `WebSocket` used by the relay transport).
+
+## `createVarcoServer()`
+
+```ts
+import { createVarcoServer } from "@varco/server";
+
+const server = createVarcoServer({
+  privateKey: process.env.VARCO_PRIVATE_KEY,   // base64url Ed25519 private key
+  authorityId: process.env.VARCO_AUTHORITY_ID,
+  bridgeUrl: "wss://varco-bridge.example.com",
+  routes: [
+    { path: "/lights/on", domain: "light", service: "turn_on", target: { entity_id: "light.kitchen" } },
+  ],
+});
+
+await server.start();
+await server.listen(8080);
+```
+
+### Options
+
+| Option | Type | Notes |
+| --- | --- | --- |
+| `privateKey` | `string` | base64url-encoded Ed25519 private key. The package never reads env or disk; pass the key in. |
+| `authorityId` | `string` | The Home Assistant Authority id (from the Varco panel). |
+| `bridgeUrl` | `string` | The relay bridge WebSocket URL. |
+| `manifest` | `VarcoManifest?` | Omitted: authenticate against an existing grant and report `grant_info`. Provided: enables `requestPairing()`. |
+| `routes` | `Route[]?` | Static path → single Home Assistant operation mappings. |
+| `handlers` | `Handler[]?` | Developer functions for everything dynamic, including REST and caller auth. |
+| `readyTimeoutMs` | `number?` | Per-request wait for a ready connection before returning `503`. Default `5000`. |
+| `requestTimeoutMs` | `number?` | Underlying relay request timeout. Default `30000`. |
+
+### Returned `VarcoServer`
+
+| Member | Notes |
+| --- | --- |
+| `client` | The underlying `VarcoConsumerClient`. |
+| `start()` | Establish the persistent connection. Resolves once authenticated; keeps reconnecting after drops. |
+| `requestPairing()` | First-run `access_request` (requires a manifest). Returns `{ request_id, pairing_code, status }`. |
+| `handle(req)` | Framework-agnostic handler. Takes a `ServerRequest`, returns `{ status, headers, body }`. |
+| `listen(port, hostname?)` | Start a Node `http` server bound to `handle`. Returns the `http.Server`. |
+| `close()` | Close the connection and stop reconnecting. |
+
+## Routes
+
+A `Route` maps an inbound HTTP path (and method, default `POST`) to a single static Home Assistant operation with no request-body interpolation:
+
+```ts
+{
+  path: "/garage/close",
+  method: "POST",
+  domain: "cover",
+  service: "close_cover",
+  target: { entity_id: "cover.garage" },
+  service_data: { /* optional static data */ },
+}
+```
+
+On success a Route responds `200` with `{ "ok": true }`. A denial responds `403`; a failed call responds `502`.
+
+## Handlers
+
+A `Handler` receives the parsed request and the connected client, and performs arbitrary operations. It is the escape hatch for anything dynamic, and the REST-via-handlers path:
+
+```ts
+{
+  path: "/scene",
+  method: "POST",
+  handle: async (req, client) => {
+    // verify the caller yourself (see below)
+    await client.callService("scene", "turn_on", { entity_id: req.body.scene });
+    return { ok: true };
+  },
+}
+```
+
+A Handler may return any JSON-serializable value (sent as `200`), or `{ status, headers, body }` for full control. A string `body` is sent as `text/plain`.
+
+`ServerRequest` is `{ method, path, query, headers, body, rawBody }`, where `body` is parsed JSON when the content type is JSON, otherwise the raw string.
+
+## No built-in caller authentication
+
+The HTTP endpoint is public. Verifying the caller (HMAC signature, shared secret, etc.) is your job inside a Handler, because every webhook source signs differently.
+
+```ts
+{
+  path: "/webhook",
+  handle: (req, client) => {
+    if (req.headers["x-secret"] !== process.env.WEBHOOK_SECRET) {
+      return { status: 401, body: "unauthorized" };
+    }
+    // ...
+  },
+}
+```
+
+Guidance: use Routes for harmless or idempotent operations, and Handlers for anything sensitive.
+
+## Connection and availability
+
+`@varco/server` holds one persistent, auto-reconnecting relay connection. While the connection is not ready (initial connect or a reconnect in progress), requests wait up to `readyTimeoutMs` and then return `503`.
+
+The design is recorded in `docs/adr/0001-server-consumer-package.md`.
