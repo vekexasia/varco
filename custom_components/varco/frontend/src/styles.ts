@@ -230,6 +230,7 @@ export const styles = (): string => `
 
     .grant { border: 1px solid var(--border); border-radius: 15px; background: var(--surface); margin: 12px 0; overflow: hidden; }
     .grant.revoked, .grant.expired { opacity: .7; }
+    .grant.flash, .req.flash { border-color: var(--primary); box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 26%, transparent); }
     .grant-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 18px; }
     .grant-head .l { display: flex; align-items: center; gap: 12px; min-width: 0; }
     .grant-avatar { width: 40px; height: 40px; border-radius: 11px; background: var(--surface-2); border: 1px solid var(--border); color: var(--text-2); display: grid; place-items: center; font-weight: 700; flex: none; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 14px; }
@@ -288,6 +289,8 @@ export const styles = (): string => `
     .audit-list { display: flex; flex-direction: column; overflow: auto; max-height: 560px; }
     .grant-activity .audit-list { max-height: 320px; border: 1px solid var(--border); border-radius: 12px; }
     .audit-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px 13px; padding: 12px 18px; border-bottom: 1px solid var(--border-soft); }
+    .audit-row[data-timeline-target] { cursor: pointer; }
+    .audit-row[data-timeline-target]:hover { background: var(--surface-2); }
     .audit-ico { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; flex: none; border: 1.5px solid var(--text-3); color: var(--text-3); font-size: 12px; font-weight: 700; }
     .audit-mid { min-width: 0; }
     .audit-type { font-weight: 500; font-size: 13px; }

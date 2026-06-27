@@ -64,6 +64,10 @@ interface Toast {
   tone: 'ok' | 'danger' | 'warn';
 }
 
+interface TimelineItem extends AuditEvent {
+  request_id?: string;
+}
+
 export class VarcoPanel extends HTMLElement {
   private _hass?: Hass;
   private _loaded = false;
@@ -98,6 +102,7 @@ export class VarcoPanel extends HTMLElement {
   private _selectedDashboardIndex?: number;
   private _selectedViewIndex: string | number = '';
   private _selectedEntities = new Set<string>();
+  private _selectedActionEntities = new Set<string>();
   private _crcTable?: number[];
 
   set hass(hass: Hass) {
@@ -490,7 +495,7 @@ export class VarcoPanel extends HTMLElement {
     const s = this.scopes(grant.manifest);
     const activeRestrictions = restrictions.filter((r) => r.enabled !== false).length;
     return `
-      <div class="grant ${status}" data-grant-name="${this.escape(name)}" data-grant-card-status="${status}">
+      <div class="grant ${status}" data-grant-card="${this.escape(grant.grant_id)}" data-grant-name="${this.escape(name)}" data-grant-card-status="${status}">
         <div class="grant-head">
           <div class="l">
             <div class="grant-avatar">${this.escape(this.initials(name))}</div>
@@ -699,13 +704,16 @@ export class VarcoPanel extends HTMLElement {
     note.textContent = message;
   }
 
-  // ---------- audit ----------
+  // ---------- timeline ----------
 
   auditEventLabel(event: string): string {
     const labels: Record<string, string> = {
+      access_request_pending: 'Access request pending',
       access_request_received: 'Access request received',
       access_request_approved: 'Access request approved',
       access_request_rejected: 'Access request rejected',
+      grant_active: 'Grant active',
+      grant_expired: 'Grant expired',
       grant_created: 'Grant created',
       grant_revoked: 'Grant revoked',
       grant_deleted: 'Grant deleted',
@@ -719,28 +727,30 @@ export class VarcoPanel extends HTMLElement {
       session_error: 'Session error',
       share_created: 'Share created',
       share_claimed: 'Share claimed',
+      share_revoked: 'Share revoked',
+      share_deleted: 'Share deleted',
+      share_expired: 'Share expired',
       webrtc_fallback: 'WebRTC fallback to relay',
       webrtc_answer: 'WebRTC negotiated',
     };
     return labels[event] || String(event || 'event');
   }
 
-  // Map a raw audit event name to one of the five activity categories.
   auditCategory(event: string): keyof typeof CAT {
     if (['consumer_connected', 'webrtc_answer', 'webrtc_fallback', 'session_error'].includes(event)) return 'connection';
-    if (['share_created', 'share_claimed'].includes(event)) return 'share';
+    if (['share_created', 'share_claimed', 'share_revoked', 'share_deleted', 'share_expired'].includes(event)) return 'share';
     if (event === 'call_service') return 'control';
-    if (['access_request_received', 'access_request_approved', 'access_request_rejected', 'grant_created', 'grant_revoked', 'grant_deleted', 'grant_restrictions_updated'].includes(event)) return 'admin';
+    if (['access_request_pending', 'access_request_received', 'access_request_approved', 'access_request_rejected', 'grant_active', 'grant_expired', 'grant_created', 'grant_revoked', 'grant_deleted', 'grant_restrictions_updated'].includes(event)) return 'admin';
     return 'access';
   }
 
   private auditSuccess(event: string): boolean {
-    return ['access_request_approved', 'grant_created', 'consumer_connected', 'call_service', 'share_claimed', 'webrtc_answer'].includes(event);
+    return ['access_request_approved', 'grant_active', 'grant_created', 'consumer_connected', 'call_service', 'share_claimed', 'webrtc_answer'].includes(event);
   }
 
   auditDetailSummary(details: Record<string, unknown> | null | undefined): string {
     if (!details || typeof details !== 'object') return '';
-    const safeKeys = ['domain', 'service', 'operation', 'entity_count', 'denied_count', 'reason', 'manifest_name', 'restriction_count', 'restriction_id'];
+    const safeKeys = ['domain', 'service', 'operation', 'entity_count', 'denied_count', 'reason', 'manifest_name', 'status', 'restriction_count', 'restriction_id'];
     const parts: string[] = [];
     safeKeys.forEach((key) => {
       const v = (details as Record<string, unknown>)[key];
@@ -749,16 +759,45 @@ export class VarcoPanel extends HTMLElement {
     return parts.join(' · ');
   }
 
-  auditRow(event: AuditEvent): string {
+  timelineItems(state: PanelState): TimelineItem[] {
+    const items: TimelineItem[] = [...(Array.isArray(state.audit) ? state.audit : [])];
+    const seenGrantEvents = new Set(items.map((e) => `${e.event}:${e.grant_id || ''}`));
+
+    (state.requests || []).filter((r) => r.status === 'pending').forEach((request) => {
+      items.push({
+        ts: request.created_at,
+        event: 'access_request_pending',
+        grant_id: request.request_id,
+        request_id: request.request_id,
+        details: { manifest_name: this.manifestName(request) },
+      });
+    });
+
+    (state.grants || []).forEach((grant) => {
+      const status = this.grantStatus(grant);
+      if (status === 'active' && !seenGrantEvents.has(`grant_created:${grant.grant_id}`)) {
+        items.push({ ts: grant.created_at || '', event: 'grant_active', grant_id: grant.grant_id, details: { manifest_name: this.manifestName(grant), status } });
+      }
+      if (status === 'expired') items.push({ ts: grant.expires_at || grant.created_at || '', event: 'grant_expired', grant_id: grant.grant_id, details: { manifest_name: this.manifestName(grant), status } });
+      if (status === 'revoked' && !seenGrantEvents.has(`grant_revoked:${grant.grant_id}`)) {
+        items.push({ ts: grant.revoked_at || grant.created_at || '', event: 'grant_revoked', grant_id: grant.grant_id, details: { manifest_name: this.manifestName(grant), status } });
+      }
+    });
+
+    return items.sort((a, b) => new Date(b.ts || 0).getTime() - new Date(a.ts || 0).getTime());
+  }
+
+  auditRow(event: TimelineItem): string {
     const detail = this.auditDetailSummary(event.details);
     const cat = this.auditCategory(event.event);
     const color = CAT[cat].color;
     const success = this.auditSuccess(event.event);
+    const target = event.request_id ? `request:${event.request_id}` : (event.grant_id ? `grant:${event.grant_id}` : '');
     const markerStyle = success
       ? `background:${color};border-color:${color};color:var(--bg);`
       : `background:transparent;border-color:${color};color:${color};`;
     return `
-      <div class="audit-row" data-audit-event data-audit-grant="${this.escape(event.grant_id || '')}">
+      <div class="audit-row" data-audit-event data-audit-grant="${this.escape(event.grant_id || '')}" ${target ? `data-timeline-target="${this.escape(target)}"` : ''}>
         <span class="audit-ico" style="${markerStyle}">${success ? '✓' : ''}</span>
         <span class="audit-mid">
           <span class="audit-type" data-audit-type>${this.escape(this.auditEventLabel(event.event))}</span>
@@ -773,16 +812,16 @@ export class VarcoPanel extends HTMLElement {
   }
 
   auditSection(): string {
-    const events = Array.isArray(this._lastState?.audit) ? this._lastState!.audit : [];
+    const events = this._lastState ? this.timelineItems(this._lastState) : [];
     const filter = this._activityFilter;
-    const filtered = (filter === 'all' ? events : events.filter((e) => this.auditCategory(e.event) === filter)).slice().reverse().slice(0, 80);
+    const filtered = (filter === 'all' ? events : events.filter((e) => this.auditCategory(e.event) === filter)).slice(0, 80);
     const filterDefs: Array<[string, string]> = [['all', 'All'], ['connection', 'Connect'], ['share', 'Share'], ['access', 'Access'], ['control', 'Control'], ['admin', 'Admin']];
     const tabs = filterDefs.map(([k, l]) => `<button class="afilter ${filter === k ? 'sel' : ''}" data-activity-filter="${k}">${l}</button>`).join('');
     return `
       <div class="audit-card">
         <div class="audit-toolbar">
           <div class="top">
-            <span class="title">Access oversight</span>
+            <span class="title">Timeline</span>
             <span class="ct">${filtered.length}</span>
             <span class="vspace"></span>
             <span class="note"><span class="dot"></span>states, snapshots &amp; history are never logged</span>
@@ -1002,7 +1041,7 @@ export class VarcoPanel extends HTMLElement {
       subscriptions: selected.filter((e) => e.scopes.subscriptions).map((e) => e.entity_id),
       history: selected.filter((e) => e.scopes.history).map((e) => e.entity_id),
       camera_snapshots: selected.filter((e) => e.scopes.camera_snapshots).map((e) => e.entity_id),
-      actions: [],
+      actions: selected.filter((e) => this._selectedActionEntities.has(e.entity_id) && this.canControlEntity(e.entity_id)).map((e) => `${e.entity_id.split('.')[0]}.*@${e.entity_id}`),
     };
     if (result.manifest?.dashboard && typeof result.manifest.dashboard === 'object') {
       const selectedIds = new Set(selected.map((entity) => entity.entity_id));
@@ -1023,14 +1062,21 @@ export class VarcoPanel extends HTMLElement {
     if (entity.scopes.history) scopes.push('history');
     if (entity.scopes.camera_snapshots) scopes.push('camera');
     const ref = entity.references?.[0];
+    const canAct = this.canControlEntity(entity.entity_id);
+    const actionChecked = this._selectedActionEntities.has(entity.entity_id);
     return `
       <label class="entity-row">
         <input type="checkbox" data-export-entity="${this.escape(entity.entity_id)}" ${entity.selected ? 'checked' : ''}>
         <span>
           <code>${this.escape(entity.entity_id)}</code>
           <small>${this.escape(scopes.join(', ') || 'referenced')} ${ref ? `from ${this.escape(ref.view)} / ${this.escape(ref.card_type)}` : ''}</small>
+          ${canAct ? `<small><input type="checkbox" data-export-action-entity="${this.escape(entity.entity_id)}" ${actionChecked ? 'checked' : ''} ${entity.selected ? '' : 'disabled'}> allow controls</small>` : ''}
         </span>
       </label>`;
+  }
+
+  canControlEntity(entityId: string): boolean {
+    return !['sensor', 'binary_sensor'].includes(entityId.split('.')[0]);
   }
 
   // ---------- dashboard export interactions (unchanged behaviour) ----------
@@ -1083,6 +1129,7 @@ export class VarcoPanel extends HTMLElement {
     this._exportResult = result;
     this._exportShareUrl = '';
     this._selectedEntities = new Set(result.entities.filter((e) => e.selected).map((e) => e.entity_id));
+    this._selectedActionEntities = new Set();
   }
 
   async requestDashboardExport(selectedEntities?: string[]): Promise<ExportResult> {
@@ -1102,11 +1149,19 @@ export class VarcoPanel extends HTMLElement {
     if (!this._selectedEntities) this._selectedEntities = new Set();
     if (checked) this._selectedEntities.add(entityId);
     else this._selectedEntities.delete(entityId);
+    if (!checked) this._selectedActionEntities.delete(entityId);
     if (this._exportResult) {
       this._exportResult.entities = this._exportResult.entities.map((e) => (e.entity_id === entityId ? { ...e, selected: checked } : e));
     }
     this._exportShareUrl = '';
     this.render(this._lastState!);
+  }
+
+  toggleActionEntity(entityId: string, checked: boolean): void {
+    if (checked) this._selectedActionEntities.add(entityId);
+    else this._selectedActionEntities.delete(entityId);
+    this._exportShareUrl = '';
+    if (this._lastState) this.render(this._lastState);
   }
 
   async downloadDashboardBrief(): Promise<void> {
@@ -1379,10 +1434,10 @@ export class VarcoPanel extends HTMLElement {
             <p class="empty" data-grant-empty style="display:none">No grants match the current filter.</p>
           </section>` : ''}
 
-          ${(Array.isArray(current.audit) ? current.audit.length : 0) ? `
+          ${this.timelineItems(current).length ? `
           <section id="sec-activity">
             <div class="sec-eyebrow">Audit</div>
-            <div class="sec-title">Activity</div>
+            <div class="sec-title">Timeline</div>
             ${this.auditSection()}
           </section>` : ''}
 
@@ -1415,16 +1470,8 @@ export class VarcoPanel extends HTMLElement {
     this.querySelectorAll<HTMLElement>('[data-anchor]').forEach((el) => {
       el.onclick = () => { this.querySelector(`#${el.dataset.anchor}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
     });
-    // activity filter
-    this.querySelectorAll<HTMLElement>('[data-activity-filter]').forEach((el) => {
-      el.onclick = () => {
-        this._activityFilter = el.dataset.activityFilter!;
-        const card = this.querySelector('.audit-card');
-        if (card) card.outerHTML = this.auditSection();
-        // rewire filter buttons after replacement
-        this.wireActivity();
-      };
-    });
+    // activity timeline
+    this.wireActivity();
 
     // wizard step nav
     this.querySelectorAll<HTMLElement>('[data-step-next]').forEach((el) => {
@@ -1628,6 +1675,7 @@ export class VarcoPanel extends HTMLElement {
     const viewSelect = this.querySelector<HTMLSelectElement>('[data-view-select]');
     if (viewSelect) viewSelect.onchange = () => void this.pickView(viewSelect.value);
     this.querySelectorAll<HTMLInputElement>('[data-export-entity]').forEach((el) => { el.onchange = () => this.toggleEntity(el.dataset.exportEntity!, el.checked); });
+    this.querySelectorAll<HTMLInputElement>('[data-export-action-entity]').forEach((el) => { el.onchange = () => this.toggleActionEntity(el.dataset.exportActionEntity!, el.checked); });
     const exportShareUses = this.querySelector<HTMLInputElement>('[data-export-share-uses]');
     if (exportShareUses) exportShareUses.oninput = () => { this._exportShareUses = exportShareUses.value; };
     const download = this.querySelector<HTMLElement>('[data-download-brief]');
@@ -1640,16 +1688,31 @@ export class VarcoPanel extends HTMLElement {
     this.applyGrantFilter();
   }
 
-  // Rewire just the activity filter buttons after an in-place audit re-render.
+  // Rewire just the activity controls after an in-place timeline re-render.
   private wireActivity(): void {
     this.querySelectorAll<HTMLElement>('[data-activity-filter]').forEach((el) => {
       el.onclick = () => {
-        this._activityFilter = el.dataset.activityFilter!;
+        this._activityFilter = el.dataset.activityFilter || 'all';
         const card = this.querySelector('.audit-card');
         if (card) card.outerHTML = this.auditSection();
         this.wireActivity();
       };
     });
+    this.querySelectorAll<HTMLElement>('[data-timeline-target]').forEach((el) => {
+      el.onclick = () => this.focusTimelineTarget(el.dataset.timelineTarget || '');
+    });
+  }
+
+  private focusTimelineTarget(target: string): void {
+    const [kind, id] = target.split(':');
+    if (!id) return;
+    const selector = kind === 'request' ? `[data-request-card="${CSS.escape(id)}"]` : `[data-grant-card="${CSS.escape(id)}"]`;
+    const fallback = `[data-request-card="${CSS.escape(id)}"]`;
+    const el = this.querySelector<HTMLElement>(selector) || this.querySelector<HTMLElement>(fallback);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.classList.add('flash');
+    window.setTimeout(() => el.classList.remove('flash'), 1600);
   }
 
   // ---------- zip (unchanged) ----------

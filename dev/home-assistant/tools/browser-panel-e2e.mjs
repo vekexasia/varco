@@ -40,8 +40,8 @@ try {
   await page.getByText('Authority', { exact: true }).first().waitFor({ timeout: 60_000 });
   await page.locator('varco-panel .sec-title', { hasText: /^Grants/ }).waitFor({ timeout: 20_000 });
 
-  // --- #60: audit/activity section ---
-  await page.locator('varco-panel .sec-title', { hasText: /^Activity/ }).waitFor({ timeout: 20_000 });
+  // --- #60: audit/timeline section ---
+  await page.locator('varco-panel .sec-title', { hasText: /^Timeline/ }).waitFor({ timeout: 20_000 });
   const auditList = page.locator('varco-panel .audit-card [data-audit-list]');
   await auditList.waitFor({ timeout: 20_000 });
   const auditRows = auditList.locator('[data-audit-event]');

@@ -28,6 +28,7 @@ export interface AccessRequest {
   pairing_code: string;
   consumer_pk: string;
   created_at: string;
+  decided_at?: string | null;
   manifest: Manifest;
 }
 
