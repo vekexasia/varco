@@ -1,0 +1,58 @@
+{
+  "name": "@varco/server",
+  "version": "0.6.0",
+  "description": "Server-side and webhook access for Varco: run a long-lived Server Consumer and expose it over HTTP.",
+  "type": "module",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vekexasia/varco.git",
+    "directory": "packages/server"
+  },
+  "bugs": {
+    "url": "https://github.com/vekexasia/varco/issues"
+  },
+  "homepage": "https://vekexasia.github.io/varco/reference/server-api/",
+  "keywords": [
+    "home-assistant",
+    "varco",
+    "webhook",
+    "server",
+    "relay"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "prepack": "npm run build",
+    "test": "npm --workspace @varco/client run build && npm --workspace @varco/bridge run build && npm run build && node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@varco/client": "file:../client"
+  },
+  "devDependencies": {
+    "@noble/ciphers": "^2.2.0",
+    "@noble/curves": "^1.9.7",
+    "@noble/hashes": "^1.8.0",
+    "@types/node": "^22.0.0",
+    "ws": "^8.21.0"
+  }
+}
