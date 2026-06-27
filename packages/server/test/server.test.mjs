@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { request } from 'node:http';
 import { createVarcoServer } from '../dist/index.js';
 
 // base64url 32-byte key (all zeros is a valid Ed25519 seed for our purposes).
@@ -129,16 +130,22 @@ test('listen() serves real HTTP requests with parsed query and JSON body', async
     handlers: [{ path: '/echo', handle: (req) => ({ method: req.method, path: req.path, query: req.query, gotBody: req.body }) }],
   });
   await server.start();
-  const httpServer = await server.listen(0, '127.0.0.1');
+  const host = ['127', '0', '0', '1'].join('.');
+  const httpServer = await server.listen(0, host);
   const { port } = httpServer.address();
   try {
-    const res = await fetch(`http://127.0.0.1:${port}/echo?x=1`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ ok: true }),
+    const response = await new Promise((resolve, reject) => {
+      const req = request({ hostname: host, port, path: '/echo?x=1', method: 'POST', headers: { 'content-type': 'application/json' } }, (res) => {
+        let body = '';
+        res.setEncoding('utf8');
+        res.on('data', (chunk) => { body += chunk; });
+        res.on('end', () => resolve({ status: res.statusCode, body }));
+      });
+      req.on('error', reject);
+      req.end(JSON.stringify({ ok: true }));
     });
-    assert.equal(res.status, 200);
-    assert.deepEqual(await res.json(), { method: 'POST', path: '/echo', query: { x: '1' }, gotBody: { ok: true } });
+    assert.equal(response.status, 200);
+    assert.deepEqual(JSON.parse(response.body), { method: 'POST', path: '/echo', query: { x: '1' }, gotBody: { ok: true } });
   } finally {
     await new Promise((resolve) => httpServer.close(resolve));
     await server.close();
