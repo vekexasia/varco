@@ -57,8 +57,8 @@ test('deploy workflow does not pass a host bind port to the deploy step', () => 
   assert.match(workflow, /HA_SHOWCASE_HTTP_PORT:-80/);
 });
 
-test('Varco declares aiortc so deployed Home Assistant can accept WebRTC offers', () => {
-  assert.ok(manifest.requirements.includes('aiortc>=1.9.0'));
+test('Varco does not declare aiortc so HACS install survives HA PyAV constraints', () => {
+  assert.ok(!manifest.requirements.some((requirement) => requirement.startsWith('aiortc')));
 });
 
 test('showcase workflow can be triggered manually and verifies public URL plus Varco panel', () => {
