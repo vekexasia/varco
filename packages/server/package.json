@@ -1,6 +1,6 @@
 {
   "name": "@varco/server",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "description": "Server-side and webhook access for Varco: run a long-lived Server Consumer and expose it over HTTP.",
   "type": "module",
   "main": "dist/index.js",
