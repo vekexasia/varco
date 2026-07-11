@@ -1,5 +1,5 @@
 import { ed25519 } from "@noble/curves/ed25519";
-import { b64urlDecode, b64urlEncode, canonicalJson, utf8 } from "./encoding.js";
+import { b64urlDecode, b64urlEncode, canonicalJson, nonce, utf8, wsUrl } from "./encoding.js";
 import { randomId } from "./identity.js";
 import type { VarcoTransport } from "./types.js";
 
@@ -7,10 +7,6 @@ function bufferSource(bytes: Uint8Array): ArrayBuffer {
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 }
 
-function wsUrl(base: string, authorityId: string): string {
-  const clean = base.replace(/\/$/, "");
-  return `${clean}/consumer/${encodeURIComponent(authorityId)}`;
-}
 
 async function importServerPublic(spki: string): Promise<CryptoKey> {
   return crypto.subtle.importKey("spki", bufferSource(b64urlDecode(spki)), { name: "ECDH", namedCurve: "P-256" }, false, []);
@@ -59,11 +55,6 @@ export function closeError(code: number | undefined): Error {
   return new Error(code === 4405 ? SIGNALING_ONLY_ERROR : "Varco transport closed");
 }
 
-function nonce(value: number): Uint8Array {
-  const out = new Uint8Array(12);
-  new DataView(out.buffer).setUint32(8, value, false);
-  return out;
-}
 
 export class RelayTransport implements VarcoTransport {
   private ws: WebSocket | null = null;

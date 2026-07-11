@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .const import DEFAULT_BRIDGE_WS_URL, DOMAIN
+from .const import CONF_BRIDGE_WS_URL, CONF_WEBRTC_ENABLED, DEFAULT_BRIDGE_WS_URL, DOMAIN
 
 try:
     import voluptuous as vol
@@ -9,8 +9,6 @@ except ModuleNotFoundError:
     vol = None
     cv = None
 
-CONF_BRIDGE_WS_URL = "bridge_ws_url"
-CONF_WEBRTC_ENABLED = "webrtc_enabled"
 
 if vol is not None and cv is not None:
     CONFIG_SCHEMA = vol.Schema(

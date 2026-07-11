@@ -7,10 +7,7 @@ from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
 
-from .const import DEFAULT_BRIDGE_WS_URL, DOMAIN, NAME
-
-CONF_BRIDGE_WS_URL = "bridge_ws_url"
-CONF_WEBRTC_ENABLED = "webrtc_enabled"
+from .const import CONF_BRIDGE_WS_URL, CONF_WEBRTC_ENABLED, DEFAULT_BRIDGE_WS_URL, DOMAIN, NAME
 
 
 def _schema(defaults: dict[str, Any]) -> vol.Schema:

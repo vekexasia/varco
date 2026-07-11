@@ -29,3 +29,13 @@ export function canonicalJson(value: unknown): string {
 export function utf8(value: string): Uint8Array {
   return new TextEncoder().encode(value);
 }
+
+export function wsUrl(base: string, authorityId: string): string {
+  return `${base.replace(/\/$/, "")}/consumer/${encodeURIComponent(authorityId)}`;
+}
+
+export function nonce(value: number): Uint8Array {
+  const out = new Uint8Array(12);
+  new DataView(out.buffer).setUint32(8, value, false);
+  return out;
+}

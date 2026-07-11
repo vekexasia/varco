@@ -17,6 +17,7 @@ from .policy import (
     camera_entities,
     entity_allowed,
     evaluate_restrictions,
+    parse_datetime,
     history_entities,
     rate_limit_restrictions,
     read_entities,
@@ -97,16 +98,6 @@ class VarcoAuthority:
     def _session(self, session_id: str) -> RuntimeSession:
         return self.sessions.setdefault(session_id, RuntimeSession(session_id=session_id))
 
-    def _is_grant_expired(self, grant: Grant) -> bool:
-        if not grant.expires_at:
-            return False
-        try:
-            expires = datetime.fromisoformat(grant.expires_at)
-        except (TypeError, ValueError):
-            return False
-        if expires.tzinfo is None:
-            expires = expires.replace(tzinfo=timezone.utc)
-        return self.now_provider() >= expires
 
     def _is_expired(self, expires_at: str | None) -> bool:
         if not expires_at:
@@ -399,7 +390,7 @@ class VarcoAuthority:
             await audit.async_log(self.store, "session_error", details={"reason": "bad_authenticate_signature"})
             return self._error(message.get("request_id"), "bad_signature", "Invalid authentication signature")
         grant = await self.store.async_get_grant_by_consumer(consumer_pk)
-        if grant is None or grant.revoked or self._is_grant_expired(grant):
+        if grant is None or grant.revoked or self._is_expired(grant.expires_at):
             return self._error(message.get("request_id"), "not_authorized", "No active grant")
         grant.last_used_at = utcnow()
         await self.store.async_upsert_grant(grant)
@@ -427,7 +418,7 @@ class VarcoAuthority:
         if not session.consumer_pk:
             return self._error(request_id, "not_authenticated", "Session is not authenticated")
         grant = await self.store.async_get_grant_by_consumer(session.consumer_pk)
-        if grant is None or grant.revoked or self._is_grant_expired(grant):
+        if grant is None or grant.revoked or self._is_expired(grant.expires_at):
             session.closed = True
             return self._error(request_id, "grant_revoked", "Grant revoked")
         return grant
@@ -475,8 +466,8 @@ class VarcoAuthority:
         restriction_error = await self._enforce_restrictions(grant, "history", {"entity_ids": entity_ids}, message)
         if restriction_error:
             return restriction_error
-        end = self._parse_history_time(message.get("end_time")) or self.now_provider()
-        start = self._parse_history_time(message.get("start_time")) or end - timedelta(hours=24)
+        end = parse_datetime(message.get("end_time")) or self.now_provider()
+        start = parse_datetime(message.get("start_time")) or end - timedelta(hours=24)
         min_start = end - timedelta(days=MAX_HISTORY_DAYS)
         range_clamped = start < min_start
         if range_clamped:
@@ -735,8 +726,8 @@ class VarcoAuthority:
             return await self.hass.varco_history(entity_ids, message)
         if self.hass is None:
             return {entity_id: [] for entity_id in entity_ids}
-        end = self._parse_history_time(message.get("end_time")) or self.now_provider()
-        start = self._parse_history_time(message.get("start_time")) or end - timedelta(hours=24)
+        end = parse_datetime(message.get("end_time")) or self.now_provider()
+        start = parse_datetime(message.get("start_time")) or end - timedelta(hours=24)
         try:
             from homeassistant.components.recorder.history import get_significant_states
         except Exception:
@@ -756,16 +747,6 @@ class VarcoAuthority:
         raw = await self.hass.async_add_executor_job(load_history)
         return {entity_id: [self._history_point(item) for item in raw.get(entity_id, [])] for entity_id in entity_ids}
 
-    def _parse_history_time(self, value: Any) -> datetime | None:
-        if not isinstance(value, str) or not value:
-            return None
-        try:
-            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        except ValueError:
-            return None
-        if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=timezone.utc)
-        return parsed.astimezone(timezone.utc)
 
     def _history_point(self, item: Any) -> dict[str, Any]:
         if isinstance(item, dict):

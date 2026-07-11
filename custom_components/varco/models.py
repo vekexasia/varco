@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import hashlib
 import hmac
 import os
@@ -9,6 +8,7 @@ from datetime import datetime, timezone
 from enum import StrEnum
 from typing import Any
 
+from .crypto import b64url_decode, b64url_encode
 from .manifest import coerce_manifest
 
 
@@ -16,13 +16,6 @@ def utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _b64(value: bytes) -> str:
-    return base64.urlsafe_b64encode(value).decode().rstrip("=")
-
-
-def _unb64(value: str) -> bytes:
-    padding = "=" * (-len(value) % 4)
-    return base64.urlsafe_b64decode(value + padding)
 
 
 def hash_pin(pin: str, *, salt: bytes | None = None, iterations: int = 120_000) -> str:
@@ -34,7 +27,7 @@ def hash_pin(pin: str, *, salt: bytes | None = None, iterations: int = 120_000) 
 
     salt = salt or os.urandom(16)
     digest = hashlib.pbkdf2_hmac("sha256", str(pin).encode(), salt, iterations)
-    return f"pbkdf2_sha256${iterations}${_b64(salt)}${_b64(digest)}"
+    return f"pbkdf2_sha256${iterations}${b64url_encode(salt)}${b64url_encode(digest)}"
 
 
 def verify_pin(pin: str, encoded_hash: str) -> bool:
@@ -43,8 +36,8 @@ def verify_pin(pin: str, encoded_hash: str) -> bool:
         if algorithm != "pbkdf2_sha256":
             return False
         iterations = int(raw_iterations)
-        salt = _unb64(raw_salt)
-        expected = _unb64(raw_digest)
+        salt = b64url_decode(raw_salt)
+        expected = b64url_decode(raw_digest)
     except (TypeError, ValueError):
         return False
     actual = hashlib.pbkdf2_hmac("sha256", str(pin).encode(), salt, iterations)

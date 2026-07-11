@@ -5,7 +5,7 @@ import { ed25519 } from "@noble/curves/ed25519";
 import { p256 } from "@noble/curves/p256.js";
 import { hkdf } from "@noble/hashes/hkdf.js";
 import { sha256 } from "@noble/hashes/sha2";
-import { b64urlDecode, b64urlEncode, canonicalJson } from "./encoding.js";
+import { b64urlDecode, b64urlEncode, canonicalJson, nonce, wsUrl } from "./encoding.js";
 import { closeError, envelopeLane } from "./transport.js";
 import type { VarcoTransport } from "./types.js";
 
@@ -66,16 +66,6 @@ function defaultRandomBytes(n: number): Uint8Array {
   return out;
 }
 
-function wsUrl(base: string, authorityId: string): string {
-  const clean = base.replace(/\/$/, "");
-  return `${clean}/consumer/${encodeURIComponent(authorityId)}`;
-}
-
-function nonce(value: number): Uint8Array {
-  const out = new Uint8Array(12);
-  new DataView(out.buffer).setUint32(8, value, false);
-  return out;
-}
 
 type SessionKeys = { send: Uint8Array; recv: Uint8Array; channelBinding: string };
 

@@ -177,7 +177,7 @@ def _evaluate_restriction(restriction: dict[str, Any], context: dict[str, Any], 
     params = restriction.get("params") if isinstance(restriction.get("params"), dict) else {}
 
     if typ in {"expiry", "expires_at", "ttl"}:
-        expires_at = _parse_datetime(params.get("expires_at") or restriction.get("expires_at"))
+        expires_at = parse_datetime(params.get("expires_at") or restriction.get("expires_at"))
         if expires_at is None:
             return RestrictionDecision(False, restriction_id, "invalid_expiry")
         if now >= expires_at:
@@ -239,7 +239,7 @@ def template_restrictions(grant: Grant, operation: str, context: dict[str, Any])
     return matches
 
 
-def _parse_datetime(value: Any) -> datetime | None:
+def parse_datetime(value: Any) -> datetime | None:
     if not isinstance(value, str) or not value:
         return None
     try:
