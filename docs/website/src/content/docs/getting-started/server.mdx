@@ -16,15 +16,16 @@ No Home Assistant token leaves Home Assistant. Home Assistant remains the Author
 ## Prerequisites
 
 - Node.js 22 or newer.
-- `@varco/server` installed in your Node project.
+- A checkout of this repository. `@varco/server` is currently a workspace package and is not published to npm.
 - A base64url-encoded Ed25519 private key for the Server Consumer identity.
 - The Authority id shown by the Varco panel in Home Assistant.
 - A reachable Varco bridge WebSocket URL.
 
-Install the package:
+Install dependencies and build the workspace:
 
 ```bash
-npm install @varco/server
+npm install
+npm --workspace @varco/server run build
 ```
 
 Keep the private key in your server's secret store. The package does not read environment variables or files itself; pass the key to `createVarcoServer()`.

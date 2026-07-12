@@ -158,7 +158,10 @@ export class RelayTransport implements VarcoTransport {
             };
             resolve();
           }
-        } catch (err) { reject(err as Error); }
+        } catch (err) {
+          reject(err as Error);
+          ws.close();
+        }
       };
     });
   }

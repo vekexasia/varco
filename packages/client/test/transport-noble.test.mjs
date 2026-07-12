@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { webcrypto } from 'node:crypto';
-import { NobleRelayTransport } from '../dist/index.js';
+import { createVarcoClient, MemoryStorage, NobleRelayTransport, VarcoConnectionStrategy } from '../dist/index.js';
 import { p256 } from '@noble/curves/p256.js';
 import { ed25519 } from '@noble/curves/ed25519';
 import { hkdf } from '@noble/hashes/hkdf.js';
@@ -153,6 +153,49 @@ test('NobleRelayTransport runs the full protocol against a WebCrypto fake bridge
 
     await transport.close();
     await assert.rejects(() => transport.request({ type: 'late' }), /closed/);
+  } finally {
+    globalThis.WebSocket = previousWs;
+  }
+});
+
+test('transports close sockets when handshake validation fails', async () => {
+  const previousWs = globalThis.WebSocket;
+  const sockets = [];
+  const authorityId = b64url(ed25519.getPublicKey(ed25519.utils.randomSecretKey()));
+  const serverSpki = spkiWrap(p256.getPublicKey(p256.utils.randomSecretKey(), false));
+
+  class InvalidHandshakeSocket {
+    constructor() { sockets.push(this); queueMicrotask(() => this.onopen?.()); }
+    send(data) {
+      if (JSON.parse(data).type !== 'client_hello') return;
+      queueMicrotask(() => this.onmessage?.({ data: JSON.stringify({
+        type: 'server_hello',
+        server_pub: b64url(serverSpki),
+        signature: b64url(new Uint8Array(64)),
+      }) }));
+    }
+    close(code) { this.closed = true; this.onclose?.({ code: code ?? 1000 }); }
+  }
+
+  globalThis.WebSocket = InvalidHandshakeSocket;
+  try {
+    const client = createVarcoClient({
+      authorityId,
+      bridgeUrl: 'ws://bridge/',
+      manifest: { name: 'Test', version: '1' },
+      storage: new MemoryStorage(),
+      connectionStrategy: VarcoConnectionStrategy.Relay,
+    });
+    await assert.rejects(() => client.connect(), /Bad authority signature/);
+    assert.equal(sockets.at(-1).closed, true);
+    await client.close();
+
+    const noble = new NobleRelayTransport('ws://bridge/', authorityId, {
+      randomBytes: (n) => webcrypto.getRandomValues(new Uint8Array(n)),
+    });
+    await assert.rejects(() => noble.channelBinding(), /Bad authority signature/);
+    assert.equal(sockets.at(-1).closed, true);
+    await noble.close();
   } finally {
     globalThis.WebSocket = previousWs;
   }

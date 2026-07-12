@@ -1,6 +1,6 @@
 ---
 title: Server API
-description: Public @varco/server entry points for server-side and webhook access.
+description: Repository workspace API for server-side and webhook access.
 ---
 
 import { Aside } from "@astrojs/starlight/components";
@@ -9,13 +9,7 @@ import { Aside } from "@astrojs/starlight/components";
 
 It is just another Consumer: no Home Assistant token leaves Home Assistant, the bridge stays opaque, and Home Assistant stays the Authority. The trust model is unchanged.
 
-Install it in a Node.js 22 or newer project:
-
-```bash
-npm install @varco/server
-```
-
-Inside this repository it is the `packages/server` workspace:
+`@varco/server` is currently a repository workspace package and is not published to npm. Build it from a checkout with Node.js 22 or newer:
 
 ```bash
 npm install
