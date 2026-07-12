@@ -7,6 +7,8 @@ import { Aside } from "@astrojs/starlight/components";
 
 Use `@varco/server` to drive Home Assistant from a backend or a webhook: an external tool sends an HTTP request, and Varco runs a scoped Home Assistant operation. It runs the same Varco Consumer that the browser client runs, just server-side with its own HTTP endpoint.
 
+For the shortest setup, start with the [Server Consumer quickstart](../../getting-started/server/). This guide adds the pairing, webhook, and framework details.
+
 No Home Assistant token leaves Home Assistant. The bridge stays opaque. Home Assistant stays the Authority for consent, policy, and audit.
 
 <Aside type="caution" title="The endpoint is public">
@@ -20,7 +22,13 @@ No Home Assistant token leaves Home Assistant. The bridge stays opaque. Home Ass
 - The Authority id from your Home Assistant Varco panel.
 - A reachable bridge URL.
 
-Inside this repository, build the workspace:
+Install the package in your Node.js 22 or newer project:
+
+```bash
+npm install @varco/server
+```
+
+Inside this repository, build the workspace instead:
 
 ```bash
 npm install
@@ -35,8 +43,8 @@ Pairing is a one-time, human-approved step. It is not driven by the runtime. Pro
 import { createVarcoServer } from "@varco/server";
 
 const server = createVarcoServer({
-  privateKey: process.env.VARCO_PRIVATE_KEY,
-  authorityId: process.env.VARCO_AUTHORITY_ID,
+  privateKey: process.env.VARCO_PRIVATE_KEY!,
+  authorityId: process.env.VARCO_AUTHORITY_ID!,
   bridgeUrl: "wss://varco-bridge.example.com",
   manifest: {
     name: "My backend",
@@ -63,8 +71,8 @@ Once a grant exists, the manifest is optional: the consumer authenticates agains
 import { createVarcoServer } from "@varco/server";
 
 const server = createVarcoServer({
-  privateKey: process.env.VARCO_PRIVATE_KEY,
-  authorityId: process.env.VARCO_AUTHORITY_ID,
+  privateKey: process.env.VARCO_PRIVATE_KEY!,
+  authorityId: process.env.VARCO_AUTHORITY_ID!,
   bridgeUrl: "wss://varco-bridge.example.com",
   routes: [
     { path: "/charger/on", domain: "switch", service: "turn_on", target: { entity_id: "switch.ev_charger" } },
@@ -77,7 +85,9 @@ const server = createVarcoServer({
         if (req.headers["x-secret"] !== process.env.WEBHOOK_SECRET) {
           return { status: 401, body: "unauthorized" };
         }
-        return client.callService("scene", "turn_on", { entity_id: req.body.scene });
+        const body = req.body as { scene?: unknown };
+        if (typeof body?.scene !== "string") return { status: 400, body: "scene is required" };
+        return client.callService("scene", "turn_on", { entity_id: body.scene });
       },
     },
   ],
@@ -91,14 +101,18 @@ A `POST /charger/on` now turns on the charger and returns `{ "ok": true }`. The 
 
 ## How responses map
 
+- Unknown path or method: `404` with `{ "error": "not_found" }`.
+- Connection not ready within `readyTimeoutMs`: `503` with `{ "error": "unavailable", "message": "Varco connection not ready" }`.
 - Route success: `200` with `{ "ok": true }`.
-- Handler success: `200` with the returned JSON, or the `{ status, headers, body }` you return.
-- Permission denial: `403`.
-- Connection not ready within `readyTimeoutMs`: `503`.
-- Unknown path or method: `404`.
+- Handler success: `200` with the returned JSON, or the explicit `{ status, headers, body }` you return.
+- Permission, PIN, or target-resolution denial from Home Assistant: `403`. The Authority reports unresolved area, device, or label targets as `permission_denied`.
+- A remote error with code `not_found`: `404`. The current Authority does not use that code for service-target resolution.
+- Other Route or Handler failures: `502`.
+- An unexpected failure in the Node `listen()` shim: `500`.
+- A Handler can return its own `401`, `400`, or other status for caller authentication and validation.
 
 ## Framework integration
 
 `server.handle(req)` is framework-agnostic. Build a `ServerRequest` from your framework's request and forward its response. `server.listen()` is a thin Node `http` shim for when you do not already run a web framework.
 
-See the [Server API reference](/reference/server-api/) for the full option and type list.
+See the [Server API reference](../../reference/server-api/) for the full option and type list. The design rationale is in the [server Consumer ADR](https://github.com/vekexasia/varco/blob/master/docs/adr/0001-server-consumer-package.md).

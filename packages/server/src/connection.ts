@@ -55,9 +55,13 @@ export class ConnectionManager {
         if (this.closed) return;
         try {
           await this.client.connect();
+          if (!this.options.manifest) await this.client.getGrantInfo(true);
           this.setReady(true);
           return;
         } catch (err) {
+          if (!this.options.manifest && isMissingGrantError(err)) {
+            throw new Error("Varco server has no active grant; provide a manifest and call requestPairing() first");
+          }
           attempt += 1;
           this.options.warn?.(`Varco server connect failed (attempt ${attempt}): ${err instanceof Error ? err.message : String(err)}`);
           const delay = Math.min(30_000, 1_000 * 2 ** Math.min(attempt, 5));
@@ -88,4 +92,10 @@ export class ConnectionManager {
     for (const resolve of waiters) resolve(false);
     await this.client.close();
   }
+}
+
+function isMissingGrantError(err: unknown): boolean {
+  const code = (err as { code?: string } | null)?.code;
+  const message = err instanceof Error ? err.message : String(err);
+  return code === "not_authorized" || /no active grant/i.test(message);
 }

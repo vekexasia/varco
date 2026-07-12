@@ -297,6 +297,40 @@ def test_delete_grant_removes_record_and_closes_active_session():
         assert (await store.async_audit_events())[-1]["event"] == "grant_deleted"
     asyncio.run(run())
 
+
+def test_revoke_grant_clears_only_its_rate_hits():
+    async def run():
+        authority, _, _, grant = await paired_authority({"name": "Demo", "version": "1"})
+        unrelated = ("other-grant", "rate")
+        authority._rate_hits.update({
+            (grant.grant_id, "cooldown"): [1.0],
+            (grant.grant_id, "window"): [2.0],
+            unrelated: [3.0],
+        })
+
+        await authority.revoke_grant(grant.grant_id)
+
+        assert authority._rate_hits == {unrelated: [3.0]}
+
+    asyncio.run(run())
+
+
+def test_delete_grant_clears_only_its_rate_hits():
+    async def run():
+        authority, _, _, grant = await paired_authority({"name": "Demo", "version": "1"})
+        unrelated = ("other-grant", "rate")
+        authority._rate_hits.update({
+            (grant.grant_id, "cooldown"): [1.0],
+            unrelated: [2.0],
+        })
+
+        await authority.delete_grant(grant.grant_id)
+
+        assert authority._rate_hits == {unrelated: [2.0]}
+
+    asyncio.run(run())
+
+
 def test_webrtc_signaling_falls_back_to_relay_when_authority_has_no_peer_stack():
     async def run():
         authority, store, _, _ = await paired_authority({"name": "Demo", "version": "1", "read_entities": ["sensor.temp"]})

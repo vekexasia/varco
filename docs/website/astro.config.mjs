@@ -36,6 +36,7 @@ export default defineConfig({
             { label: "Showcase: Pebble watchapp", slug: "getting-started/showcase-pebble" },
             { label: "Home Assistant quickstart", slug: "getting-started/home-assistant" },
             { label: "Consumer quickstart", slug: "getting-started/consumer" },
+            { label: "Server Consumer quickstart", slug: "getting-started/server" },
           ],
         },
         {

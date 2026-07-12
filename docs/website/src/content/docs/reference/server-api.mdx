@@ -3,9 +3,17 @@ title: Server API
 description: Public @varco/server entry points for server-side and webhook access.
 ---
 
+import { Aside } from "@astrojs/starlight/components";
+
 `@varco/server` runs a long-lived Varco **Server Consumer** from a developer-supplied private key and exposes it over HTTP through declarative **Routes** and code **Handlers**.
 
 It is just another Consumer: no Home Assistant token leaves Home Assistant, the bridge stays opaque, and Home Assistant stays the Authority. The trust model is unchanged.
+
+Install it in a Node.js 22 or newer project:
+
+```bash
+npm install @varco/server
+```
 
 Inside this repository it is the `packages/server` workspace:
 
@@ -22,8 +30,8 @@ It requires Node 22 or newer (for the global `WebSocket` used by the relay trans
 import { createVarcoServer } from "@varco/server";
 
 const server = createVarcoServer({
-  privateKey: process.env.VARCO_PRIVATE_KEY,   // base64url Ed25519 private key
-  authorityId: process.env.VARCO_AUTHORITY_ID,
+  privateKey: process.env.VARCO_PRIVATE_KEY!,   // base64url Ed25519 private key
+  authorityId: process.env.VARCO_AUTHORITY_ID!,
   bridgeUrl: "wss://varco-bridge.example.com",
   routes: [
     { path: "/lights/on", domain: "light", service: "turn_on", target: { entity_id: "light.kitchen" } },
@@ -41,11 +49,12 @@ await server.listen(8080);
 | `privateKey` | `string` | base64url-encoded Ed25519 private key. The package never reads env or disk; pass the key in. |
 | `authorityId` | `string` | The Home Assistant Authority id (from the Varco panel). |
 | `bridgeUrl` | `string` | The relay bridge WebSocket URL. |
-| `manifest` | `VarcoManifest?` | Omitted: authenticate against an existing grant and report `grant_info`. Provided: enables `requestPairing()`. |
-| `routes` | `Route[]?` | Static path → single Home Assistant operation mappings. |
-| `handlers` | `Handler[]?` | Developer functions for everything dynamic, including REST and caller auth. |
+| `manifest` | `VarcoManifest?` | Omit it to authenticate against an existing grant and fetch `grant_info`; provide it to enable `requestPairing()`. |
+| `routes` | `Route[]?` | Static path and method mappings to one Home Assistant operation. Defaults to an empty list. |
+| `handlers` | `Handler[]?` | Developer functions for dynamic requests, including REST input and caller authentication. Defaults to an empty list. |
 | `readyTimeoutMs` | `number?` | Per-request wait for a ready connection before returning `503`. Default `5000`. |
 | `requestTimeoutMs` | `number?` | Underlying relay request timeout. Default `30000`. |
+| `warn` | `(message: string) => void` | Receives connection and client warnings. It is not set by default. |
 
 ### Returned `VarcoServer`
 
@@ -53,14 +62,14 @@ await server.listen(8080);
 | --- | --- |
 | `client` | The underlying `VarcoConsumerClient`. |
 | `start()` | Establish the persistent connection. Resolves once authenticated; keeps reconnecting after drops. |
-| `requestPairing()` | First-run `access_request` (requires a manifest). Returns `{ request_id, pairing_code, status }`. |
-| `handle(req)` | Framework-agnostic handler. Takes a `ServerRequest`, returns `{ status, headers, body }`. |
-| `listen(port, hostname?)` | Start a Node `http` server bound to `handle`. Returns the `http.Server`. |
+| `requestPairing()` | Sends a first-run `access_request` (requires a manifest) and returns `{ request_id, pairing_code, status }`. Owner approval is still required. |
+| `handle(req)` | Framework-agnostic handler. Takes a normalized `ServerRequest` and returns an `HttpResponse` `{ status, headers, body }`. |
+| `listen(port, hostname?)` | Starts a Node `http` server bound to `handle`. Returns a promise for the `http.Server`; it does not call `start()`. |
 | `close()` | Close the connection and stop reconnecting. |
 
 ## Routes
 
-A `Route` maps an inbound HTTP path (and method, default `POST`) to a single static Home Assistant operation with no request-body interpolation:
+A `Route` maps an inbound HTTP path and method to a single static Home Assistant operation. The method defaults to `POST` and is matched case-insensitively. The path is matched against the URL pathname, and the request body is never interpolated into a Route:
 
 ```ts
 {
@@ -73,11 +82,11 @@ A `Route` maps an inbound HTTP path (and method, default `POST`) to a single sta
 }
 ```
 
-On success a Route responds `200` with `{ "ok": true }`. A denial responds `403`; a failed call responds `502`.
+`target` supports an `entity_id` string or string array. `service_data` is static; when `target.entity_id` is present it becomes the service-call target. On success a Route responds `200` with `{ "ok": true }`. A permission, PIN, or Authority target-resolution denial responds `403`; unresolved area, device, or label targets are reported this way rather than as `not_found`. A remote `not_found` error responds `404`, and another service failure responds `502`.
 
 ## Handlers
 
-A `Handler` receives the parsed request and the connected client, and performs arbitrary operations. It is the escape hatch for anything dynamic, and the REST-via-handlers path:
+A `Handler` receives the normalized request and the connected client, and performs arbitrary operations. The method defaults to `POST`; use a Handler for request-body interpolation, REST-style operations, or caller authentication:
 
 ```ts
 {
@@ -85,19 +94,23 @@ A `Handler` receives the parsed request and the connected client, and performs a
   method: "POST",
   handle: async (req, client) => {
     // verify the caller yourself (see below)
-    await client.callService("scene", "turn_on", { entity_id: req.body.scene });
+    const body = req.body as { scene?: unknown };
+    if (typeof body?.scene !== "string") return { status: 400, body: "scene is required" };
+    await client.callService("scene", "turn_on", { entity_id: body.scene });
     return { ok: true };
   },
 }
 ```
 
-A Handler may return any JSON-serializable value (sent as `200`), or `{ status, headers, body }` for full control. A string `body` is sent as `text/plain`.
+A Handler may return any JSON-serializable value (sent as `200`), or `{ status, headers, body }` for full control. An `undefined` result becomes `{ "ok": true }`. A string `body` is sent as `text/plain; charset=utf-8` unless you provide a `content-type` header; a non-string body is JSON encoded. A thrown permission/PIN or Authority target-resolution error maps to `403`; a thrown error with code `not_found` maps to `404`; another thrown error maps to `502`.
 
-`ServerRequest` is `{ method, path, query, headers, body, rawBody }`, where `body` is parsed JSON when the content type is JSON, otherwise the raw string.
+`ServerRequest` is `{ method, path, query, headers, body, rawBody }`. The Node `listen()` shim parses `body` as JSON when the content type includes `application/json`; otherwise it keeps the raw string. `headers` are lower-case in the Node shim. `query` contains URL search parameters. When using `handle()` directly, provide this normalized shape yourself.
 
 ## No built-in caller authentication
 
-The HTTP endpoint is public. Verifying the caller (HMAC signature, shared secret, etc.) is your job inside a Handler, because every webhook source signs differently.
+<Aside type="caution" title="The HTTP endpoint is public">
+`@varco/server` does not authenticate HTTP callers. A static Route with no caller check fires for anyone who can reach its URL. Use Routes only for harmless or idempotent operations. Verify HMAC signatures, shared secrets, or another provider-specific credential inside a Handler before performing sensitive operations.
+</Aside>
 
 ```ts
 {
@@ -106,15 +119,28 @@ The HTTP endpoint is public. Verifying the caller (HMAC signature, shared secret
     if (req.headers["x-secret"] !== process.env.WEBHOOK_SECRET) {
       return { status: 401, body: "unauthorized" };
     }
-    // ...
+    return client.callService("scene", "turn_on", { entity_id: "scene.movie_time" });
   },
 }
 ```
 
-Guidance: use Routes for harmless or idempotent operations, and Handlers for anything sensitive.
+## HTTP status and response semantics
+
+| Situation | Status | Body |
+| --- | --- | --- |
+| Unknown path or method | `404` | `{ "error": "not_found" }` |
+| Known Route or Handler, connection not ready within `readyTimeoutMs` | `503` | `{ "error": "unavailable", "message": "Varco connection not ready" }` |
+| Route succeeds | `200` | `{ "ok": true }` |
+| Handler returns a value | `200` | The returned JSON value; `undefined` becomes `{ "ok": true }` |
+| Home Assistant denies a Route or Handler operation, including an Authority target-resolution denial | `403` | `error` is `service_failed` for Routes or `handler_failed` for Handlers |
+| A remote error has code `not_found` | `404` | `error` is `service_failed` or `handler_failed`; the current Authority does not use this code for service-target resolution |
+| Other Route or Handler failure | `502` | `error` is `service_failed` or `handler_failed` |
+| Unexpected failure in the Node `listen()` shim | `500` | `{ "error": "internal", "message": "..." }` |
+
+A Handler can choose another status, headers, and body by returning `{ status, headers, body }`. This is how a Handler should return caller-authentication failures such as `401` or input-validation failures such as `400`.
 
 ## Connection and availability
 
-`@varco/server` holds one persistent, auto-reconnecting relay connection. While the connection is not ready (initial connect or a reconnect in progress), requests wait up to `readyTimeoutMs` and then return `503`.
+`@varco/server` holds one persistent, auto-reconnecting relay connection. `start()` retries transient initial connection failures and resolves once authenticated. While the connection is not ready (initial connect or a reconnect in progress), matching requests wait up to `readyTimeoutMs` and then return `503`; unknown paths return `404` without waiting. `close()` stops reconnecting and closes the client connection.
 
-The design is recorded in `docs/adr/0001-server-consumer-package.md`.
+The design is recorded in the [server Consumer ADR](https://github.com/vekexasia/varco/blob/master/docs/adr/0001-server-consumer-package.md).

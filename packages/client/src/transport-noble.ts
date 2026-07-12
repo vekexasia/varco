@@ -140,8 +140,13 @@ export class NobleRelayTransport implements VarcoTransport {
 
   private async ensureConnected(): Promise<void> {
     if (this.closed) throw new Error("Varco transport closed");
-    if (!this.ready) this.ready = this.connect();
-    await this.ready;
+    const ready = this.ready ?? (this.ready = this.connect());
+    try {
+      await ready;
+    } catch (err) {
+      if (this.ready === ready) this.ready = null;
+      throw err;
+    }
   }
 
   private generatePrivateKey(): Uint8Array {

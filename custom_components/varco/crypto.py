@@ -41,6 +41,7 @@ def generate_authority_keypair() -> dict[str, str]:
 
 
 def generate_consumer_keypair() -> dict[str, str]:
+    # Consumer and Authority identities share the same Ed25519 keypair format; preserve the caller-facing name.
     return generate_authority_keypair()
 
 

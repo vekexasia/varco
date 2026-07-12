@@ -1,5 +1,7 @@
 # Varco - PRD
 
+> PRD.md contains product notes and may lag behind implementation. The canonical reference is `docs/website/src/content/docs/`.
+
 > Nome di lavoro: **Varco**: il varco controllato verso casa.
 
 ## Una riga

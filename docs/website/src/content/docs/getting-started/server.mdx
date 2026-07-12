@@ -1,0 +1,149 @@
+---
+title: Server Consumer quickstart
+description: Run @varco/server as a webhook endpoint or Node REST backend.
+---
+
+import { Aside } from "@astrojs/starlight/components";
+
+`@varco/server` runs a long-lived Varco **Server Consumer** in Node.js. It uses a developer-supplied Ed25519 private key to connect to Home Assistant through the relay, then exposes selected operations over HTTP.
+
+No Home Assistant token leaves Home Assistant. Home Assistant remains the Authority for pairing, grants, policy checks, service calls, and audit.
+
+<Aside type="caution" title="The HTTP endpoint is public by default">
+`@varco/server` has no built-in caller authentication. Anyone who can reach a static Route can invoke it. Use Routes only for harmless or idempotent operations. Put sensitive operations in a Handler and verify the caller there with the authentication scheme required by your webhook provider, such as an HMAC signature or shared secret.
+</Aside>
+
+## Prerequisites
+
+- Node.js 22 or newer.
+- `@varco/server` installed in your Node project.
+- A base64url-encoded Ed25519 private key for the Server Consumer identity.
+- The Authority id shown by the Varco panel in Home Assistant.
+- A reachable Varco bridge WebSocket URL.
+
+Install the package:
+
+```bash
+npm install @varco/server
+```
+
+Keep the private key in your server's secret store. The package does not read environment variables or files itself; pass the key to `createVarcoServer()`.
+
+## 1. Request pairing
+
+Pairing is a one-time, human-approved step. Create the server with the manifest you want the Owner to approve, request a pairing code, and approve it in the Varco panel.
+
+```ts
+import { createVarcoServer } from "@varco/server";
+
+function required(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`Missing ${name}`);
+  return value;
+}
+
+const server = createVarcoServer({
+  privateKey: required("VARCO_PRIVATE_KEY"),
+  authorityId: required("VARCO_AUTHORITY_ID"),
+  bridgeUrl: process.env.VARCO_BRIDGE_URL ?? "wss://varco-bridge.andreabaccega.com",
+  manifest: {
+    name: "My Node backend",
+    version: "1.0.0",
+    read_entities: [],
+    subscriptions: [],
+    history: [],
+    camera_snapshots: [],
+    actions: ["switch.turn_on@switch.ev_charger"],
+  },
+});
+
+const access = await server.requestPairing();
+console.log(`Approve ${access.pairing_code} in the Varco panel`);
+await server.close();
+```
+
+`requestPairing()` returns `{ request_id, pairing_code, status }`. It requires `manifest`; it does not replace Owner approval. The grant is bound to this Server Consumer's public key.
+
+## 2. Run the approved Server Consumer
+
+After the Owner approves the request, create the server without a manifest to authenticate against the stored grant. Define static Routes for fixed operations and Handlers for dynamic requests or caller verification.
+
+```ts
+import { createVarcoServer } from "@varco/server";
+
+function required(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`Missing ${name}`);
+  return value;
+}
+
+const server = createVarcoServer({
+  privateKey: required("VARCO_PRIVATE_KEY"),
+  authorityId: required("VARCO_AUTHORITY_ID"),
+  bridgeUrl: process.env.VARCO_BRIDGE_URL ?? "wss://varco-bridge.andreabaccega.com",
+  routes: [
+    {
+      path: "/charger/on",
+      method: "POST",
+      domain: "switch",
+      service: "turn_on",
+      target: { entity_id: "switch.ev_charger" },
+    },
+  ],
+  handlers: [
+    {
+      path: "/webhook",
+      method: "POST",
+      handle: async (req, client) => {
+        if (req.headers["x-webhook-secret"] !== required("WEBHOOK_SECRET")) {
+          return { status: 401, body: "unauthorized" };
+        }
+        const body = req.body as { scene?: unknown };
+        if (typeof body?.scene !== "string") {
+          return { status: 400, body: "scene is required" };
+        }
+        await client.callService("scene", "turn_on", { entity_id: body.scene });
+        return { status: 202, body: { accepted: true, scene: body.scene } };
+      },
+    },
+  ],
+});
+
+await server.start();
+const httpServer = await server.listen(Number(process.env.PORT ?? "8080"));
+console.log(`Listening on ${httpServer.address()}`);
+```
+
+`start()` authenticates the persistent connection and keeps reconnecting after a drop. `listen()` only starts the Node `http` shim; it does not call `start()` for you.
+
+A request to the static Route is:
+
+```bash
+curl -X POST http://localhost:8080/charger/on
+```
+
+The Handler verifies the caller before reading the request's `scene` value or calling Home Assistant:
+
+```bash
+curl -X POST http://localhost:8080/webhook \
+  -H 'content-type: application/json' \
+  -H 'x-webhook-secret: replace-me' \
+  -d '{"scene":"scene.movie_time"}'
+```
+
+The `listen()` shim parses JSON bodies when `content-type` includes `application/json`, exposes query parameters and lower-case headers, and forwards a normalized `ServerRequest` to the matching Route or Handler. Use `server.handle(req)` instead when your application already owns the HTTP framework.
+
+## Responses and availability
+
+- Unknown path or method: `404` with `{ "error": "not_found" }`.
+- Known Route or Handler while the connection is not ready before `readyTimeoutMs`: `503`.
+- Successful Route: `200` with `{ "ok": true }`.
+- Successful Handler: `200` with the returned JSON value, unless it returns an explicit `{ status, headers, body }` response.
+- Home Assistant permission, PIN, or target-resolution errors: `403`. The Authority reports unresolved area, device, or label targets as `permission_denied`, so those target failures map to `403`.
+- A remote error with code `not_found`: `404`. The current Authority does not use that code for service-target resolution.
+- Other Home Assistant or Handler failures: `502`.
+- Unexpected failures in the Node `listen()` shim: `500`.
+
+See the [Server API reference](../../reference/server-api/) for the complete options, Route and Handler schemas, response mapping, and framework integration details.
+
+The design rationale is documented in the [server Consumer ADR](https://github.com/vekexasia/varco/blob/master/docs/adr/0001-server-consumer-package.md).

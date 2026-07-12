@@ -158,7 +158,7 @@ export type VarcoClient = VarcoDomainHelpers & {
   requestAccess(): Promise<AccessResult>;
   claimShare(shareId: string, secret: string): Promise<GrantInfo>;
   connect(): Promise<void>;
-  getGrantInfo(): Promise<GrantInfo>;
+  getGrantInfo(refresh?: boolean): Promise<GrantInfo>;
   getStates(entityIds: string[]): Promise<Record<string, HassState | null>>;
   subscribeEntities(entityIds: string[], cb: (event: any) => void): Promise<string>;
   unsubscribe(subscriptionId: string): Promise<void>;

@@ -157,8 +157,8 @@ export function createVarcoClient(options: VarcoClientOptions): VarcoClient {
       await establish();
     },
 
-    async getGrantInfo() {
-      if (grantInfo) return grantInfo;
+    async getGrantInfo(refresh = false) {
+      if (grantInfo && !refresh) return grantInfo;
       const response = await activeTransport.request({ type: "grant_info" });
       grantInfo = { grant_id: String(response.grant_id), manifest: response.manifest };
       return grantInfo;

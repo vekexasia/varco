@@ -32,7 +32,8 @@
     "docs:preview": "npm --workspace @varco/docs-website run preview",
     "dev:ha:restrictions-smoke": "npm --workspace packages/client run build && node --test dev/home-assistant/tools/e2e/restrictions-smoke.test.mjs",
     "dev:ha:panel-browser": "node dev/home-assistant/tools/browser-panel-e2e.mjs",
-    "release:check-version": "node dev/check-release-version.mjs"
+    "release:check-version": "node dev/check-release-version.mjs",
+    "check:protocol-version": "node dev/check-protocol-version.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",

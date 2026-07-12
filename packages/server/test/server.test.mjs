@@ -10,13 +10,21 @@ const AUTHORITY_ID = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 // Minimal fake transport: completes authenticate, records call_service, lets us
 // drive readiness and failures without a real bridge.
 class FakeTransport {
-  constructor() { this.calls = []; this.failNext = null; }
+  constructor() { this.calls = []; this.messages = []; this.failNext = null; this.authenticateError = null; this.authenticateFailuresRemaining = 0; }
   onEvent() {}
   onClose() {}
   async channelBinding() { return 'binding'; }
   async request(message) {
-    if (message.type === 'authenticate') return { type: 'authenticated', grant_id: 'g1', manifest: { name: 'm', version: '1', read_entities: [] } };
-    if (message.type === 'grant_info') return { type: 'grant_info', grant_id: 'g1', manifest: { name: 'm', version: '1', read_entities: [] } };
+    this.messages.push(message);
+    if (message.type === 'authenticate') {
+      if (this.authenticateFailuresRemaining > 0) {
+        this.authenticateFailuresRemaining -= 1;
+        throw new Error('Transient authentication failure');
+      }
+      if (this.authenticateError) throw this.authenticateError;
+      return { type: 'authenticated', grant_id: 'g1', manifest: { name: 'authenticated', version: '1', read_entities: [] } };
+    }
+    if (message.type === 'grant_info') return { type: 'grant_info', grant_id: 'g1', manifest: { name: 'approved', version: '1', read_entities: ['sensor.temperature'] } };
     if (message.type === 'access_request') return { type: 'access_request_pending', access_request_id: 'req1', pairing_code: '123456', status: 'pending' };
     if (message.type === 'call_service') {
       this.calls.push(message);
@@ -120,8 +128,49 @@ test('requestPairing requires a manifest', async () => {
 });
 
 test('requestPairing returns the access request pairing code when a manifest is configured', async () => {
-  const { server } = newServer({ manifest: { name: 'Server', version: '1', read_entities: [], subscriptions: [], history: [], camera_snapshots: [], actions: [] } });
+  const { server, transport } = newServer({ manifest: { name: 'Server', version: '1', read_entities: [], subscriptions: [], history: [], camera_snapshots: [], actions: [] } });
   assert.deepEqual(await server.requestPairing(), { request_id: 'req1', pairing_code: '123456', status: 'pending' });
+  assert.deepEqual(transport.messages.map((message) => message.type), ['access_request']);
+  await server.close();
+});
+
+test('omitted manifest fetches and uses the approved grant_info manifest', async () => {
+  const { server, transport } = newServer();
+  await server.start();
+  assert.deepEqual(await server.client.getGrantInfo(), {
+    grant_id: 'g1',
+    manifest: { name: 'approved', version: '1', read_entities: ['sensor.temperature'] },
+  });
+  assert.deepEqual(transport.messages.map((message) => message.type), ['authenticate', 'grant_info']);
+  await server.close();
+});
+
+test('startup retries a transient initial authentication failure and becomes ready', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { server, transport } = newServer({
+    routes: [{ path: '/run', domain: 'switch', service: 'turn_on', target: { entity_id: 'switch.demo' } }],
+  });
+  transport.authenticateFailuresRemaining = 1;
+
+  const start = server.start();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(transport.messages.filter((message) => message.type === 'authenticate').length, 1);
+  t.mock.timers.tick(2_000);
+  await start;
+
+  const res = await server.handle({ method: 'POST', path: '/run', query: {}, headers: {}, body: undefined, rawBody: '' });
+  assert.equal(res.status, 200);
+  assert.equal(transport.messages.filter((message) => message.type === 'authenticate').length, 2);
+  await server.close();
+});
+
+test('startup without a manifest fails once when no active grant exists', async () => {
+  const { server, transport } = newServer();
+  transport.authenticateError = Object.assign(new Error('No active grant'), { code: 'not_authorized' });
+  await assert.rejects(() => server.start(), /no active grant.*requestPairing/i);
+  assert.equal(transport.messages.filter((message) => message.type === 'authenticate').length, 1);
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  assert.equal(transport.messages.filter((message) => message.type === 'authenticate').length, 1);
   await server.close();
 });
 

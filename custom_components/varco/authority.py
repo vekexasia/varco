@@ -13,7 +13,6 @@ from .crypto import generate_consumer_keypair, new_id, pairing_code, verify_acce
 from .manifest import ManifestError, validate_manifest
 from .models import AccessRequest, Grant, Share, hash_pin, utcnow
 from .policy import (
-    action_allowed,
     camera_entities,
     entity_allowed,
     evaluate_restrictions,
@@ -24,6 +23,7 @@ from .policy import (
     template_restrictions,
     subscription_entities,
 )
+from .service_calls import call_service
 from .storage import MemoryVarcoStore
 
 _LOGGER = logging.getLogger(__name__)
@@ -204,8 +204,13 @@ class VarcoAuthority:
             await audit.async_log(self.store, "share_expired", share_id)
         return deleted
 
+    def _clear_rate_hits_for_grant(self, grant_id: str) -> None:
+        for key in [key for key in self._rate_hits if key[0] == grant_id]:
+            self._rate_hits.pop(key, None)
+
     async def revoke_grant(self, grant_id: str) -> Grant:
         grant = await self.store.async_revoke_grant(grant_id)
+        self._clear_rate_hits_for_grant(grant.grant_id)
         for session in self.sessions.values():
             if session.consumer_pk == grant.consumer_pk:
                 session.closed = True
@@ -215,6 +220,7 @@ class VarcoAuthority:
 
     async def delete_grant(self, grant_id: str) -> Grant:
         grant = await self.store.async_delete_grant(grant_id)
+        self._clear_rate_hits_for_grant(grant.grant_id)
         for session in self.sessions.values():
             if session.consumer_pk == grant.consumer_pk:
                 session.closed = True
@@ -495,32 +501,7 @@ class VarcoAuthority:
         return {"type": "camera_snapshot", "request_id": message.get("request_id"), "entity_id": entity_id, "content_type": "image/jpeg", "body": await self._camera_payload(entity_id)}
 
     async def _call_service(self, grant: Grant, message: dict[str, Any]) -> dict[str, Any]:
-        domain = str(message.get("domain") or "")
-        service = str(message.get("service") or "")
-        service_data = dict(message.get("service_data") or {})
-        target = message.get("target") if isinstance(message.get("target"), dict) else {}
-        resolved = self._resolve_non_entity_targets(target, service_data)
-        if resolved is None:
-            await audit.async_log(self.store, "permission_error", grant.grant_id, {"operation": "call_service", "domain": domain, "service": service, "reason": "unresolved_target"})
-            return self._error(message.get("request_id"), "permission_denied", "Service call not allowed")
-        entity_ids = list(dict.fromkeys(self._service_entity_ids(target, service_data) + resolved))
-        if entity_ids:
-            denied = [entity for entity in entity_ids if not action_allowed(grant.manifest, domain, service, entity)]
-        elif action_allowed(grant.manifest, domain, service, None):
-            denied = []
-        else:
-            denied = [None]
-        if denied:
-            await audit.async_log(self.store, "permission_error", grant.grant_id, {"operation": "call_service", "domain": domain, "service": service, "reason": "unauthorized_entity", "denied_count": len(denied)})
-            return self._error(message.get("request_id"), "permission_denied", "Service call not allowed")
-        context = {"domain": domain, "service": service, "entity_ids": entity_ids, "pin": message.get("pin"), "pins": message.get("pins")}
-        restriction_error = await self._enforce_restrictions(grant, "action", context, message)
-        if restriction_error:
-            return restriction_error
-        if self.hass is not None and hasattr(self.hass, "services"):
-            await self.hass.services.async_call(domain, service, service_data, target=target, blocking=True)
-        await audit.async_log(self.store, "call_service", grant.grant_id, {"domain": domain, "service": service, "entity_count": len(entity_ids)})
-        return {"type": "service_called", "request_id": message.get("request_id"), "ok": True}
+        return await call_service(self, grant, message, _registry_modules)
 
     async def _enforce_restrictions(self, grant: Grant, operation: str, context: dict[str, Any], message: dict[str, Any]) -> dict[str, Any] | None:
         decision = evaluate_restrictions(grant, operation, context, now=self.now_provider())
@@ -599,59 +580,6 @@ class VarcoAuthority:
             grant.grant_id,
             {"operation": operation, "restriction_id": restriction_id, "reason": reason},
         )
-
-    def _service_entity_ids(self, target: dict[str, Any], service_data: dict[str, Any]) -> list[str]:
-        return self._service_target_values(target, service_data, "entity_id")
-
-    def _service_target_values(self, target: dict[str, Any], service_data: dict[str, Any], key: str) -> list[str]:
-        values: list[str] = []
-        for source in (target.get(key), service_data.get(key)):
-            if isinstance(source, list):
-                values.extend(str(item) for item in source)
-            elif source:
-                values.append(str(source))
-        return list(dict.fromkeys(values))
-
-    def _resolve_non_entity_targets(self, target: dict[str, Any], service_data: dict[str, Any]) -> list[str] | None:
-        """Resolve area/device/label targets to the entity ids they reference.
-
-        Returns a (possibly empty) list of entity ids, or None when any target
-        cannot be resolved (no hass, registries unavailable, unknown id). The
-        resolution is a conservative superset of Home Assistant's own service
-        target resolution, so the per-entity grant check never under-covers.
-        """
-        area_ids = self._service_target_values(target, service_data, "area_id")
-        device_ids = self._service_target_values(target, service_data, "device_id")
-        label_ids = self._service_target_values(target, service_data, "label_id")
-        if not (area_ids or device_ids or label_ids):
-            return []
-        if self.hass is None:
-            return None
-        try:
-            area_registry, device_registry, entity_registry, label_registry = _registry_modules()
-            area_reg = area_registry.async_get(self.hass)
-            dev_reg = device_registry.async_get(self.hass)
-            ent_reg = entity_registry.async_get(self.hass)
-            label_reg = label_registry.async_get(self.hass)
-        except Exception:
-            return None
-        if any(area_reg.async_get_area(area_id) is None for area_id in area_ids):
-            return None
-        if any(dev_reg.async_get(device_id) is None for device_id in device_ids):
-            return None
-        if any(label_reg.async_get_label(label_id) is None for label_id in label_ids):
-            return None
-        resolved_devices = set(device_ids)
-        entities: list[str] = []
-        for area_id in area_ids:
-            resolved_devices.update(entry.id for entry in device_registry.async_entries_for_area(dev_reg, area_id))
-            entities.extend(entry.entity_id for entry in entity_registry.async_entries_for_area(ent_reg, area_id))
-        for label_id in label_ids:
-            resolved_devices.update(entry.id for entry in device_registry.async_entries_for_label(dev_reg, label_id))
-            entities.extend(entry.entity_id for entry in entity_registry.async_entries_for_label(ent_reg, label_id))
-        for device_id in sorted(resolved_devices):
-            entities.extend(entry.entity_id for entry in entity_registry.async_entries_for_device(ent_reg, device_id, include_disabled_entities=True))
-        return list(dict.fromkeys(entities))
 
     async def _webrtc_offer(self, session_id: str, grant: Grant, message: dict[str, Any]) -> dict[str, Any]:
         if self.peer_stack is None:

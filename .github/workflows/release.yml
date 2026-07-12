@@ -78,6 +78,9 @@ jobs:
       - name: Check release versions
         run: npm run release:check-version -- ${{ steps.version.outputs.version }}
 
+      - name: Check protocol version consistency
+        run: npm run check:protocol-version
+
       - name: Run tests
         run: npm test
 

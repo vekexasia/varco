@@ -48,6 +48,9 @@ jobs:
       - name: Run type checks
         run: npm run check
 
+      - name: Check protocol version consistency
+        run: npm run check:protocol-version
+
       - name: Verify the Varco panel bundle is in sync with its TypeScript source
         run: |
           npm --workspace custom_components/varco/frontend run build
